@@ -1,50 +1,62 @@
 <script setup lang="ts">
-type SkillListPayload = {
-  ok: boolean;
-  data: Array<{
-    name: string;
-    source: string;
-    sourceType: string;
-    sourceUri: string | null;
-    enabled: boolean;
-    usageCount: number;
-    usedBy: string[];
-    statusLabel: string;
-    purpose: string;
-    categoryLabel: string;
-  }>;
+import { Search, FolderInput, GitBranch, Sparkles, Loader2, Plus, X, Download, Users, Zap } from "lucide-vue-next";
+
+type SkillItem = {
+  name: string;
+  source: string;
+  sourceType: string;
+  sourceUri: string | null;
+  enabled: boolean;
+  usageCount: number;
+  usedBy: string[];
+  statusLabel: string;
+  purpose: string;
+  categoryLabel: string;
 };
 
+type SkillListPayload = { ok: boolean; data: SkillItem[] };
+
 const query = ref("");
-const form = reactive({
-  sourceType: "local",
-  source: ""
-});
+const showImporter = ref(false);
+const activeCategory = ref<string | null>(null);
+const form = reactive({ sourceType: "local", source: "" });
 const importing = ref(false);
 const importError = ref("");
 const togglingSkill = ref("");
 const { data, refresh } = await useFetch<SkillListPayload>("/api/skills");
 
-const filteredSkills = computed(() => {
-  const keyword = query.value.trim().toLowerCase();
-  const items = data.value?.data ?? [];
-  if (!keyword) {
-    return items;
+const allSkills = computed(() => data.value?.data ?? []);
+const categories = computed(() => {
+  const map = new Map<string, SkillItem[]>();
+  for (const s of allSkills.value) {
+    const cat = s.categoryLabel || "其他";
+    if (!map.has(cat)) map.set(cat, []);
+    map.get(cat)!.push(s);
   }
-  return items.filter((skill) =>
-    [skill.name, skill.purpose, skill.categoryLabel].some((value) => value.toLowerCase().includes(keyword))
-  );
+  return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
 });
+
+const filteredSkills = computed(() => {
+  let items = allSkills.value;
+  if (activeCategory.value) items = items.filter((s) => s.categoryLabel === activeCategory.value);
+  const kw = query.value.trim().toLowerCase();
+  if (kw) items = items.filter((s) => [s.name, s.purpose, s.categoryLabel].some((v) => v.toLowerCase().includes(kw)));
+  return items;
+});
+
+const stats = computed(() => ({
+  total: allSkills.value.length,
+  enabled: allSkills.value.filter((s) => s.enabled).length,
+  inUse: allSkills.value.filter((s) => s.usageCount > 0).length
+}));
 
 async function importSkill() {
   importing.value = true;
   importError.value = "";
   try {
-    await $fetch("/api/skills/import", {
-      method: "POST",
-      body: form
-    });
+    await $fetch("/api/skills/import", { method: "POST", body: form });
     form.source = "";
+    showImporter.value = false;
     await refresh();
   } catch (error) {
     importError.value = error instanceof Error ? error.message : String(error);
@@ -56,10 +68,7 @@ async function importSkill() {
 async function toggleSkill(name: string, enabled: boolean) {
   togglingSkill.value = name;
   try {
-    await $fetch(`/api/skills/${name}/state`, {
-      method: "PATCH",
-      body: { enabled }
-    });
+    await $fetch(`/api/skills/${name}/state`, { method: "PATCH", body: { enabled } });
     await refresh();
   } finally {
     togglingSkill.value = "";
@@ -68,103 +77,178 @@ async function toggleSkill(name: string, enabled: boolean) {
 </script>
 
 <template>
-  <main class="app-shell">
-    <AppNav />
-    <section class="page-panel skill-page-shell">
-      <div class="page-heading">
-        <div>
-          <p class="eyebrow">Skill Center</p>
-          <h1>先看技能目录和用途，再决定哪些能力应该分配给员工</h1>
-          <p class="hero-copy compact">主视图只保留业务相关的信息：能力用途、引用关系、状态和来源类型，导入是次级动作。</p>
+  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8">
+    <!-- Header -->
+    <div class="hero-section flex items-start justify-between gap-4">
+      <div class="relative space-y-1">
+        <span class="section-label">能力管理</span>
+        <h1 class="font-display text-3xl font-bold tracking-tight">技能中心</h1>
+        <p class="text-sm text-muted-foreground">查看、导入和管理你的技能能力库。</p>
+      </div>
+      <button class="btn-primary shrink-0" @click="showImporter = true; importError = ''">
+        <Download class="h-4 w-4" :stroke-width="2" />
+        导入技能
+      </button>
+    </div>
+
+    <!-- Stats Strip -->
+    <div class="flex gap-6 text-sm">
+      <div class="flex items-center gap-2 text-muted-foreground">
+        <Zap class="h-4 w-4 text-primary" :stroke-width="1.8" />
+        <span><strong class="text-foreground">{{ stats.total }}</strong> 个技能</span>
+      </div>
+      <div class="flex items-center gap-2 text-muted-foreground">
+        <Sparkles class="h-4 w-4 text-primary" :stroke-width="1.8" />
+        <span><strong class="text-foreground">{{ stats.enabled }}</strong> 已启用</span>
+      </div>
+      <div class="flex items-center gap-2 text-muted-foreground">
+        <Users class="h-4 w-4 text-primary" :stroke-width="1.8" />
+        <span><strong class="text-foreground">{{ stats.inUse }}</strong> 被使用</span>
+      </div>
+    </div>
+
+    <!-- Category Tabs + Search -->
+    <div class="flex flex-wrap items-center gap-3">
+      <button
+        class="rounded-full px-3 py-1.5 text-sm font-medium transition-all"
+        :class="activeCategory === null ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        @click="activeCategory = null"
+      >
+        全部
+      </button>
+      <button
+        v-for="[cat, items] in categories"
+        :key="cat"
+        class="rounded-full px-3 py-1.5 text-sm font-medium transition-all"
+        :class="activeCategory === cat ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        @click="activeCategory = activeCategory === cat ? null : cat"
+      >
+        {{ cat }} <span class="ml-1 opacity-60">{{ items.length }}</span>
+      </button>
+      <div class="ml-auto">
+        <label class="flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 transition-all duration-150 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+          <Search class="h-4 w-4 text-muted-foreground" :stroke-width="1.8" />
+          <input
+            v-model="query"
+            placeholder="搜索技能…"
+            class="w-32 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground lg:w-48"
+          />
+        </label>
+      </div>
+    </div>
+
+    <!-- Skill List -->
+    <div class="stagger-in space-y-2">
+      <article
+        v-for="skill in filteredSkills"
+        :key="skill.name"
+        class="flex items-center gap-4 rounded-xl border bg-card px-5 py-4 transition-all duration-150"
+        :class="skill.enabled ? 'border-border hover:border-primary/20 hover:shadow-sm' : 'border-border/50 opacity-60 hover:opacity-80'"
+      >
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="skill.enabled ? 'bg-primary/10' : 'bg-muted'">
+          <Zap class="h-5 w-5" :class="skill.enabled ? 'text-primary' : 'text-muted-foreground'" :stroke-width="1.8" />
         </div>
-      </div>
 
-      <div class="skill-layout">
-        <section class="stack-card skill-catalog-panel">
-          <div class="section-header">
-            <div>
-              <p class="eyebrow">Catalog</p>
-              <h2>技能目录</h2>
-            </div>
-            <label class="search-field">
-              <AppIcon name="spark" :size="16" />
-              <input v-model="query" placeholder="搜索技能名称、用途或分类" />
-            </label>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold">{{ skill.name }}</h3>
+            <span class="rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">{{ skill.categoryLabel }}</span>
+            <span v-if="skill.source !== 'builtin'" class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{{ skill.sourceType }}</span>
           </div>
+          <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{{ skill.purpose }}</p>
+        </div>
 
-          <div class="skill-catalog">
-            <article v-for="skill in filteredSkills" :key="skill.name" class="skill-catalog-card">
-              <div class="card-row">
-                <div>
-                  <p class="eyebrow">Skill</p>
-                  <h2>{{ skill.name }}</h2>
-                </div>
-                <StatusBadge :label="skill.statusLabel" :tone="skill.enabled ? 'teal' : 'amber'" />
+        <div class="flex shrink-0 items-center gap-3">
+          <span v-if="skill.usageCount > 0" class="text-xs text-muted-foreground">{{ skill.usageCount }} 名员工</span>
+          <span
+            class="w-16 text-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+            :class="skill.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
+          >
+            {{ skill.statusLabel }}
+          </span>
+          <button
+            v-if="skill.source !== 'builtin' || skill.sourceUri"
+            class="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+            :disabled="togglingSkill === skill.name"
+            @click="toggleSkill(skill.name, !skill.enabled)"
+          >
+            <Loader2 v-if="togglingSkill === skill.name" class="inline h-3 w-3 animate-spin" />
+            {{ skill.enabled ? "停用" : "启用" }}
+          </button>
+        </div>
+      </article>
+
+      <div
+        v-if="filteredSkills.length === 0"
+        class="flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/10 px-6 py-12 text-center"
+      >
+        <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/5">
+          <Sparkles class="h-7 w-7 text-primary/30" :stroke-width="1.5" />
+        </div>
+        <p class="font-medium">没有符合条件的技能</p>
+        <p class="mt-1 max-w-xs text-sm text-muted-foreground">修改搜索条件，或导入新技能。</p>
+      </div>
+    </div>
+
+    <!-- Import Slide-over -->
+    <Teleport to="body">
+      <Transition name="slide-over">
+        <div v-if="showImporter" class="fixed inset-0 z-50 flex justify-end">
+          <div class="absolute inset-0 bg-foreground/20 backdrop-blur-sm" @click="showImporter = false" />
+          <div class="slide-over-panel relative w-full max-w-md overflow-y-auto bg-card shadow-2xl">
+            <div class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 px-6 py-4 backdrop-blur-sm">
+              <div>
+                <span class="section-label">导入</span>
+                <h2 class="mt-0.5 text-lg font-semibold">导入新技能</h2>
               </div>
+              <button class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" @click="showImporter = false">
+                <X class="h-5 w-5" :stroke-width="1.8" />
+              </button>
+            </div>
 
-              <p class="skill-purpose">{{ skill.purpose }}</p>
-
-              <div class="skill-catalog-meta">
-                <span class="pill">{{ skill.categoryLabel }}</span>
-                <span class="pill">来源：{{ skill.sourceType }}</span>
-                <span class="pill">已被 {{ skill.usageCount }} 名员工使用</span>
-              </div>
-
-              <div class="tag-list">
-                <span v-for="employeeName in skill.usedBy" :key="employeeName" class="tag-item">{{ employeeName }}</span>
-                <span v-if="skill.usedBy.length === 0" class="muted">还没有员工使用这个技能</span>
-              </div>
-
-              <div class="card-row">
-                <span class="muted">{{ skill.source === 'builtin' ? '内置技能' : '导入技能' }}</span>
+            <div class="p-6">
+              <form class="space-y-4" @submit.prevent="importSkill">
+                <label class="block space-y-1.5">
+                  <span class="text-sm font-medium">来源类型</span>
+                  <select v-model="form.sourceType" class="input-field">
+                    <option value="local">本地目录</option>
+                    <option value="git">Git 仓库</option>
+                  </select>
+                </label>
+                <label class="block space-y-1.5">
+                  <span class="text-sm font-medium">来源地址</span>
+                  <div class="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5">
+                    <FolderInput v-if="form.sourceType === 'local'" class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+                    <GitBranch v-else class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+                    <input
+                      v-model="form.source"
+                      placeholder="本地路径或 Git 地址"
+                      class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                </label>
                 <button
-                  v-if="skill.source !== 'builtin' || skill.sourceUri"
-                  class="ghost-link button-reset"
-                  :disabled="togglingSkill === skill.name"
-                  @click="toggleSkill(skill.name, !skill.enabled)"
+                  class="btn-primary w-full justify-center"
+                  :disabled="importing || !form.source.trim()"
                 >
-                  {{ skill.enabled ? "停用" : "启用" }}
+                  <Loader2 v-if="importing" class="mr-1.5 inline h-3.5 w-3.5 animate-spin" />
+                  {{ importing ? "导入中..." : "导入技能" }}
                 </button>
+                <p v-if="importError" class="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{{ importError }}</p>
+              </form>
+
+              <div class="mt-8 rounded-lg bg-muted/30 p-4">
+                <p class="text-sm font-medium">导入说明</p>
+                <ul class="mt-2 space-y-1.5 text-xs text-muted-foreground">
+                  <li>• <strong>本地目录</strong>：指向包含技能定义的文件夹路径</li>
+                  <li>• <strong>Git 仓库</strong>：支持 HTTPS 或 SSH 格式的仓库地址</li>
+                  <li>• 导入后技能默认处于停用状态，需手动启用</li>
+                </ul>
               </div>
-            </article>
-
-            <EmptyState
-              v-if="filteredSkills.length === 0"
-              title="没有符合条件的技能"
-              description="可以修改搜索条件，或者通过右侧导入新的技能。"
-            />
-          </div>
-        </section>
-
-        <aside class="stack-card import-panel">
-          <div class="section-header">
-            <div>
-              <p class="eyebrow">Import</p>
-              <h2>导入新技能</h2>
             </div>
           </div>
-
-          <form class="stack-form" @submit.prevent="importSkill">
-            <label>
-              来源类型
-              <select v-model="form.sourceType">
-                <option value="local">本地目录</option>
-                <option value="git">Git 仓库</option>
-              </select>
-            </label>
-
-            <label>
-              来源
-              <input v-model="form.source" placeholder="本地路径或 Git 地址" />
-            </label>
-
-            <button class="primary-button" :disabled="importing">
-              {{ importing ? "导入中..." : "导入技能" }}
-            </button>
-            <p v-if="importError" class="error-text">{{ importError }}</p>
-          </form>
-        </aside>
-      </div>
-    </section>
-  </main>
+        </div>
+      </Transition>
+    </Teleport>
+  </div>
 </template>

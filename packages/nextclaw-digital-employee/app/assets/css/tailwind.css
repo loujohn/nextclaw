@@ -1,0 +1,251 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 20% 97%;
+    --foreground: 220 20% 14%;
+
+    --card: 40 25% 99%;
+    --card-foreground: 220 20% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 14%;
+
+    --primary: 162 63% 32%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 35 30% 94%;
+    --secondary-foreground: 220 20% 14%;
+
+    --muted: 35 16% 93%;
+    --muted-foreground: 220 10% 44%;
+
+    --accent: 35 30% 94%;
+    --accent-foreground: 220 20% 14%;
+
+    --destructive: 4 70% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 162 63% 32%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 30 80% 18%;
+
+    --border: 35 16% 88%;
+    --input: 35 16% 88%;
+    --ring: 162 63% 32%;
+
+    --sidebar: 220 24% 12%;
+    --sidebar-foreground: 35 20% 92%;
+    --sidebar-muted: 220 10% 55%;
+    --sidebar-border: 0 0% 100% / 0.06;
+    --sidebar-accent: 0 0% 100% / 0.07;
+
+    --radius: 0.625rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse at 0% 0%, hsl(162 50% 85% / 0.15), transparent 50%),
+      radial-gradient(ellipse at 100% 0%, hsl(38 60% 85% / 0.18), transparent 50%),
+      radial-gradient(ellipse at 50% 100%, hsl(220 30% 90% / 0.1), transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .sidebar-glass {
+    background: linear-gradient(
+      180deg,
+      hsl(220, 24%, 11%) 0%,
+      hsl(215, 22%, 13%) 50%,
+      hsl(200, 18%, 14%) 100%
+    );
+    border-right: 1px solid hsl(0 0% 100% / 0.04);
+  }
+
+  .card-elevated {
+    @apply rounded-xl border border-border bg-card;
+    box-shadow:
+      0 1px 2px hsl(220 20% 14% / 0.04),
+      0 4px 12px hsl(220 20% 14% / 0.03);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .card-elevated:hover {
+    box-shadow:
+      0 2px 4px hsl(220 20% 14% / 0.06),
+      0 8px 24px hsl(220 20% 14% / 0.05);
+  }
+
+  .hero-section {
+    @apply relative overflow-hidden rounded-2xl px-6 py-6 lg:px-8 lg:py-7;
+    background: linear-gradient(135deg, hsl(162 50% 96% / 0.6) 0%, hsl(40 25% 97% / 0.4) 50%, hsl(220 30% 97% / 0.3) 100%);
+    border: 1px solid hsl(162 40% 88% / 0.4);
+  }
+
+  .hero-section::before {
+    content: "";
+    @apply absolute inset-0;
+    background:
+      radial-gradient(ellipse at 0% 50%, hsl(162 60% 80% / 0.1) 0%, transparent 60%),
+      radial-gradient(ellipse at 100% 0%, hsl(38 60% 85% / 0.08) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .hero-section::after {
+    content: "";
+    @apply absolute bottom-0 left-6 right-6;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(162 40% 80% / 0.3), hsl(38 40% 85% / 0.2), transparent);
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-widest text-primary/60;
+    letter-spacing: 0.1em;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition-all duration-150;
+    @apply focus:border-primary/50 focus:ring-2 focus:ring-primary/10;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm;
+    @apply transition-all duration-150 hover:bg-primary/90 hover:shadow-md active:scale-[0.98] disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium;
+    @apply transition-all duration-150 hover:bg-muted active:scale-[0.98];
+  }
+}
+
+@layer components {
+  .chat-bubble-assistant .code-block {
+    @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
+  }
+
+  .chat-bubble-assistant .code-block .code-lang {
+    @apply absolute right-2 top-1.5 text-[10px] font-medium uppercase text-muted-foreground;
+  }
+
+  .chat-bubble-assistant .code-block pre {
+    @apply overflow-x-auto p-3;
+  }
+
+  .chat-bubble-assistant .code-block code {
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  .chat-bubble-assistant .inline-code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  }
+
+  .chat-bubble-assistant .md-ul {
+    @apply my-1.5 space-y-1 pl-4;
+  }
+
+  .chat-bubble-assistant .md-li {
+    @apply list-disc text-sm text-foreground;
+  }
+
+  .chat-bubble-assistant strong {
+    @apply font-semibold;
+  }
+
+  .typing-dots span {
+    animation: typing-bounce 1.4s infinite ease-in-out;
+  }
+
+  .typing-dots span:nth-child(1) { animation-delay: 0s; }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+}
+
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+.stagger-in > * {
+  animation: stagger-fade-in 0.3s ease-out both;
+}
+
+.stagger-in > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-in > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-in > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-in > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-in > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-in > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-in > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-in > *:nth-child(8) { animation-delay: 350ms; }
+
+@keyframes stagger-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-over-panel {
+  animation: slide-in-from-right 0.25s ease-out;
+}
+
+@keyframes slide-in-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.slide-over-enter-active {
+  transition: opacity 0.2s ease;
+}
+
+.slide-over-enter-active .slide-over-panel {
+  animation: slide-in-from-right 0.25s ease-out;
+}
+
+.slide-over-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.slide-over-leave-active .slide-over-panel {
+  animation: slide-out-to-right 0.2s ease-in forwards;
+}
+
+.slide-over-enter-from,
+.slide-over-leave-to {
+  opacity: 0;
+}
+
+@keyframes slide-out-to-right {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
