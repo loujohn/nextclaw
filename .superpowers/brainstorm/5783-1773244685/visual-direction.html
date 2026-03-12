@@ -1,0 +1,73 @@
+
+<h2>选择平台整体视觉方向</h2>
+<p class="subtitle">只看整体气质和信息密度，不用纠结细节。这个选择会直接影响首页、员工中心和聊天工作台。</p>
+
+<div class="cards">
+  <div class="card" data-choice="ops" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 运营驾驶舱</div>
+        <div class="mockup-body">
+          <div style="display:grid;gap:10px;grid-template-columns:1.3fr 0.7fr;">
+            <div>
+              <div class="placeholder" style="height:44px;margin-bottom:10px;">高密度头部摘要 + 风险提示</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+                <div class="placeholder" style="height:72px;">指标卡</div>
+                <div class="placeholder" style="height:72px;">指标卡</div>
+                <div class="placeholder" style="height:72px;">指标卡</div>
+              </div>
+              <div class="placeholder" style="height:160px;">员工运行与异常列表</div>
+            </div>
+            <div style="display:grid;gap:10px;">
+              <div class="placeholder" style="height:90px;">待处理告警</div>
+              <div class="placeholder" style="height:104px;">推送/报告状态</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>运营驾驶舱</h3>
+      <p>更像企业运营中台。信息密度高，强调运行态势、异常和效率。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="saas" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 产品化 SaaS</div>
+        <div class="mockup-body">
+          <div class="placeholder" style="height:58px;margin-bottom:12px;">品牌头图 + 关键入口</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
+            <div class="placeholder" style="height:120px;">员工卡片</div>
+            <div class="placeholder" style="height:120px;">员工卡片</div>
+          </div>
+          <div class="placeholder" style="height:118px;">最近报告 / 推荐动作</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>产品化 SaaS</h3>
+      <p>更像成熟业务产品。结构清晰、留白更足，适合普通业务用户长期使用。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="ai" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. AI 工作台</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:280px 1fr 320px;gap:10px;">
+            <div class="placeholder" style="height:224px;">员工/会话侧栏</div>
+            <div class="placeholder" style="height:224px;">主聊天流 + 结果卡片</div>
+            <div class="placeholder" style="height:224px;">上下文/技能/运行状态</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>AI 工作台</h3>
+      <p>更像 Cursor/Notion AI 风格。把聊天和上下文放在中心，管理页退到次级。</p>
+    </div>
+  </div>
+</div>

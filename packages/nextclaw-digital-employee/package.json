@@ -1,0 +1,36 @@
+{
+  "name": "@nextclaw/digital-employee",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preflight:deps": "pnpm -C ../nextclaw-core build && pnpm -C ../nextclaw-runtime build && pnpm -C ../extensions/nextclaw-channel-runtime build && pnpm -C ../nextclaw-openclaw-compat build",
+    "dev": "pnpm preflight:deps && nuxt dev",
+    "build": "pnpm preflight:deps && nuxt build",
+    "lint": "eslint . --ext .ts,.vue --max-warnings=0",
+    "tsc": "pnpm preflight:deps && nuxt typecheck",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nextclaw/core": "workspace:*",
+    "@nextclaw/openclaw-compat": "workspace:*",
+    "@nextclaw/runtime": "workspace:*",
+    "better-sqlite3": "^12.6.2",
+    "knex": "^3.1.0",
+    "nuxt": "^4.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.17.6",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-vue": "^10.8.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.2",
+    "vue-eslint-parser": "^10.4.0"
+  }
+}

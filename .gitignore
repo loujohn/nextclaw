@@ -7,9 +7,20 @@ coverage/
 .npmrc
 .npmrc.publish.local
 tmp
+*.log
+**/.nuxt/
+**/.output/
+**/.nitro/
+**/.data/
+**/.cache/
+**/*.sqlite
+**/*.sqlite-journal
+**/*.db
+**/*.db-journal
 apps/docs/.vitepress/dist/
 apps/docs/.vitepress/cache/
 apps/docs/--host/
+packages/nextclaw-digital-employee/.nextclaw-digital-employee/
 packages/nextclaw/*.tgz
 **/.wrangler/
 

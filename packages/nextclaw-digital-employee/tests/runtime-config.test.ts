@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+import { buildPlatformGatewayConfig } from "../server/runtime/platform-context";
+
+describe("platform gateway runtime config", () => {
+  it("uses explicit provider env vars for model, api base, and api key", () => {
+    const config = buildPlatformGatewayConfig({
+      NEXTCLAW_MODEL: "openai/gpt-4o-mini",
+      NEXTCLAW_PROVIDER_NAME: "openai",
+      NEXTCLAW_PROVIDER_API_BASE: "https://relay.example.com/v1",
+      NEXTCLAW_PROVIDER_API_KEY: "sk-relay"
+    });
+
+    expect(config.agents?.defaults?.model).toBe("openai/gpt-4o-mini");
+    expect(config.providers?.openai?.apiBase).toBe("https://relay.example.com/v1");
+    expect(config.providers?.openai?.apiKey).toBe("sk-relay");
+  });
+
+  it("falls back to provider-specific env key inferred from model prefix", () => {
+    const config = buildPlatformGatewayConfig({
+      NEXTCLAW_MODEL: "dashscope/qwen3.5-flash",
+      DASHSCOPE_API_KEY: "dashscope-token"
+    });
+
+    expect(config.agents?.defaults?.model).toBe("dashscope/qwen3.5-flash");
+    expect(config.providers?.dashscope?.apiKey).toBe("dashscope-token");
+    expect(config.providers?.dashscope?.apiBase).toBeNull();
+  });
+
+  it("supports custom provider prefixes for openai-compatible relays", () => {
+    const config = buildPlatformGatewayConfig({
+      NEXTCLAW_MODEL: "relay-a/gpt-4.1-mini",
+      NEXTCLAW_PROVIDER_API_BASE: "https://relay-a.internal/v1",
+      NEXTCLAW_PROVIDER_API_KEY: "relay-token"
+    });
+
+    expect(config.providers?.["relay-a"]?.apiKey).toBe("relay-token");
+    expect(config.providers?.["relay-a"]?.apiBase).toBe("https://relay-a.internal/v1");
+  });
+});

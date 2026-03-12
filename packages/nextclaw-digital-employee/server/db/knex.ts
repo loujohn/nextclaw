@@ -1,0 +1,155 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import knex, { type Knex } from "knex";
+import { PLATFORM_TABLES } from "./schema";
+
+function ensureParentDir(path: string): void {
+  const dir = dirname(resolve(path));
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
+
+export function createPlatformKnex(databasePath: string): Knex {
+  ensureParentDir(databasePath);
+  return knex({
+    client: "better-sqlite3",
+    connection: {
+      filename: resolve(databasePath)
+    },
+    useNullAsDefault: true
+  });
+}
+
+async function createEmployeesTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.employees);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.employees, (table) => {
+    table.string("id").primary();
+    table.string("name").notNullable();
+    table.string("code").notNullable().unique();
+    table.text("description").notNullable().defaultTo("");
+    table.text("system_prompt").notNullable().defaultTo("");
+    table.string("status").notNullable().defaultTo("active");
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function createEmployeeSkillsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.employeeSkills);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.employeeSkills, (table) => {
+    table.string("id").primary();
+    table.string("employee_id").notNullable().references("id").inTable(PLATFORM_TABLES.employees).onDelete("CASCADE");
+    table.string("skill_name").notNullable();
+    table.boolean("enabled").notNullable().defaultTo(true);
+    table.text("config_json").notNullable().defaultTo("{}");
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function createEmployeeSchedulesTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.employeeSchedules);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.employeeSchedules, (table) => {
+    table.string("id").primary();
+    table.string("employee_id").notNullable().references("id").inTable(PLATFORM_TABLES.employees).onDelete("CASCADE");
+    table.string("schedule_kind").notNullable().defaultTo("manual");
+    table.string("cron_expr");
+    table.bigInteger("every_ms");
+    table.boolean("heartbeat_enabled").notNullable().defaultTo(false);
+    table.integer("heartbeat_interval_s");
+    table.boolean("enabled").notNullable().defaultTo(true);
+    table.string("runtime_job_id");
+    table.text("schedule_message").notNullable().defaultTo("");
+    table.timestamp("next_run_at");
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function createSkillInstallationsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.skillInstallations);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.skillInstallations, (table) => {
+    table.string("id").primary();
+    table.string("skill_name").notNullable().unique();
+    table.string("source_type").notNullable();
+    table.text("source_uri").notNullable();
+    table.string("version");
+    table.text("install_path").notNullable();
+    table.boolean("enabled").notNullable().defaultTo(true);
+    table.text("metadata_json").notNullable().defaultTo("{}");
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function createIntegrationConnectionsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.integrationConnections);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.integrationConnections, (table) => {
+    table.string("id").primary();
+    table.string("type").notNullable();
+    table.string("name").notNullable();
+    table.text("config_json").notNullable().defaultTo("{}");
+    table.boolean("enabled").notNullable().defaultTo(true);
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function createRunRecordsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.runRecords);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.runRecords, (table) => {
+    table.string("id").primary();
+    table.string("employee_id").references("id").inTable(PLATFORM_TABLES.employees).onDelete("SET NULL");
+    table.string("trigger_type").notNullable();
+    table.string("trigger_source").notNullable();
+    table.string("status").notNullable();
+    table.timestamp("started_at").notNullable();
+    table.timestamp("finished_at");
+    table.text("summary").notNullable().defaultTo("");
+    table.text("result_json").notNullable().defaultTo("{}");
+  });
+}
+
+async function createRunEventsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.runEvents);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.runEvents, (table) => {
+    table.string("id").primary();
+    table.string("run_id").notNullable().references("id").inTable(PLATFORM_TABLES.runRecords).onDelete("CASCADE");
+    table.integer("seq").notNullable();
+    table.string("event_type").notNullable();
+    table.text("payload_json").notNullable().defaultTo("{}");
+    table.timestamp("created_at").notNullable();
+  });
+}
+
+export async function ensurePlatformDatabase(db: Knex): Promise<void> {
+  await createEmployeesTable(db);
+  await createEmployeeSkillsTable(db);
+  await createEmployeeSchedulesTable(db);
+  await createSkillInstallationsTable(db);
+  await createIntegrationConnectionsTable(db);
+  await createRunRecordsTable(db);
+  await createRunEventsTable(db);
+}
