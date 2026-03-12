@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
-import { Search, RotateCcw, ChevronRight, ChevronLeft, Sparkles, Plus, X } from "lucide-vue-next";
+import { Search, RotateCcw, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown } from "lucide-vue-next";
 
 type EmployeeResponse = {
   id: string;
@@ -41,11 +41,17 @@ const form = reactive({
   code: "",
   description: "",
   systemPrompt: "",
+  model: "",
+  heartbeatContent: "",
+  userContent: "",
+  bootContent: "",
+  agentsContent: "",
   skillNames: [] as string[],
   scheduleKind: "cron",
   cronExpr: "0 18 * * *",
   everyMs: 1800000
 });
+const showAdvanced = ref(false);
 const creating = ref(false);
 const createError = ref("");
 const touched = reactive({ name: false });
@@ -61,9 +67,10 @@ const filteredEmployees = computed(() => {
 });
 
 const steps = [
-  { title: "基础信息", desc: "定义员工职责与角色边界" },
-  { title: "技能选择", desc: "绑定当前可用的能力集合" },
-  { title: "自动任务", desc: "配置它何时自动开始工作" }
+  { title: "基础信息", desc: "定义员工的身份与角色" },
+  { title: "工作设定", desc: "模型与行为偏好" },
+  { title: "能力配置", desc: "选择员工可使用的技能" },
+  { title: "自动任务", desc: "设置定时执行的工作" }
 ];
 
 async function createEmployee() {
@@ -71,9 +78,26 @@ async function createEmployee() {
   createError.value = "";
   try {
     const code = form.code.trim() || createEmployeeCode(form.name);
+    const workspaceFiles: Record<string, string> = {};
+    if (form.heartbeatContent.trim()) workspaceFiles["HEARTBEAT.md"] = form.heartbeatContent.trim();
+    if (form.userContent.trim()) workspaceFiles["USER.md"] = form.userContent.trim();
+    if (form.bootContent.trim()) workspaceFiles["BOOT.md"] = form.bootContent.trim();
+    if (form.agentsContent.trim()) workspaceFiles["AGENTS.md"] = form.agentsContent.trim();
+
     const created = await $fetch<{ ok: boolean; data: { id: string } }>("/api/employees", {
       method: "POST",
-      body: { ...form, code }
+      body: {
+        name: form.name,
+        code,
+        description: form.description,
+        systemPrompt: form.systemPrompt,
+        model: form.model || undefined,
+        skillNames: form.skillNames,
+        scheduleKind: form.scheduleKind,
+        cronExpr: form.cronExpr,
+        everyMs: form.everyMs,
+        workspaceFiles: Object.keys(workspaceFiles).length ? workspaceFiles : undefined
+      }
     });
     resetForm();
     showCreator.value = false;
@@ -91,7 +115,8 @@ function previousStep() { step.value = Math.max(step.value - 1, 0); }
 function resetForm() {
   step.value = 0;
   touched.name = false;
-  Object.assign(form, { name: "", code: "", description: "", systemPrompt: "", skillNames: [], scheduleKind: "cron", cronExpr: "0 18 * * *", everyMs: 1800000 });
+  showAdvanced.value = false;
+  Object.assign(form, { name: "", code: "", description: "", systemPrompt: "", model: "", heartbeatContent: "", userContent: "", bootContent: "", agentsContent: "", skillNames: [], scheduleKind: "cron", cronExpr: "0 18 * * *", everyMs: 1800000 });
 }
 function createEmployeeCode(name: string): string {
   const n = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -224,7 +249,7 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
 
               <!-- Form -->
               <form class="space-y-4" @submit.prevent="step === steps.length - 1 ? createEmployee() : nextStep()">
-                <!-- Step 0: Basic Info -->
+                <!-- Step 0: 基础信息 -->
                 <div v-if="step === 0" class="space-y-3">
                   <label class="block space-y-1.5">
                     <span class="text-sm font-medium">名称 <span class="text-destructive">*</span></span>
@@ -236,24 +261,81 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
                       :class="touched.name && !form.name.trim() && 'border-destructive/50 focus:border-destructive focus:ring-destructive/10'"
                       @blur="touched.name = true"
                     />
-                    <p v-if="touched.name && !form.name.trim()" class="text-xs text-destructive">请输入员工名称</p>
+                    <p v-if="touched.name && !form.name.trim()" class="text-xs text-destructive">请输入名称</p>
+                    <p class="text-[11px] text-muted-foreground">给这位员工起一个容易识别的名字</p>
                   </label>
                   <label class="block space-y-1.5">
-                    <span class="text-sm font-medium">系统编码<span class="ml-1 text-xs text-muted-foreground">可选</span></span>
+                    <span class="text-sm font-medium">编码<span class="ml-1 text-xs text-muted-foreground">可选</span></span>
                     <input v-model="form.code" placeholder="默认按名称自动生成" class="input-field" />
+                    <p class="text-[11px] text-muted-foreground">系统内唯一标识，留空则自动生成</p>
                   </label>
                   <label class="block space-y-1.5">
                     <span class="text-sm font-medium">职责描述</span>
-                    <textarea v-model="form.description" rows="3" placeholder="描述它负责哪些业务结果…" class="input-field" />
+                    <textarea v-model="form.description" rows="2" placeholder="描述它负责哪些业务结果…" class="input-field" />
+                    <p class="text-[11px] text-muted-foreground">帮助团队理解这位员工的核心职责</p>
                   </label>
                   <label class="block space-y-1.5">
-                    <span class="text-sm font-medium">系统提示词</span>
-                    <textarea v-model="form.systemPrompt" rows="4" placeholder="定义角色、人设、输出风格和边界…" class="input-field" />
+                    <span class="text-sm font-medium">角色设定</span>
+                    <textarea v-model="form.systemPrompt" rows="4" placeholder="定义角色人格、行为风格、输出边界和工作原则…" class="input-field" />
+                    <p class="text-[11px] text-muted-foreground">定义这位员工的性格特征、行为准则和工作方式</p>
                   </label>
                 </div>
 
-                <!-- Step 1: Skills -->
+                <!-- Step 1: 工作设定 -->
                 <div v-else-if="step === 1" class="space-y-3">
+                  <label class="block space-y-1.5">
+                    <span class="text-sm font-medium">使用模型</span>
+                    <input v-model="form.model" placeholder="留空使用系统默认模型" class="input-field" list="model-suggestions" />
+                    <datalist id="model-suggestions">
+                      <option value="openai/gpt-4.1" />
+                      <option value="openai/gpt-4.1-mini" />
+                      <option value="openai/gpt-4.1-nano" />
+                      <option value="openai/o3" />
+                      <option value="openai/o4-mini" />
+                      <option value="anthropic/claude-sonnet-4-20250514" />
+                      <option value="anthropic/claude-haiku-3.5" />
+                    </datalist>
+                    <p class="text-[11px] text-muted-foreground">指定该员工使用的 AI 模型，格式为 <code class="rounded bg-muted px-1 py-0.5 text-[10px]">provider/model</code></p>
+                  </label>
+
+                  <label class="block space-y-1.5">
+                    <span class="text-sm font-medium">服务对象</span>
+                    <textarea v-model="form.userContent" rows="3" placeholder="名称、称呼方式、时区、关注重点…" class="input-field" />
+                    <p class="text-[11px] text-muted-foreground">描述这位员工服务的用户或团队，帮助它更好地理解上下文</p>
+                  </label>
+
+                  <label class="block space-y-1.5">
+                    <span class="text-sm font-medium">心跳巡检内容</span>
+                    <textarea v-model="form.heartbeatContent" rows="3" placeholder="定期检查的事项，如监控指标、待办进度、数据同步状态…" class="input-field" />
+                    <p class="text-[11px] text-muted-foreground">心跳模式下，员工会按周期执行这些检查任务</p>
+                  </label>
+
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-1.5 rounded-lg px-1 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    @click="showAdvanced = !showAdvanced"
+                  >
+                    <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="showAdvanced && 'rotate-180'" />
+                    {{ showAdvanced ? '收起高级设定' : '展开高级设定' }}
+                  </button>
+
+                  <template v-if="showAdvanced">
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">启动任务</span>
+                      <textarea v-model="form.bootContent" rows="3" placeholder="员工启动时自动执行的指令，如发送问候、读取最新数据…" class="input-field" />
+                      <p class="text-[11px] text-muted-foreground">每次启动时首先执行的操作清单</p>
+                    </label>
+
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">操作规则</span>
+                      <textarea v-model="form.agentsContent" rows="4" placeholder="自定义工作规则：记忆管理、安全策略、沟通方式…" class="input-field" />
+                      <p class="text-[11px] text-muted-foreground">覆盖或补充默认的工作行为规范</p>
+                    </label>
+                  </template>
+                </div>
+
+                <!-- Step 2: 能力配置 -->
+                <div v-else-if="step === 2" class="space-y-3">
                   <div class="flex items-start gap-2 rounded-lg bg-primary/5 p-3 text-sm text-primary">
                     <Sparkles class="mt-0.5 h-4 w-4 shrink-0" :stroke-width="1.8" />
                     <p>优先选择已启用且职责明确的技能。</p>
@@ -275,7 +357,7 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
                   </label>
                 </div>
 
-                <!-- Step 2: Automation -->
+                <!-- Step 3: 自动任务 -->
                 <div v-else class="space-y-3">
                   <div class="grid gap-2">
                     <label

@@ -99,12 +99,13 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const runRepo = new RunRecordRepository(db);
       const skillInstallationRepo = new SkillInstallationRepository(db);
       const skillInstallService = new SkillInstallService(skillInstallationRepo, gateway);
-      const employeeRunService = new EmployeeRunService(employeeRepo, runRepo, gateway);
+      const employeeRunService = new EmployeeRunService(employeeRepo, employeeSkillRepo, runRepo, gateway);
       const automationService = new AutomationService(
         employeeScheduleRepo,
         employeeRepo,
         employeeRunService,
-        new CronService(join(homeDir, "cron", "jobs.json"))
+        new CronService(join(homeDir, "cron", "jobs.json")),
+        gateway
       );
       await automationService.start();
       return {

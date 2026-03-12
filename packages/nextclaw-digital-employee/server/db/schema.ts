@@ -14,6 +14,7 @@ export type EmployeeRecord = {
   code: string;
   description: string;
   system_prompt: string;
+  model: string;
   status: string;
   created_at: string;
   updated_at: string;

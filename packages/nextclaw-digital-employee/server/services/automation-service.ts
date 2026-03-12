@@ -5,6 +5,8 @@ import {
   type EmployeeScheduleView
 } from "../repositories/employee-schedule-repository";
 import { EmployeeRunService } from "./employee-run-service";
+import type { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
+import { resolveEmployeeWorkspace } from "../engine/employee-workspace";
 
 export class AutomationService {
   private started = false;
@@ -13,7 +15,8 @@ export class AutomationService {
     private readonly scheduleRepo: EmployeeScheduleRepository,
     private readonly employeeRepo: EmployeeRepository,
     private readonly runService: EmployeeRunService,
-    private readonly cronService: CronService
+    private readonly cronService: CronService,
+    private readonly gateway: NextclawEngineGateway
   ) {}
 
   async start(): Promise<void> {
@@ -57,19 +60,34 @@ export class AutomationService {
     if (existing?.runtimeJobId) {
       this.cronService.removeJob(existing.runtimeJobId);
     }
+    this.gateway.stopHeartbeat(input.employeeId);
+
     const scheduleMessage = `${employee.systemPrompt}\n\n请按你的职责执行一次定时任务，并输出当前最新摘要。`;
+
+    if (input.scheduleKind === "heartbeat") {
+      const intervalS = Math.max(1, Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000));
+      const workspace = resolveEmployeeWorkspace(this.gateway.homeDir, employee.code);
+      this.gateway.startHeartbeat(input.employeeId, workspace, intervalS);
+      return this.scheduleRepo.upsert({
+        employeeId: input.employeeId,
+        scheduleKind: "heartbeat",
+        cronExpr: null,
+        everyMs: input.everyMs ?? null,
+        heartbeatEnabled: true,
+        heartbeatIntervalS: intervalS,
+        enabled: input.enabled ?? true,
+        runtimeJobId: null,
+        scheduleMessage,
+        nextRunAt: null
+      });
+    }
+
     const job = this.cronService.addJob({
       name: `employee:${input.employeeId}`,
       schedule:
         input.scheduleKind === "cron"
           ? { kind: "cron", expr: input.cronExpr ?? "0 9 * * *" }
-          : {
-              kind: "every",
-              everyMs:
-                input.scheduleKind === "heartbeat"
-                  ? Math.max(1_000, Math.trunc((input.everyMs ?? 30 * 60 * 1000)))
-                  : Math.max(1_000, Math.trunc(input.everyMs ?? 60_000))
-            },
+          : { kind: "every", everyMs: Math.max(1_000, Math.trunc(input.everyMs ?? 60_000)) },
       message: scheduleMessage,
       deliver: false
     });
@@ -78,8 +96,8 @@ export class AutomationService {
       scheduleKind: input.scheduleKind,
       cronExpr: input.cronExpr ?? null,
       everyMs: input.everyMs ?? null,
-      heartbeatEnabled: input.scheduleKind === "heartbeat",
-      heartbeatIntervalS: input.scheduleKind === "heartbeat" ? Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000) : null,
+      heartbeatEnabled: false,
+      heartbeatIntervalS: null,
       enabled: input.enabled ?? true,
       runtimeJobId: job.id,
       scheduleMessage,

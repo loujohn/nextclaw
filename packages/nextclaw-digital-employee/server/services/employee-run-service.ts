@@ -1,6 +1,8 @@
 import { EmployeeRepository } from "../repositories/employee-repository";
+import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
+import { ensureEmployeeWorkspace, syncEmployeeSkills } from "../engine/employee-workspace";
 import { buildChatResultCards, type ChatMessageView, type ChatResultCardView } from "../../shared/ui-models";
 
 export type EmployeeTurnResult = {
@@ -15,6 +17,7 @@ export type EmployeeTurnResult = {
 export class EmployeeRunService {
   constructor(
     private readonly employeeRepo: EmployeeRepository,
+    private readonly employeeSkillRepo: EmployeeSkillRepository,
     private readonly runRepo: RunRecordRepository,
     private readonly gateway: NextclawEngineGateway
   ) {}
@@ -30,6 +33,24 @@ export class EmployeeRunService {
       throw new Error(`Employee not found: ${params.employeeId}`);
     }
 
+    const employeeSkills = await this.employeeSkillRepo.listByEmployeeId(employee.id);
+    const skillNames = employeeSkills.filter((s) => s.enabled).map((s) => s.skillName);
+
+    const workspace = ensureEmployeeWorkspace(
+      this.gateway.homeDir,
+      {
+        code: employee.code,
+        name: employee.name,
+        description: employee.description,
+        systemPrompt: employee.systemPrompt
+      },
+      this.gateway.workspaceDir
+    );
+
+    if (skillNames.length > 0) {
+      syncEmployeeSkills(this.gateway.homeDir, employee.code, skillNames, this.gateway.workspaceDir);
+    }
+
     const run = await this.runRepo.create({
       employeeId: employee.id,
       triggerType: params.triggerType,
@@ -40,7 +61,10 @@ export class EmployeeRunService {
       const result = await this.gateway.runEmployeeTurn({
         employeeId: employee.id,
         agentId: employee.code,
-        message: `${employee.systemPrompt}\n\n${params.message}`
+        workspace,
+        message: params.message,
+        model: employee.model || undefined,
+        requestedSkills: skillNames.length > 0 ? skillNames : undefined
       });
       const messages = this.gateway.getSessionHistory(result.sessionKey);
       const resultCards = buildChatResultCards(result.reply);

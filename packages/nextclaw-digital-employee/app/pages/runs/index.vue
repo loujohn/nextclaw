@@ -141,7 +141,7 @@ const badgeClass: Record<string, string> = {
           <div class="relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-card ring-2 ring-card"
             :class="run.tone === 'amber' && 'animate-pulse'"
           >
-            <span class="h-2.5 w-2.5 rounded-full" :class="(toneConfig[run.tone] ?? toneConfig.slate).dot" />
+            <span class="h-2.5 w-2.5 rounded-full" :class="toneConfig[run.tone]?.dot ?? 'bg-muted-foreground'" />
           </div>
 
           <div class="min-w-0 flex-1">

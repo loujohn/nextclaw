@@ -7,6 +7,7 @@ export type CreateEmployeeInput = {
   code: string;
   description: string;
   systemPrompt: string;
+  model?: string;
 };
 
 export type EmployeeView = {
@@ -15,6 +16,7 @@ export type EmployeeView = {
   code: string;
   description: string;
   systemPrompt: string;
+  model: string;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -27,6 +29,7 @@ function toEmployeeView(record: EmployeeRecord): EmployeeView {
     code: record.code,
     description: record.description,
     systemPrompt: record.system_prompt,
+    model: record.model || "",
     status: record.status,
     createdAt: record.created_at,
     updatedAt: record.updated_at
@@ -44,6 +47,7 @@ export class EmployeeRepository {
       code: input.code.trim(),
       description: input.description.trim(),
       system_prompt: input.systemPrompt.trim(),
+      model: input.model?.trim() ?? "",
       status: "active",
       created_at: now,
       updated_at: now

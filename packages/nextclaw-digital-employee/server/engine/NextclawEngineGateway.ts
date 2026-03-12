@@ -15,7 +15,8 @@ import {
   type Config,
   type ExtensionRegistry,
   type SkillInfo,
-  type SessionEvent
+  type SessionEvent,
+  HeartbeatService
 } from "@nextclaw/core";
 import { builtinProviderIds } from "@nextclaw/runtime";
 import { loadOpenClawPlugins, type PluginRegistry } from "@nextclaw/openclaw-compat";
@@ -45,6 +46,9 @@ export type RunEmployeeTurnParams = {
   agentId?: string;
   sessionKey?: string;
   message: string;
+  workspace?: string;
+  model?: string;
+  requestedSkills?: string[];
 };
 
 export type RunEmployeeTurnResult = {
@@ -110,6 +114,7 @@ function findSkillDirectory(rootDir: string): string {
   throw new Error(`No SKILL.md found under ${rootDir}`);
 }
 
+// Synced from packages/nextclaw/src/cli/commands/plugins.ts (toExtensionRegistry)
 function toExtensionRegistry(config: Config, workspaceDir: string): ExtensionRegistry {
   const pluginRegistry: PluginRegistry = loadOpenClawPlugins({
     config,
@@ -196,6 +201,7 @@ function createConfig(workspaceDir: string, override?: Record<string, unknown>):
   return ConfigSchema.parse(merged);
 }
 
+// Synced from packages/nextclaw/src/cli/workspace.ts (WorkspaceManager.resolveBuiltinSkillsDir + seedBuiltinSkills)
 function resolveBuiltinSkillsDir(): string | null {
   const candidates = [
     resolve(process.cwd(), "packages/nextclaw-core/dist/skills"),
@@ -225,6 +231,7 @@ function seedBuiltinSkills(workspaceDir: string): void {
   }
 }
 
+// Synced from packages/nextclaw/src/cli/missing-provider.ts
 class MissingProvider extends LLMProvider {
   constructor(private readonly defaultModel: string) {
     super(null, null);
@@ -244,7 +251,11 @@ export class NextclawEngineGateway {
   readonly workspaceDir: string;
   private readonly config: Config;
   private readonly sessionManager: SessionManager;
-  private readonly engine: AgentEngine;
+  private readonly providerManager: ProviderManager;
+  private readonly extensionRegistry: ExtensionRegistry;
+  private readonly engines: Map<string, AgentEngine> = new Map();
+  private readonly fallbackEngine: AgentEngine;
+  private readonly heartbeats: Map<string, HeartbeatService> = new Map();
 
   constructor(options: NextclawEngineGatewayOptions) {
     this.homeDir = resolve(options.homeDir);
@@ -255,20 +266,24 @@ export class NextclawEngineGateway {
     seedBuiltinSkills(this.workspaceDir);
     this.config = createConfig(this.workspaceDir, options.defaultConfig);
     this.sessionManager = new SessionManager(this.workspaceDir);
-    const providerManager = new ProviderManager({
+    this.providerManager = new ProviderManager({
       defaultProvider: new MissingProvider(this.config.agents.defaults.model),
       config: this.config
     });
-    const extensionRegistry = options.extensionRegistry ?? toExtensionRegistry(this.config, this.workspaceDir);
+    this.extensionRegistry = options.extensionRegistry ?? toExtensionRegistry(this.config, this.workspaceDir);
+    this.fallbackEngine = this.createEngineForWorkspace("main", this.workspaceDir);
+  }
+
+  private createEngineForWorkspace(agentId: string, workspace: string, model?: string): AgentEngine {
     const engineContext: AgentEngineFactoryContext = {
-      agentId: "main",
-      workspace: this.workspaceDir,
-      model: this.config.agents.defaults.model,
+      agentId,
+      workspace,
+      model: model || this.config.agents.defaults.model,
       maxIterations: this.config.agents.defaults.maxToolIterations,
       contextTokens: this.config.agents.defaults.contextTokens,
       engineConfig: this.config.agents.defaults.engineConfig,
       bus: new MessageBus(),
-      providerManager,
+      providerManager: this.providerManager,
       sessionManager: this.sessionManager,
       cronService: null,
       restrictToWorkspace: this.config.tools.restrictToWorkspace,
@@ -276,9 +291,19 @@ export class NextclawEngineGateway {
       execConfig: this.config.tools.exec,
       contextConfig: this.config.agents.context,
       config: this.config,
-      extensionRegistry
+      extensionRegistry: this.extensionRegistry
     };
-    this.engine = this.createEngine(engineContext);
+    return this.createEngine(engineContext);
+  }
+
+  getOrCreateEngine(agentId: string, workspace?: string, model?: string): AgentEngine {
+    if (!workspace) return this.fallbackEngine;
+    const cacheKey = model ? `${agentId}:${model}` : agentId;
+    const cached = this.engines.get(cacheKey);
+    if (cached) return cached;
+    const engine = this.createEngineForWorkspace(agentId, workspace, model);
+    this.engines.set(cacheKey, engine);
+    return engine;
   }
 
   private createEngine(context: AgentEngineFactoryContext): AgentEngine {
@@ -293,6 +318,48 @@ export class NextclawEngineGateway {
       return customFactory(context);
     }
     throw new Error(`engine "${engineKind}" is not available`);
+  }
+
+  startHeartbeat(
+    agentId: string,
+    workspace: string,
+    intervalS?: number,
+    onTurnResult?: (reply: string) => void
+  ): void {
+    this.stopHeartbeat(agentId);
+    const hb = new HeartbeatService(
+      workspace,
+      async (prompt) => {
+        const result = await this.runEmployeeTurn({
+          employeeId: agentId,
+          agentId,
+          workspace,
+          message: prompt,
+          sessionKey: `employee:${agentId}:heartbeat`
+        });
+        onTurnResult?.(result.reply);
+        return result.reply;
+      },
+      intervalS,
+      true
+    );
+    this.heartbeats.set(agentId, hb);
+    void hb.start();
+  }
+
+  stopHeartbeat(agentId: string): void {
+    const existing = this.heartbeats.get(agentId);
+    if (existing) {
+      existing.stop();
+      this.heartbeats.delete(agentId);
+    }
+  }
+
+  stopAllHeartbeats(): void {
+    for (const [id, hb] of this.heartbeats) {
+      hb.stop();
+      this.heartbeats.delete(id);
+    }
   }
 
   async listAvailableSkills(): Promise<AvailableSkillView[]> {
@@ -339,14 +406,19 @@ export class NextclawEngineGateway {
   async runEmployeeTurn(params: RunEmployeeTurnParams): Promise<RunEmployeeTurnResult> {
     const events: SessionEvent[] = [];
     const sessionKey = params.sessionKey ?? `employee:${params.employeeId}:ui:direct:web`;
+    const agentId = params.agentId ?? "main";
+    const engine = this.getOrCreateEngine(agentId, params.workspace, params.model);
     const session = this.sessionManager.getOrCreate(sessionKey);
     const historyCountBefore = this.sessionManager.getHistory(session).length;
-    const reply = await this.engine.processDirect({
+    const metadata: Record<string, unknown> = {};
+    if (agentId) metadata.agentId = agentId;
+    if (params.requestedSkills?.length) metadata.requested_skills = params.requestedSkills;
+    const reply = await engine.processDirect({
       content: params.message,
       sessionKey,
       channel: "ui",
       chatId: params.employeeId,
-      metadata: params.agentId ? { agentId: params.agentId } : undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       onSessionEvent: (event) => {
         events.push(event);
       }

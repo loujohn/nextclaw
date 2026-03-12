@@ -32,6 +32,7 @@ async function createEmployeesTable(db: Knex): Promise<void> {
     table.string("code").notNullable().unique();
     table.text("description").notNullable().defaultTo("");
     table.text("system_prompt").notNullable().defaultTo("");
+    table.string("model").defaultTo("");
     table.string("status").notNullable().defaultTo("active");
     table.timestamp("created_at").notNullable();
     table.timestamp("updated_at").notNullable();
@@ -144,6 +145,15 @@ async function createRunEventsTable(db: Knex): Promise<void> {
   });
 }
 
+async function migrateEmployeesAddModel(db: Knex): Promise<void> {
+  const hasColumn = await db.schema.hasColumn(PLATFORM_TABLES.employees, "model");
+  if (!hasColumn) {
+    await db.schema.alterTable(PLATFORM_TABLES.employees, (table) => {
+      table.string("model").defaultTo("");
+    });
+  }
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createEmployeesTable(db);
   await createEmployeeSkillsTable(db);
@@ -152,4 +162,5 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createIntegrationConnectionsTable(db);
   await createRunRecordsTable(db);
   await createRunEventsTable(db);
+  await migrateEmployeesAddModel(db);
 }
