@@ -10,6 +10,13 @@ export type CreateEmployeeInput = {
   model?: string;
 };
 
+export type UpdateEmployeeInput = {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model?: string;
+};
+
 export type EmployeeView = {
   id: string;
   name: string;
@@ -64,5 +71,28 @@ export class EmployeeRepository {
   async list(): Promise<EmployeeView[]> {
     const rows = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).orderBy("created_at", "desc");
     return rows.map(toEmployeeView);
+  }
+
+  async updateById(id: string, input: UpdateEmployeeInput): Promise<EmployeeView | null> {
+    const updatedAt = new Date().toISOString();
+    const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
+      .where({ id })
+      .update({
+        name: input.name.trim(),
+        description: input.description.trim(),
+        system_prompt: input.systemPrompt.trim(),
+        model: input.model?.trim() ?? "",
+        updated_at: updatedAt
+      });
+    if (!affected) {
+      return null;
+    }
+    const record = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id }).first();
+    return record ? toEmployeeView(record) : null;
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id }).delete();
+    return affected > 0;
   }
 }

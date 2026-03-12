@@ -1,6 +1,6 @@
 // Synced approach from packages/nextclaw/src/cli/workspace.ts (WorkspaceManager.createWorkspaceTemplates)
 // Keep consistent with upstream template seeding logic.
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { APP_NAME } from "@nextclaw/core";
 
@@ -140,4 +140,9 @@ export function syncEmployeeSkills(
       cpSync(src, dest, { recursive: true });
     }
   }
+}
+
+export function removeEmployeeWorkspace(homeDir: string, employeeCode: string): void {
+  const wsDir = resolveEmployeeWorkspace(homeDir, employeeCode);
+  rmSync(wsDir, { recursive: true, force: true });
 }

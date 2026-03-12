@@ -112,4 +112,13 @@ export class AutomationService {
     }
     return this.cronService.runJob(schedule.runtimeJobId, true);
   }
+
+  async clearSchedule(employeeId: string): Promise<void> {
+    const existing = await this.scheduleRepo.getByEmployeeId(employeeId);
+    if (existing?.runtimeJobId) {
+      this.cronService.removeJob(existing.runtimeJobId);
+    }
+    this.gateway.stopHeartbeat(employeeId);
+    await this.scheduleRepo.deleteByEmployeeId(employeeId);
+  }
 }
