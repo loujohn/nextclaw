@@ -1,4 +1,4 @@
-import { CronService } from "@nextclaw/core";
+import { CronService, HeartbeatService } from "@nextclaw/core";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import {
   EmployeeScheduleRepository,
@@ -10,6 +10,7 @@ import { resolveEmployeeWorkspace } from "../engine/employee-workspace";
 
 export class AutomationService {
   private started = false;
+  private readonly heartbeats: Map<string, HeartbeatService> = new Map();
 
   constructor(
     private readonly scheduleRepo: EmployeeScheduleRepository,
@@ -42,7 +43,52 @@ export class AutomationService {
       return result.reply;
     };
     await this.cronService.start();
+    await this.restartHeartbeatSchedules();
     this.started = true;
+  }
+
+  private async restartHeartbeatSchedules(): Promise<void> {
+    const schedules = await this.scheduleRepo.listActiveByKind("heartbeat");
+    for (const schedule of schedules) {
+      const employee = await this.employeeRepo.getById(schedule.employeeId);
+      if (!employee || !schedule.heartbeatEnabled) {
+        continue;
+      }
+      const intervalS = schedule.heartbeatIntervalS ?? undefined;
+      this.startHeartbeatForEmployee(schedule.employeeId, employee.code, intervalS);
+    }
+  }
+
+  private startHeartbeatForEmployee(employeeId: string, employeeCode: string, intervalS?: number): void {
+    const existing = this.heartbeats.get(employeeId);
+    if (existing) {
+      existing.stop();
+    }
+    const workspace = resolveEmployeeWorkspace(this.gateway.homeDir, employeeCode);
+    const hb = new HeartbeatService(
+      workspace,
+      async (prompt) => {
+        const result = await this.runService.runEmployeeTurn({
+          employeeId,
+          message: prompt,
+          triggerType: "scheduled",
+          triggerSource: "heartbeat"
+        });
+        return result.reply;
+      },
+      intervalS,
+      true
+    );
+    this.heartbeats.set(employeeId, hb);
+    void hb.start();
+  }
+
+  private stopHeartbeatForEmployee(employeeId: string): void {
+    const existing = this.heartbeats.get(employeeId);
+    if (existing) {
+      existing.stop();
+      this.heartbeats.delete(employeeId);
+    }
   }
 
   async upsertSchedule(input: {
@@ -60,14 +106,13 @@ export class AutomationService {
     if (existing?.runtimeJobId) {
       this.cronService.removeJob(existing.runtimeJobId);
     }
-    this.gateway.stopHeartbeat(input.employeeId);
+    this.stopHeartbeatForEmployee(input.employeeId);
 
     const scheduleMessage = `${employee.systemPrompt}\n\n请按你的职责执行一次定时任务，并输出当前最新摘要。`;
 
     if (input.scheduleKind === "heartbeat") {
       const intervalS = Math.max(1, Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000));
-      const workspace = resolveEmployeeWorkspace(this.gateway.homeDir, employee.code);
-      this.gateway.startHeartbeat(input.employeeId, workspace, intervalS);
+      this.startHeartbeatForEmployee(input.employeeId, employee.code, intervalS);
       return this.scheduleRepo.upsert({
         employeeId: input.employeeId,
         scheduleKind: "heartbeat",
@@ -118,7 +163,7 @@ export class AutomationService {
     if (existing?.runtimeJobId) {
       this.cronService.removeJob(existing.runtimeJobId);
     }
-    this.gateway.stopHeartbeat(employeeId);
+    this.stopHeartbeatForEmployee(employeeId);
     await this.scheduleRepo.deleteByEmployeeId(employeeId);
   }
 }
