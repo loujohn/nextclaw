@@ -64,7 +64,8 @@ async function sendMessage(input = draft.value) {
   if (!input.trim()) return;
   sending.value = true;
   errorMessage.value = "";
-  messages.value = [...messages.value, { role: "user", content: input }];
+  const optimisticMsg: ChatMessageView = { role: "user", content: input };
+  messages.value = [...messages.value, optimisticMsg];
   draft.value = "";
   if (textareaEl.value) textareaEl.value.style.height = "auto";
   try {
@@ -85,7 +86,7 @@ async function sendMessage(input = draft.value) {
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
-    messages.value = messages.value.filter(m => !(m.role === "user" && m.content === input));
+    messages.value = messages.value.filter(m => m !== optimisticMsg);
   } finally {
     sending.value = false;
   }
