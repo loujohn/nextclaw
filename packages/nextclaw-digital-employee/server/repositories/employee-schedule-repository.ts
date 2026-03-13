@@ -106,4 +106,15 @@ export class EmployeeScheduleRepository {
       .first();
     return record ? toView(record) : null;
   }
+
+  async listActiveByKind(scheduleKind: string): Promise<EmployeeScheduleView[]> {
+    const records = await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules)
+      .where({ schedule_kind: scheduleKind, enabled: 1 })
+      .select();
+    return records.map(toView);
+  }
+
+  async deleteByEmployeeId(employeeId: string): Promise<void> {
+    await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules).where({ employee_id: employeeId }).delete();
+  }
 }

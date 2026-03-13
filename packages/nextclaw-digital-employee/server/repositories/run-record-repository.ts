@@ -127,4 +127,8 @@ export class RunRecordRepository {
       events: events.map(toRunEventView)
     };
   }
+
+  async deleteByEmployeeId(employeeId: string): Promise<void> {
+    await this.db<RunRecord>(PLATFORM_TABLES.runRecords).where({ employee_id: employeeId }).delete();
+  }
 }

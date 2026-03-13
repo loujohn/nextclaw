@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
+import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { SkillInstallationRepository } from "../server/repositories/skill-installation-repository";
 import { RunRecordRepository } from "../server/repositories/run-record-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
@@ -91,6 +92,7 @@ describe("employee run service", () => {
     await ensurePlatformDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
     const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "项目管理助手",
@@ -129,7 +131,7 @@ describe("employee run service", () => {
         }
       }
     });
-    const service = new EmployeeRunService(employeeRepo, runRepo, gateway);
+    const service = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
 
     const result = await service.runEmployeeTurn({
       employeeId: employee.id,
