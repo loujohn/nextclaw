@@ -59,6 +59,10 @@ export class EmployeeRepository {
       created_at: now,
       updated_at: now
     };
+    const existing = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ code: record.code }).first();
+    if (existing) {
+      throw Object.assign(new Error(`员工 code '${record.code}' 已存在`), { statusCode: 409 });
+    }
     await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).insert(record);
     return toEmployeeView(record);
   }
