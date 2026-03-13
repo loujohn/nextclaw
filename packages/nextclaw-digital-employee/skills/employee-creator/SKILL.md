@@ -10,31 +10,52 @@ metadata:
 
 当用户需要创建新的数字员工时，使用 `exec` 工具调用平台 API 完成创建。
 
+## 平台地址
+
+平台 API 地址从环境变量读取：
+
+```bash
+PLATFORM_URL="${NEXTCLAW_PLATFORM_URL:-http://localhost:3000}"
+```
+
+后续所有 curl 命令均使用 `$PLATFORM_URL` 替代硬编码地址。
+
 ## 操作步骤
 
 ### 第一步：查询可用技能
 
 ```bash
-curl -s http://localhost:3000/api/skills
+PLATFORM_URL="${NEXTCLAW_PLATFORM_URL:-http://localhost:3000}"
+curl -s "$PLATFORM_URL/api/skills"
 ```
 
 ### 第二步：查询已有员工（避免 code 重复）
 
 ```bash
-curl -s http://localhost:3000/api/employees
+PLATFORM_URL="${NEXTCLAW_PLATFORM_URL:-http://localhost:3000}"
+curl -s "$PLATFORM_URL/api/employees"
 ```
 
-### 第三步：创建员工
+### 第三步：查询平台默认模型（可选）
 
 ```bash
-curl -s -X POST http://localhost:3000/api/employees \
+PLATFORM_URL="${NEXTCLAW_PLATFORM_URL:-http://localhost:3000}"
+curl -s "$PLATFORM_URL/api/config/model"
+```
+
+如果接口不可用，**省略 `model` 字段**即可，平台会自动使用环境变量 `NEXTCLAW_MODEL` 配置的默认模型。
+
+### 第四步：创建员工
+
+```bash
+PLATFORM_URL="${NEXTCLAW_PLATFORM_URL:-http://localhost:3000}"
+curl -s -X POST "$PLATFORM_URL/api/employees" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "员工名称",
     "code": "unique-code",
     "description": "角色描述",
     "systemPrompt": "系统提示词",
-    "model": "openai/gpt-5",
     "skillNames": ["skill-a"],
     "workspaceFiles": {
       "USER.md": "用户上下文..."
@@ -51,7 +72,7 @@ curl -s -X POST http://localhost:3000/api/employees \
 **可选**
 - `description` — 角色描述
 - `systemPrompt` — 系统指令，定义员工行为
-- `model` — 模型（如 `openai/gpt-5`、`anthropic/claude-sonnet-4-6`）
+- `model` — 模型（如 `anthropic/claude-sonnet-4-6`、`dashscope/qwen-plus`）。**省略此字段则使用平台默认模型**，推荐省略以避免模型不匹配错误
 - `skillNames` — 要绑定的技能名称数组（技能必须已安装）
 - `scheduleKind` — `"cron"` | `"every"` | `"heartbeat"`
 - `cronExpr` — Cron 表达式（scheduleKind 为 cron 时）
