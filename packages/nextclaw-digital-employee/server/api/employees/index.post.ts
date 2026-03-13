@@ -28,13 +28,21 @@ export default defineEventHandler(async (event) => {
     });
   }
   const ctx = await getPlatformContext();
-  const employee = await ctx.employeeRepo.create({
-    name,
-    code,
-    description: body?.description ?? "",
-    systemPrompt: body?.systemPrompt ?? "",
-    model: body?.model ?? ""
-  });
+  let employee;
+  try {
+    employee = await ctx.employeeRepo.create({
+      name,
+      code,
+      description: body?.description ?? "",
+      systemPrompt: body?.systemPrompt ?? "",
+      model: body?.model ?? ""
+    });
+  } catch (err: any) {
+    throw createError({
+      statusCode: err?.statusCode ?? 500,
+      statusMessage: err?.message ?? "创建员工失败"
+    });
+  }
 
   ensureEmployeeWorkspace(ctx.gateway.homeDir, {
     code: employee.code,
