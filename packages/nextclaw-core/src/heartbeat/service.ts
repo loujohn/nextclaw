@@ -47,7 +47,7 @@ export class HeartbeatService {
   }
 
   async start(): Promise<void> {
-    if (!this.enabled) {
+    if (!this.enabled || this.running) {
       return;
     }
     this.running = true;
@@ -73,9 +73,14 @@ export class HeartbeatService {
       return;
     }
     if (this.onHeartbeat) {
-      const response = await this.onHeartbeat(HEARTBEAT_PROMPT);
-      if (response.toUpperCase().replace(/_/g, "").includes(HEARTBEAT_OK_TOKEN.replace(/_/g, ""))) {
-        return;
+      try {
+        const response = await this.onHeartbeat(HEARTBEAT_PROMPT);
+        if (response.toUpperCase().replace(/_/g, "").includes(HEARTBEAT_OK_TOKEN.replace(/_/g, ""))) {
+          return;
+        }
+      } catch {
+        // onHeartbeat rejection is surfaced via the caller's error handling;
+        // do not let it crash the interval timer
       }
     }
   }

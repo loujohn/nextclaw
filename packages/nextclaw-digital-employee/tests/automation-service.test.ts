@@ -237,6 +237,7 @@ describe("automation service - every (interval) schedule", () => {
 // ── heartbeat 类型 ────────────────────────────────────────────────────────────
 describe("automation service - heartbeat schedule", () => {
   it("creates a heartbeat schedule and restores it after simulated restart", async () => {
+    vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-heartbeat-");
     const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
     await ensurePlatformDatabase(db);
@@ -266,13 +267,16 @@ describe("automation service - heartbeat schedule", () => {
     const schedule = await automation1.upsertSchedule({
       employeeId: employee.id,
       scheduleKind: "heartbeat",
-      everyMs: 60000, // 1 分钟
+      everyMs: 5_000, // 5 秒，配合 fake timer 快速触发
       enabled: true
     });
 
     expect(schedule.scheduleKind).toBe("heartbeat");
     expect(schedule.heartbeatEnabled).toBe(true);
-    expect(schedule.heartbeatIntervalS).toBe(60);
+    expect(schedule.heartbeatIntervalS).toBe(5);
+
+    // 模拟干净关闭（同时停止 cron + 所有 heartbeat timer）
+    automation1.stop();
 
     // 模拟重启：gateway 和 automation 均为全新实例
     const gateway2 = buildTestGateway(homeDir, "心跳恢复正常");
@@ -281,13 +285,22 @@ describe("automation service - heartbeat schedule", () => {
     const automation2 = new AutomationService(scheduleRepo, employeeRepo, runService2, cron2, gateway2);
     await automation2.start();
 
-    // 验证 heartbeat 已被重新注册到 gateway2
+    // DB 记录应已被 automation2 恢复
     const restoredSchedules = await scheduleRepo.listActiveByKind("heartbeat");
     expect(restoredSchedules).toHaveLength(1);
     expect(restoredSchedules[0]?.employeeId).toBe(employee.id);
 
-    cron1.stop();
-    cron2.stop();
+    // 推进 fake timer，触发 automation2 的心跳 tick
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    // 核心验证：automation2 的 HeartbeatService 确实重新注册并触发，产生了新的运行记录
+    const runs = await runRepo.listByEmployeeId(employee.id);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+    // gateway2 的 reply 是 "心跳恢复正常"，证明是新实例的 timer 触发，而不是重启前已有的 DB 记录
+    expect(runs.some((r) => r.summary?.includes("心跳恢复正常"))).toBe(true);
+
+    automation2.stop();
+    vi.useRealTimers();
     await db.destroy();
   });
 
@@ -332,6 +345,149 @@ describe("automation service - heartbeat schedule", () => {
     expect(runs.length).toBeGreaterThanOrEqual(1);
     expect(runs[0]?.summary).toContain("心跳 tick 触发成功");
     cron.stop();
+    vi.useRealTimers();
+    await db.destroy();
+  });
+
+  it("runNow works for a heartbeat schedule", async () => {
+    const homeDir = createTempDir("nextclaw-automation-heartbeat-runnow-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "手动触发心跳",
+      code: "manual-heartbeat",
+      description: "手动触发心跳测试",
+      systemPrompt: "你是心跳测试员"
+    });
+
+    const wsDir = join(homeDir, "agents", employee.code);
+    mkdirSync(wsDir, { recursive: true });
+    writeFileSync(join(wsDir, "HEARTBEAT.md"), "# HEARTBEAT\n\n立即执行检查", "utf-8");
+
+    const gateway = buildTestGateway(homeDir, "手动心跳已触发");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+    await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "heartbeat",
+      everyMs: 60_000,
+      enabled: true
+    });
+
+    // runNow 必须对 heartbeat 类型返回 true 并产生 run record
+    const triggered = await automation.runNow(employee.id);
+    expect(triggered).toBe(true);
+
+    const runs = await runRepo.listByEmployeeId(employee.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.summary).toContain("手动心跳已触发");
+    automation.stop();
+    await db.destroy();
+  });
+
+  it("disabled heartbeat schedule does not start the timer", async () => {
+    vi.useFakeTimers();
+    const homeDir = createTempDir("nextclaw-automation-heartbeat-disabled-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "禁用心跳",
+      code: "disabled-heartbeat",
+      description: "禁用状态心跳不应触发",
+      systemPrompt: "你是禁用心跳测试员"
+    });
+
+    const wsDir = join(homeDir, "agents", employee.code);
+    mkdirSync(wsDir, { recursive: true });
+    writeFileSync(join(wsDir, "HEARTBEAT.md"), "# HEARTBEAT\n\n执行检查", "utf-8");
+
+    const gateway = buildTestGateway(homeDir, "不应出现的触发");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    // 以 enabled: false 创建 heartbeat 调度
+    await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "heartbeat",
+      everyMs: 5_000,
+      enabled: false
+    });
+
+    // 推进时间，不应有任何触发
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const runs = await runRepo.listByEmployeeId(employee.id);
+    expect(runs).toHaveLength(0);
+
+    automation.stop();
+    vi.useRealTimers();
+    await db.destroy();
+  });
+
+  it("HeartbeatService.start() is idempotent - double call does not create duplicate timers", async () => {
+    vi.useFakeTimers();
+    const homeDir = createTempDir("nextclaw-automation-heartbeat-idem-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "幂等心跳",
+      code: "idempotent-heartbeat",
+      description: "幂等启动测试",
+      systemPrompt: "你是幂等测试员"
+    });
+
+    const wsDir = join(homeDir, "agents", employee.code);
+    mkdirSync(wsDir, { recursive: true });
+    writeFileSync(join(wsDir, "HEARTBEAT.md"), "# HEARTBEAT\n\n执行检查", "utf-8");
+
+    const gateway = buildTestGateway(homeDir, "幂等触发");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    // 连续两次 upsert 相同 heartbeat（第二次内部会调用 existing.stop() + new start()，
+    // 但若 HeartbeatService.start() 不幂等，旧 timer 可能未被清理就再次 start）
+    await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "heartbeat",
+      everyMs: 5_000,
+      enabled: true
+    });
+    // 第二次 upsert：stopHeartbeatForEmployee + startHeartbeatForEmployee
+    await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "heartbeat",
+      everyMs: 5_000,
+      enabled: true
+    });
+
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    const runs = await runRepo.listByEmployeeId(employee.id);
+    // 如果有 timer 泄漏，run 数量可能 > 1；正确实现应恰好为 1
+    expect(runs).toHaveLength(1);
+
+    automation.stop();
     vi.useRealTimers();
     await db.destroy();
   });

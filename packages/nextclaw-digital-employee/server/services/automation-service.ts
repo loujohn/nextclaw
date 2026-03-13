@@ -112,7 +112,9 @@ export class AutomationService {
 
     if (input.scheduleKind === "heartbeat") {
       const intervalS = Math.max(1, Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000));
-      this.startHeartbeatForEmployee(input.employeeId, employee.code, intervalS);
+      if (input.enabled !== false) {
+        this.startHeartbeatForEmployee(input.employeeId, employee.code, intervalS);
+      }
       return this.scheduleRepo.upsert({
         employeeId: input.employeeId,
         scheduleKind: "heartbeat",
@@ -152,10 +154,29 @@ export class AutomationService {
 
   async runNow(employeeId: string): Promise<boolean> {
     const schedule = await this.scheduleRepo.getByEmployeeId(employeeId);
-    if (!schedule?.runtimeJobId) {
+    if (!schedule) {
+      return false;
+    }
+    if (schedule.scheduleKind === "heartbeat") {
+      const hb = this.heartbeats.get(employeeId);
+      if (!hb) {
+        return false;
+      }
+      await hb.triggerNow();
+      return true;
+    }
+    if (!schedule.runtimeJobId) {
       return false;
     }
     return this.cronService.runJob(schedule.runtimeJobId, true);
+  }
+
+  stop(): void {
+    for (const employeeId of [...this.heartbeats.keys()]) {
+      this.stopHeartbeatForEmployee(employeeId);
+    }
+    this.cronService.stop();
+    this.started = false;
   }
 
   async clearSchedule(employeeId: string): Promise<void> {
