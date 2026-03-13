@@ -18,7 +18,7 @@ const { data: history, refresh: refreshHistory } = await useFetch<{ ok: boolean;
   `/api/employees/${employeeId.value}/chat/history`,
   { key: computed(() => `employee-chat-history:${employeeId.value}`) }
 );
-const { data: runs, refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
+const { refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
   key: computed(() => `employee-runs:${employeeId.value}`)
 });
 
@@ -64,6 +64,9 @@ async function sendMessage(input = draft.value) {
   if (!input.trim()) return;
   sending.value = true;
   errorMessage.value = "";
+  messages.value = [...messages.value, { role: "user", content: input }];
+  draft.value = "";
+  if (textareaEl.value) textareaEl.value.style.height = "auto";
   try {
     const result = await $fetch<{
       ok: boolean;
@@ -79,11 +82,10 @@ async function sendMessage(input = draft.value) {
     resultCards.value = result.data.resultCards;
     lastRunId.value = result.data.runId;
     messages.value = result.data.messages.filter(m => m.content?.trim());
-    draft.value = "";
-    if (textareaEl.value) textareaEl.value.style.height = "auto";
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
+    messages.value = messages.value.filter(m => !(m.role === "user" && m.content === input));
   } finally {
     sending.value = false;
   }
@@ -308,21 +310,6 @@ async function copyToClipboard(text: string) {
         </div>
       </div>
 
-      <!-- Recent Runs -->
-      <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <span class="section-label mb-3 block">最近运行</span>
-        <div class="space-y-2">
-          <NuxtLink
-            v-for="run in (runs as any)?.data ?? []"
-            :key="run.id"
-            :to="`/runs?runId=${run.id}`"
-            class="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-all duration-150 hover:bg-muted/50"
-          >
-            <span class="font-medium">{{ run.status }}</span>
-            <span class="truncate text-xs text-muted-foreground">{{ run.summary || run.startedAt }}</span>
-          </NuxtLink>
-        </div>
-      </div>
     </aside>
   </div>
 </template>

@@ -5,6 +5,7 @@ import { CircleCheck, CircleAlert, Clock } from "lucide-vue-next";
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 const { data } = await useEmployeeDetail(employeeId);
+const isOverviewTab = computed(() => route.path === `/employees/${employeeId.value}`);
 
 const tabs = computed(() => [
   { label: "概览", to: `/employees/${employeeId.value}` },
@@ -65,9 +66,9 @@ const tabs = computed(() => [
     </nav>
 
     <!-- Content -->
-    <div class="grid gap-6 lg:grid-cols-[280px_1fr]">
+    <div :class="isOverviewTab ? 'grid gap-6 lg:grid-cols-[280px_1fr]' : ''">
       <!-- Sidebar -->
-      <aside class="space-y-4 lg:sticky lg:top-6 lg:self-start">
+      <aside v-if="isOverviewTab" class="space-y-4 lg:sticky lg:top-6 lg:self-start">
         <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
           <span class="section-label">状态检查</span>
           <h3 class="mt-0.5 mb-3 text-sm font-semibold">工作台状态</h3>
