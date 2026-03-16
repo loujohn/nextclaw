@@ -121,7 +121,7 @@ curl -s -X POST "$PLATFORM_URL/api/employees" \
 
 用户说"不需要"或"跳过"时，对应文件不传入 `workspaceFiles`。
 
-
+## 请求字段说明
 
 **必填**
 - `name` — 显示名称
