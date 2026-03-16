@@ -41,9 +41,10 @@ curl -s "$PLATFORM_URL/api/employees"
 ```bash
 PLATFORM_URL="${NEXTCLAW_PLATFORM_URL:-http://localhost:3000}"
 curl -s "$PLATFORM_URL/api/config/model"
+# 返回：{"ok":true,"data":{"model":"dashscope/qwen-plus"}}
 ```
 
-如果接口不可用，**省略 `model` 字段**即可，平台会自动使用环境变量 `NEXTCLAW_MODEL` 配置的默认模型。
+如需指定模型，使用返回的 `data.model` 值；**省略 `model` 字段**则平台自动使用默认模型，推荐省略。
 
 ### 第四步：创建员工
 
