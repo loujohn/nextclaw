@@ -21,6 +21,22 @@ export function createPlatformKnex(databasePath: string): Knex {
   });
 }
 
+async function createDepartmentsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.departments);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.departments, (table) => {
+    table.string("id").primary();
+    table.string("name").notNullable();
+    table.text("description").notNullable().defaultTo("");
+    table.string("parent_id").nullable().references("id").inTable(PLATFORM_TABLES.departments).onDelete("SET NULL");
+    table.integer("sort_order").notNullable().defaultTo(0);
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
 async function createEmployeesTable(db: Knex): Promise<void> {
   const exists = await db.schema.hasTable(PLATFORM_TABLES.employees);
   if (exists) {
@@ -154,7 +170,17 @@ async function migrateEmployeesAddModel(db: Knex): Promise<void> {
   }
 }
 
+async function migrateEmployeesAddDepartmentId(db: Knex): Promise<void> {
+  const hasColumn = await db.schema.hasColumn(PLATFORM_TABLES.employees, "department_id");
+  if (!hasColumn) {
+    await db.schema.alterTable(PLATFORM_TABLES.employees, (table) => {
+      table.string("department_id").nullable().defaultTo(null);
+    });
+  }
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
+  await createDepartmentsTable(db);
   await createEmployeesTable(db);
   await createEmployeeSkillsTable(db);
   await createEmployeeSchedulesTable(db);
@@ -163,4 +189,5 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createRunRecordsTable(db);
   await createRunEventsTable(db);
   await migrateEmployeesAddModel(db);
+  await migrateEmployeesAddDepartmentId(db);
 }

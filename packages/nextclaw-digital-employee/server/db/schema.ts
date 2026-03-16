@@ -1,4 +1,5 @@
 export const PLATFORM_TABLES = {
+  departments: "departments",
   employees: "employees",
   employeeSkills: "employee_skills",
   employeeSchedules: "employee_schedules",
@@ -8,6 +9,16 @@ export const PLATFORM_TABLES = {
   runEvents: "run_events"
 } as const;
 
+export type DepartmentRecord = {
+  id: string;
+  name: string;
+  description: string;
+  parent_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type EmployeeRecord = {
   id: string;
   name: string;
@@ -16,6 +27,7 @@ export type EmployeeRecord = {
   system_prompt: string;
   model: string;
   status: string;
+  department_id: string | null;
   created_at: string;
   updated_at: string;
 };

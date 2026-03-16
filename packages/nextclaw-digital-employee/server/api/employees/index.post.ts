@@ -10,6 +10,7 @@ type CreateEmployeeBody = {
   description?: string;
   systemPrompt?: string;
   model?: string;
+  departmentId?: string | null;
   skillNames?: string[];
   scheduleKind?: "cron" | "every" | "heartbeat";
   cronExpr?: string;
@@ -35,7 +36,8 @@ export default defineEventHandler(async (event) => {
       code,
       description: body?.description ?? "",
       systemPrompt: body?.systemPrompt ?? "",
-      model: body?.model ?? ""
+      model: body?.model ?? "",
+      departmentId: body?.departmentId ?? null
     });
   } catch (err: any) {
     throw createError({

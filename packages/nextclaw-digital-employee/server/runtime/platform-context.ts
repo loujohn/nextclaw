@@ -8,6 +8,7 @@ import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { AutomationService } from "../services/automation-service";
 import { EmployeeRunService } from "../services/employee-run-service";
 import { SkillInstallService } from "../services/skill-install-service";
+import { DepartmentRepository } from "../repositories/department-repository";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeScheduleRepository } from "../repositories/employee-schedule-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
@@ -18,6 +19,7 @@ type PlatformContext = {
   homeDir: string;
   workspaceDir: string;
   db: Knex;
+  departmentRepo: DepartmentRepository;
   employeeRepo: EmployeeRepository;
   employeeSkillRepo: EmployeeSkillRepository;
   employeeScheduleRepo: EmployeeScheduleRepository;
@@ -93,6 +95,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         workspaceDir,
         defaultConfig: buildPlatformGatewayConfig()
       });
+      const departmentRepo = new DepartmentRepository(db);
       const employeeRepo = new EmployeeRepository(db);
       const employeeSkillRepo = new EmployeeSkillRepository(db);
       const employeeScheduleRepo = new EmployeeScheduleRepository(db);
@@ -112,6 +115,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         homeDir,
         workspaceDir,
         db,
+        departmentRepo,
         employeeRepo,
         employeeSkillRepo,
         employeeScheduleRepo,

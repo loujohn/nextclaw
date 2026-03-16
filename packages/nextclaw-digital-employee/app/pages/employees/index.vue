@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
 import { Search, RotateCcw, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle } from "lucide-vue-next";
+import type { DepartmentView } from "~/components/DepartmentTree.vue";
 
 type EmployeeResponse = {
   id: string;
@@ -10,6 +11,7 @@ type EmployeeResponse = {
   systemPrompt: string;
   model: string;
   status: string;
+  departmentId: string | null;
   skills: Array<{ skillName: string }>;
   schedule?: { scheduleKind: string; nextRunAt?: string | null } | null;
   latestRun?: { status: string; summary: string } | null;
@@ -51,6 +53,9 @@ type EmployeeDetailPayload = {
 
 const { data: employeePayload, refresh } = await useFetch<EmployeeListPayload>("/api/employees");
 const { data: skillPayload } = await useFetch<SkillListPayload>("/api/skills");
+const { data: departmentPayload, refresh: refreshDepts } = await useFetch<{ ok: boolean; data: DepartmentView[] }>("/api/departments");
+
+const selectedDeptId = ref<string | null>(null);
 
 // Toast 通知系统
 type Toast = { id: number; type: "success" | "error"; message: string };
@@ -80,6 +85,7 @@ const form = reactive({
   description: "",
   systemPrompt: "",
   model: "",
+  departmentId: null as string | null,
   heartbeatContent: "",
   userContent: "",
   bootContent: "",
@@ -106,6 +112,7 @@ const editForm = reactive({
   description: "",
   systemPrompt: "",
   model: "",
+  departmentId: null as string | null,
   heartbeatContent: "",
   userContent: "",
   bootContent: "",
@@ -122,6 +129,7 @@ const viewForm = reactive({
   description: "",
   systemPrompt: "",
   model: "",
+  departmentId: null as string | null,
   heartbeatContent: "",
   userContent: "",
   bootContent: "",
@@ -134,10 +142,55 @@ const viewForm = reactive({
 
 const employees = computed(() => employeePayload.value?.data ?? []);
 const skills = computed(() => skillPayload.value?.data.filter((s) => s.enabled || s.statusLabel !== "已停用") ?? []);
+const departments = computed(() => departmentPayload.value?.data ?? []);
+
+// 每个部门的员工数量
+const deptEmployeeCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {};
+  for (const emp of employees.value) {
+    if (emp.departmentId) {
+      counts[emp.departmentId] = (counts[emp.departmentId] ?? 0) + 1;
+    }
+  }
+  return counts;
+});
+
+// 树形部门选项（层级缩进）
+const deptTreeOptions = computed(() => {
+  const depts = departments.value;
+  const map = new Map<string, { dept: DepartmentView; children: string[] }>();
+  for (const d of depts) map.set(d.id, { dept: d, children: [] });
+  const roots: string[] = [];
+  for (const d of depts) {
+    if (d.parentId && map.has(d.parentId)) map.get(d.parentId)!.children.push(d.id);
+    else roots.push(d.id);
+  }
+  const result: Array<{ id: string; label: string }> = [];
+  function walk(id: string, depth: number) {
+    const node = map.get(id);
+    if (!node) return;
+    const prefix = depth === 0 ? "" : "—".repeat(depth) + " ";
+    result.push({ id, label: prefix + node.dept.name });
+    for (const childId of node.children) walk(childId, depth + 1);
+  }
+  for (const rootId of roots) walk(rootId, 0);
+  return result;
+});
+
+// 选中部门的显示名称
+const selectedDeptName = computed(() => {
+  if (!selectedDeptId.value) return "全部员工";
+  return departments.value.find(d => d.id === selectedDeptId.value)?.name ?? "全部员工";
+});
+
 const filteredEmployees = computed(() => {
+  let list = employees.value;
+  if (selectedDeptId.value !== null) {
+    list = list.filter(e => e.departmentId === selectedDeptId.value);
+  }
   const kw = query.value.trim().toLowerCase();
-  if (!kw) return employees.value;
-  return employees.value.filter((e) =>
+  if (!kw) return list;
+  return list.filter((e) =>
     [e.name, e.code, e.description].filter(Boolean).some((t) => t.toLowerCase().includes(kw))
   );
 });
@@ -168,6 +221,7 @@ async function createEmployee() {
         description: form.description,
         systemPrompt: form.systemPrompt,
         model: form.model || undefined,
+        departmentId: form.departmentId || null,
         skillNames: form.skillNames,
         scheduleKind: form.scheduleKind,
         cronExpr: form.cronExpr,
@@ -217,6 +271,7 @@ async function openEditor(employee: EmployeeResponse) {
       description: detail.data.description,
       systemPrompt: detail.data.systemPrompt,
       model: detail.data.model || "",
+      departmentId: (employee as EmployeeResponse).departmentId ?? null,
       heartbeatContent,
       userContent,
       bootContent,
@@ -246,6 +301,7 @@ async function saveEmployeeEdit() {
         description: editForm.description,
         systemPrompt: editForm.systemPrompt,
         model: editForm.model || undefined,
+        departmentId: editForm.departmentId,
         skillNames: editForm.skillNames,
         scheduleKind: editForm.scheduleKind,
         cronExpr: editForm.cronExpr,
@@ -339,7 +395,7 @@ function resetForm() {
   step.value = 0;
   touched.name = false;
   showAdvanced.value = false;
-  Object.assign(form, { name: "", code: "", description: "", systemPrompt: "", model: "", heartbeatContent: "", userContent: "", bootContent: "", agentsContent: "", skillNames: [], scheduleKind: "cron", cronExpr: "0 18 * * *", everyMs: 1800000 });
+  Object.assign(form, { name: "", code: "", description: "", systemPrompt: "", model: "", departmentId: selectedDeptId.value, heartbeatContent: "", userContent: "", bootContent: "", agentsContent: "", skillNames: [], scheduleKind: "cron", cronExpr: "0 18 * * *", everyMs: 1800000 });
 }
 function createEmployeeCode(name: string): string {
   const n = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -355,13 +411,32 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8">
+  <div class="flex h-full min-h-screen">
+    <!-- 左侧组织树面板 -->
+    <aside class="hidden lg:flex w-[220px] shrink-0 flex-col border-r border-border bg-card/50">
+      <DepartmentTree
+        :departments="departments"
+        :employee-counts="deptEmployeeCounts"
+        :selected-id="selectedDeptId"
+        :total-count="employees.length"
+        @select="selectedDeptId = $event"
+        @refresh="async () => { await refreshDepts(); await refresh(); }"
+      />
+    </aside>
+
+    <!-- 右侧主内容区 -->
+    <div class="flex-1 min-w-0 space-y-6 p-6 lg:p-8">
     <!-- Header -->
     <div class="hero-section flex items-start justify-between gap-4">
       <div class="relative space-y-1">
         <span class="section-label">员工管理</span>
-        <h1 class="font-display text-3xl font-bold tracking-tight">员工中心</h1>
-        <p class="text-sm text-muted-foreground">创建、管理和运营你的数字员工团队。</p>
+        <h1 class="font-display text-3xl font-bold tracking-tight">
+          {{ selectedDeptName }}
+          <span v-if="selectedDeptId" class="ml-2 text-lg font-normal text-muted-foreground">· 员工中心</span>
+        </h1>
+        <p class="text-sm text-muted-foreground">
+          {{ selectedDeptId ? `查看「${selectedDeptName}」部门下的员工` : '创建、管理和运营你的数字员工团队。' }}
+        </p>
       </div>
       <button class="btn-primary shrink-0" @click="showCreator = true; resetForm()">
         <Plus class="h-4 w-4" :stroke-width="2" />
@@ -409,8 +484,17 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
           <span v-if="emp.skills.length === 0" class="text-[11px] text-muted-foreground">无技能</span>
         </div>
 
-        <div class="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
-          <span>{{ formatScheduleSummary(emp.schedule ?? null) }}</span>
+        <div class="mt-2 flex flex-wrap items-center gap-1.5">
+          <span v-if="emp.departmentId" class="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M3 10h18M3 3h18M12 3v18M6 3v6M18 3v6M6 15v6M18 15v6" /></svg>
+            {{ departments.find(d => d.id === emp.departmentId)?.name || '未知部门' }}
+          </span>
+          <span class="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground">
+            {{ formatScheduleSummary(emp.schedule ?? null) }}
+          </span>
+        </div>
+
+        <div class="mt-3 flex items-center justify-end border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
           <div class="flex items-center gap-0.5">
             <button
               class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
@@ -512,6 +596,14 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
                     />
                     <p v-if="touched.name && !form.name.trim()" class="text-xs text-destructive">请输入名称</p>
                     <p class="text-[11px] text-muted-foreground">给这位员工起一个容易识别的名字</p>
+                  </label>
+                  <label class="block space-y-1.5">
+                    <span class="text-sm font-medium">所属部门</span>
+                    <select v-model="form.departmentId" class="input-field">
+                      <option :value="null">— 不设置部门 —</option>
+                      <option v-for="opt in deptTreeOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+                    </select>
+                    <p class="text-[11px] text-muted-foreground">将员工归入某个组织部门</p>
                   </label>
                   <label class="block space-y-1.5">
                     <span class="text-sm font-medium">编码<span class="ml-1 text-xs text-muted-foreground">可选</span></span>
@@ -704,6 +796,14 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
                     <label class="block space-y-1.5">
                       <span class="text-sm font-medium">名称 <span class="text-destructive">*</span></span>
                       <input v-model="editForm.name" required class="input-field" placeholder="例如：项目管理助手" />
+                    </label>
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">所属部门</span>
+                      <select v-model="editForm.departmentId" class="input-field">
+                        <option :value="null">— 不设置部门 —</option>
+                        <option v-for="opt in deptTreeOptions" :key="`edit-dept-${opt.id}`" :value="opt.id">{{ opt.label }}</option>
+                      </select>
+                      <p class="text-[11px] text-muted-foreground">将员工归入某个组织部门</p>
                     </label>
                     <label class="block space-y-1.5">
                       <span class="text-sm font-medium">职责描述</span>
@@ -995,5 +1095,6 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
         </div>
       </Transition>
     </Teleport>
+  </div>
   </div>
 </template>
