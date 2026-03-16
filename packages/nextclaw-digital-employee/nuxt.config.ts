@@ -30,7 +30,13 @@ export default defineNuxtConfig({
       options: {
         target: "es2022"
       }
-    }
+    },
+    serverAssets: [
+      {
+        baseName: "skills",
+        dir: "./skills"
+      }
+    ]
   },
   typescript: {
     strict: true,
