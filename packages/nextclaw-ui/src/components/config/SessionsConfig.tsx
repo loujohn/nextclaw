@@ -97,7 +97,8 @@ function SessionListItem({ session, channel, runStatus, isSelected, onSelect }: 
 
 function SessionMessageBubble({ message }: { message: SessionMessageView }) {
   const isUser = message.role.toLowerCase() === 'user';
-  const content = extractMessageText(message.content).trim();
+  const raw = extractMessageText(message.content).trim();
+  const content = raw === 'HEARTBEAT_OK' ? t('heartbeatOk') : raw;
 
   return (
     <div className={cn("flex w-full mb-6", isUser ? "justify-end" : "justify-start")}>

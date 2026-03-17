@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatRunStatusLabel, formatDateTime } from "~~/shared/ui-models";
+import { formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
 import { renderMarkdown } from "~/lib/utils";
 import { Sparkles, X } from "lucide-vue-next";
 
@@ -67,7 +67,7 @@ function closeDetail() {
         </div>
         <div
           class="run-detail-md mt-1.5 max-h-24 overflow-y-auto text-sm text-muted-foreground"
-          v-html="renderMarkdown(run.summary || '\u7b49\u5f85\u7ed3\u679c\u6458\u8981')"
+          v-html="renderMarkdown(translateRunText(run.summary) || '等待结果摘要')"
         />
       </button>
     </div>

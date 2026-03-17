@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatScheduleSummary, formatRunStatusLabel } from "~~/shared/ui-models";
+import { formatScheduleSummary, formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
 import { renderMarkdown } from "~/lib/utils";
 import { MessageSquare } from "lucide-vue-next";
 
@@ -90,7 +90,7 @@ async function saveSchedule() {
             class="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2.5 text-sm transition-colors hover:bg-muted/50"
           >
             <span class="shrink-0 whitespace-nowrap font-medium">{{ formatRunStatusLabel(run.status) }}</span>
-            <span class="min-w-0 truncate text-xs text-muted-foreground">{{ run.summary || run.startedAt }}</span>
+            <span class="min-w-0 truncate text-xs text-muted-foreground">{{ translateRunText(run.summary) || formatDateTime(run.startedAt) }}</span>
           </NuxtLink>
           <p v-if="data.data.recentRuns.length === 0" class="text-sm text-muted-foreground">
             还没有最近结果，可以先进入聊天页手动触发一次。

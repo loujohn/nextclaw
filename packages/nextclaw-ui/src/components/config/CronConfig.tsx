@@ -17,6 +17,23 @@ function formatDate(value?: string | null): string {
   return formatDateTime(value ?? undefined);
 }
 
+function translateLastStatus(status?: string | null): string {
+  if (status === 'ok') return t('cronLastStatusOk');
+  if (status === 'error') return t('cronLastStatusError');
+  if (status === 'skipped') return t('cronLastStatusSkipped');
+  return '-';
+}
+
+function translateLastError(error?: string | null): string {
+  if (!error) return '';
+  const lower = error.toLowerCase();
+  if (lower.includes('connection error')) return t('cronErrorConnection');
+  if (lower.includes('network error') || lower.includes('networkerror')) return t('cronErrorNetwork');
+  if (lower.includes('timeout') || lower.includes('timed out')) return t('cronErrorTimeout');
+  if (lower.includes('fetch failed') || lower.includes('failed to fetch')) return t('cronErrorFetchFailed');
+  return error;
+}
+
 function formatDateFromMs(value?: number | null): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return '-';
@@ -230,11 +247,11 @@ export function CronConfig() {
                       </div>
                       <div>
                         <span className="font-medium text-gray-700">{t('cronLastStatus')}:</span>{' '}
-                        {job.state.lastStatus ?? '-'}
+                        {translateLastStatus(job.state.lastStatus)}
                       </div>
                       {job.state.lastError && (
                         <div className="text-[11px] text-red-500 break-words">
-                          {job.state.lastError}
+                          {translateLastError(job.state.lastError)}
                         </div>
                       )}
                     </div>
