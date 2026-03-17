@@ -162,6 +162,70 @@
     @apply font-semibold;
   }
 
+  .result-card-md .code-block {
+    @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
+  }
+
+  .result-card-md .code-block .code-lang {
+    @apply absolute right-2 top-1.5 text-[10px] font-medium uppercase text-muted-foreground;
+  }
+
+  .result-card-md .code-block pre {
+    @apply overflow-x-auto p-3;
+  }
+
+  .result-card-md .code-block code {
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  .result-card-md .inline-code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  }
+
+  .result-card-md .md-ul {
+    @apply my-1.5 space-y-1 pl-4;
+  }
+
+  .result-card-md .md-li {
+    @apply list-disc text-sm;
+  }
+
+  .result-card-md strong {
+    @apply font-semibold;
+  }
+
+  .run-detail-md .code-block {
+    @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
+  }
+
+  .run-detail-md .code-block .code-lang {
+    @apply absolute right-2 top-1.5 text-[10px] font-medium uppercase text-muted-foreground;
+  }
+
+  .run-detail-md .code-block pre {
+    @apply overflow-x-auto p-3;
+  }
+
+  .run-detail-md .code-block code {
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  .run-detail-md .inline-code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  }
+
+  .run-detail-md .md-ul {
+    @apply my-1.5 space-y-1 pl-4;
+  }
+
+  .run-detail-md .md-li {
+    @apply list-disc text-sm;
+  }
+
+  .run-detail-md strong {
+    @apply font-semibold;
+  }
+
   .typing-dots span {
     animation: typing-bounce 1.4s infinite ease-in-out;
   }

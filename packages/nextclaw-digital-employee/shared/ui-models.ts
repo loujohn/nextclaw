@@ -337,6 +337,10 @@ function formatRunStatus(status: string): { label: string; tone: RunListEntryVie
   return { label: "等待中", tone: "slate" };
 }
 
+export function formatRunStatusLabel(status: string): string {
+  return formatRunStatus(status).label;
+}
+
 export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
   const employeeNameMap = new Map(input.employees.map((employee) => [employee.id, employee.name]));
   return input.runs.map((run) => {

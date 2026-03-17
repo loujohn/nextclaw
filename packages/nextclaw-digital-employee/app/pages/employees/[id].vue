@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatScheduleSummary } from "~~/shared/ui-models";
+import { formatScheduleSummary, formatRunStatusLabel } from "~~/shared/ui-models";
 import { CircleCheck, CircleAlert, Clock } from "lucide-vue-next";
 
 const route = useRoute();
@@ -45,7 +45,7 @@ const tabs = computed(() => [
         </div>
         <div class="space-y-1">
           <p class="text-[11px] uppercase tracking-wider text-muted-foreground">最近状态</p>
-          <p class="text-sm font-semibold">{{ data.data.recentRuns[0]?.status ?? "idle" }}</p>
+          <p class="text-sm font-semibold">{{ formatRunStatusLabel(data.data.recentRuns[0]?.status ?? "") || "空闲" }}</p>
         </div>
       </div>
     </header>
@@ -125,8 +125,8 @@ const tabs = computed(() => [
               :to="`/runs?runId=${run.id}`"
               class="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:bg-muted/50"
             >
-              <span class="font-medium">{{ run.status }}</span>
-              <span class="truncate text-xs text-muted-foreground">{{ run.summary || run.startedAt }}</span>
+              <span class="shrink-0 whitespace-nowrap font-medium">{{ formatRunStatusLabel(run.status) }}</span>
+              <span class="min-w-0 truncate text-xs text-muted-foreground">{{ run.summary || run.startedAt }}</span>
             </NuxtLink>
             <p v-if="data.data.recentRuns.length === 0" class="text-xs text-muted-foreground">还没有运行记录</p>
           </div>

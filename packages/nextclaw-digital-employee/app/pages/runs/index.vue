@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Sparkles, X, Play, CheckCircle2, AlertTriangle, Clock, ChevronRight } from "lucide-vue-next";
+import { renderMarkdown } from "~/lib/utils";
 
 type RunItem = {
   id: string;
@@ -152,8 +153,16 @@ const badgeClass: Record<string, string> = {
               </span>
             </div>
             <p class="mt-0.5 text-xs text-muted-foreground">{{ run.triggerLabel }} · {{ run.startedAtLabel }}</p>
-            <p v-if="run.highlight" class="mt-1.5 text-sm font-medium text-foreground/80">{{ run.highlight }}</p>
-            <p v-if="run.summary" class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{{ run.summary }}</p>
+            <div
+              v-if="run.highlight"
+              class="run-detail-md mt-1.5 max-h-16 overflow-y-auto text-sm font-medium text-foreground/80"
+              v-html="renderMarkdown(run.highlight)"
+            />
+            <div
+              v-if="run.summary"
+              class="run-detail-md mt-0.5 max-h-10 overflow-y-auto text-xs text-muted-foreground"
+              v-html="renderMarkdown(run.summary)"
+            />
           </div>
 
           <ChevronRight class="mt-1 h-4 w-4 shrink-0 text-muted-foreground/40" :stroke-width="1.8" />
@@ -208,7 +217,10 @@ const badgeClass: Record<string, string> = {
               <!-- Summary -->
               <div>
                 <span class="section-label">结果摘要</span>
-                <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{{ selectedRun.data.summary || "等待结果摘要" }}</p>
+                <div
+                  class="run-detail-md mt-2 max-h-64 overflow-y-auto rounded-lg bg-muted/20 px-4 py-3 text-sm leading-relaxed text-muted-foreground"
+                  v-html="renderMarkdown(selectedRun.data.summary || '等待结果摘要')"
+                />
               </div>
 
               <!-- Events -->
