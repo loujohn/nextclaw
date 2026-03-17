@@ -1276,6 +1276,9 @@ export class ServiceCommands {
       }
     });
     publishUiEvent = uiServer.publish;
+    cronService.onBatchComplete = (_executedJobs) => {
+      publishUiEvent?.({ type: "config.updated", payload: { path: "cron" } });
+    };
     const uiUrl = `http://${uiServer.host}:${uiServer.port}`;
     console.log(`✓ UI API: ${uiUrl}/api`);
     if (uiStaticDir) {

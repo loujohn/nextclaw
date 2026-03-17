@@ -393,3 +393,150 @@ describe("CronService - common behavior", () => {
     vi.useRealTimers();
   });
 });
+
+// ── nextRunAtMs 推进验证（回归：执行后 nextRunAtMs 应前进不应停留） ──────────────
+describe("CronService - nextRunAtMs advances after execution", () => {
+  it("cron expr: nextRunAtMs advances to next slot after timer fires (regression test)", async () => {
+    // Bug: after automatic execution the displayed "下次运行时间" was stale because
+    // nextRunAtMs was not advancing or the UI was never notified.
+    vi.useFakeTimers();
+    const baseTime = new Date("2026-01-01T11:00:00.000Z").getTime();
+    vi.setSystemTime(baseTime);
+
+    const homeDir = createTempDir("cron-next-advance-");
+    const svc = new CronService(join(homeDir, "jobs.json"), async () => "ok");
+    await svc.start();
+
+    // "每天11:00/11:20/11:40 UTC" — tz: "UTC" makes expression timezone-independent
+    const job = svc.addJob({
+      name: "every-20min-11am",
+      schedule: { kind: "cron", expr: "*/20 11 * * *", tz: "UTC" },
+      message: "tick"
+    });
+
+    // nextRunAtMs should be 11:20Z, NOT 11:00Z or null
+    const expectedFirst = new Date("2026-01-01T11:20:00.000Z").getTime();
+    expect(job.state.nextRunAtMs).toBe(expectedFirst);
+
+    // Advance past 11:20Z — job fires
+    await vi.advanceTimersByTimeAsync(21 * 60 * 1000); // 21 min
+
+    const afterFirstFire = svc.listJobs(true).find((j) => j.id === job.id);
+    // After firing at 11:20Z, next run must be 11:40Z (strictly greater than 11:20Z)
+    expect(afterFirstFire?.state.nextRunAtMs).not.toBeNull();
+    expect(afterFirstFire!.state.nextRunAtMs!).toBeGreaterThan(expectedFirst);
+    const expectedSecond = new Date("2026-01-01T11:40:00.000Z").getTime();
+    expect(afterFirstFire?.state.nextRunAtMs).toBe(expectedSecond);
+
+    // Advance past 11:40Z — job fires again
+    await vi.advanceTimersByTimeAsync(21 * 60 * 1000); // another 21 min
+
+    const afterSecondFire = svc.listJobs(true).find((j) => j.id === job.id);
+    // After 11:40Z fire, next run should be next-day 11:00Z (hour=11 only in UTC)
+    expect(afterSecondFire!.state.nextRunAtMs!).toBeGreaterThan(expectedSecond);
+
+    svc.stop();
+    vi.useRealTimers();
+  });
+
+  it("every mode: nextRunAtMs increments by interval after each automatic fire", async () => {
+    vi.useFakeTimers();
+    const baseTime = Date.now();
+
+    const homeDir = createTempDir("cron-every-advance-");
+    const svc = new CronService(join(homeDir, "jobs.json"), async () => "ok");
+    await svc.start();
+
+    const job = svc.addJob({
+      name: "every-5s",
+      schedule: { kind: "every", everyMs: 5_000 },
+      message: "tick"
+    });
+
+    const initialNextRun = job.state.nextRunAtMs!;
+    expect(initialNextRun).toBeGreaterThan(baseTime);
+
+    // Advance 6s — first fire
+    await vi.advanceTimersByTimeAsync(6_000);
+    const afterFirst = svc.listJobs(true).find((j) => j.id === job.id)!;
+    expect(afterFirst.state.nextRunAtMs!).toBeGreaterThan(initialNextRun);
+    expect(afterFirst.state.lastRunAtMs).not.toBeNull();
+
+    const afterFirstNextRun = afterFirst.state.nextRunAtMs!;
+
+    // Advance another 6s — second fire
+    await vi.advanceTimersByTimeAsync(6_000);
+    const afterSecond = svc.listJobs(true).find((j) => j.id === job.id)!;
+    expect(afterSecond.state.nextRunAtMs!).toBeGreaterThan(afterFirstNextRun);
+
+    svc.stop();
+    vi.useRealTimers();
+  });
+
+  it("onBatchComplete is called with the executed jobs (with updated state)", async () => {
+    vi.useFakeTimers();
+
+    const homeDir = createTempDir("cron-batch-complete-");
+    const svc = new CronService(join(homeDir, "jobs.json"), async () => "done");
+    await svc.start();
+
+    const job = svc.addJob({
+      name: "batch-test",
+      schedule: { kind: "every", everyMs: 3_000 },
+      message: "go"
+    });
+
+    const batchedIds: string[] = [];
+    const batchedNextRuns: (number | null | undefined)[] = [];
+    svc.onBatchComplete = (executedJobs) => {
+      for (const j of executedJobs) {
+        batchedIds.push(j.id);
+        batchedNextRuns.push(j.state.nextRunAtMs);
+      }
+    };
+
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    expect(batchedIds).toContain(job.id);
+    // nextRunAtMs in the callback should already be the NEXT scheduled time (not null)
+    const capturedNextRun = batchedNextRuns[batchedIds.indexOf(job.id)];
+    expect(capturedNextRun).not.toBeNull();
+    expect(capturedNextRun).toBeGreaterThan(Date.now() - 100);
+
+    svc.stop();
+    vi.useRealTimers();
+  });
+
+  it("nextRunAtMs persists to disk after automatic execution and reloads correctly", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-01-01T11:00:00.000Z").getTime();
+    vi.setSystemTime(now);
+
+    const homeDir = createTempDir("cron-persist-after-exec-");
+    const storePath = join(homeDir, "jobs.json");
+    const svc = new CronService(storePath, async () => "ok");
+    await svc.start();
+
+    svc.addJob({
+      name: "daily-11",
+      schedule: { kind: "cron", expr: "*/20 11 * * *", tz: "UTC" },
+      message: "daily"
+    });
+
+    // Advance past 11:20Z to trigger execution (fake time → 11:21Z)
+    await vi.advanceTimersByTimeAsync(21 * 60 * 1000);
+    svc.stop();
+
+    // Reload from disk while fake time is still at 11:21Z so recomputeNextRuns
+    // calculates the same 11:40Z — verifies both persistence and correct reload.
+    const svc2 = new CronService(storePath);
+    await svc2.start();
+    const jobs = svc2.listJobs();
+    expect(jobs).toHaveLength(1);
+    const expectedNextRun = new Date("2026-01-01T11:40:00.000Z").getTime();
+    expect(jobs[0]?.state.nextRunAtMs).toBe(expectedNextRun);
+    svc2.stop();
+
+    vi.useRealTimers();
+  });
+});

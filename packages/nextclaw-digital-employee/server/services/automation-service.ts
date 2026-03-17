@@ -1,4 +1,4 @@
-import { CronService, HeartbeatService } from "@nextclaw/core";
+import { CronService, HeartbeatService, type CronJob } from "@nextclaw/core";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import {
   EmployeeScheduleRepository,
@@ -41,6 +41,13 @@ export class AutomationService {
         triggerSource: "cron"
       });
       return result.reply;
+    };
+
+    // After each automatic execution batch, sync updated nextRunAtMs back to DB.
+    // This is the fix for "下次运行时间未更新": onJob fires before nextRunAtMs is
+    // recalculated, so we use onBatchComplete (called after all state is updated).
+    this.cronService.onBatchComplete = (executedJobs) => {
+      void this.syncNextRunForJobs(executedJobs);
     };
     await this.cronService.start();
     await this.restartHeartbeatSchedules();
@@ -186,5 +193,15 @@ export class AutomationService {
     }
     this.stopHeartbeatForEmployee(employeeId);
     await this.scheduleRepo.deleteByEmployeeId(employeeId);
+  }
+
+  /** Sync nextRunAtMs from CronService into scheduleRepo after automatic execution. */
+  private async syncNextRunForJobs(executedJobs: CronJob[]): Promise<void> {
+    for (const job of executedJobs) {
+      if (!job.name.startsWith("employee:")) continue;
+      const employeeId = job.name.slice("employee:".length);
+      const nextRunAt = job.state.nextRunAtMs ? new Date(job.state.nextRunAtMs).toISOString() : null;
+      await this.scheduleRepo.patchNextRunAt(employeeId, nextRunAt);
+    }
   }
 }

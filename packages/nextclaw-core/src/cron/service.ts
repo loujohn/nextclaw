@@ -40,6 +40,9 @@ export class CronService {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   onJob?: (job: CronJob) => Promise<string | null>;
+  /** Called after a batch of due jobs have executed and the store has been saved.
+   *  Receives the executed jobs with their UPDATED state (including new nextRunAtMs). */
+  onBatchComplete?: (executedJobs: CronJob[]) => void;
 
   constructor(private storePath: string, onJob?: (job: CronJob) => Promise<string | null>) {
     this.onJob = onJob;
@@ -154,6 +157,10 @@ export class CronService {
 
     this.saveStore();
     this.armTimer();
+
+    if (dueJobs.length > 0 && this.onBatchComplete) {
+      this.onBatchComplete(dueJobs);
+    }
   }
 
   private async executeJob(job: CronJob): Promise<void> {

@@ -19,6 +19,7 @@ export * from "./config/secrets.js";
 export * from "./config/schema.js";
 export * from "./config/schema.hints.js";
 export * from "./cron/service.js";
+export type { CronJob, CronSchedule, CronJobState } from "./cron/types.js";
 export * from "./extensions/tool-adapter.js";
 export * from "./extensions/types.js";
 export * from "./engine/types.js";

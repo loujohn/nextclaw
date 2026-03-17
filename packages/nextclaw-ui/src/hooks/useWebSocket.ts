@@ -59,6 +59,9 @@ export function useWebSocket(queryClient?: QueryClient) {
       if (queryClient) {
         queryClient.invalidateQueries({ queryKey: ['config'] });
       }
+      if (event.type === 'config.updated' && event.payload.path === 'cron') {
+        queryClient?.invalidateQueries({ queryKey: ['cron'] });
+      }
       if (event.type === 'config.updated' && event.payload.path.startsWith('session')) {
         invalidateSessionQueries();
       }

@@ -492,3 +492,163 @@ describe("automation service - heartbeat schedule", () => {
     await db.destroy();
   });
 });
+
+// ── nextRunAt 同步回归测试 ────────────────────────────────────────────────────
+// Bug: AutomationService 仅在 upsertSchedule 时向 DB 写入初始 nextRunAt，
+//      任务自动执行后 CronService 内存里的 nextRunAtMs 已更新，但 DB 里的
+//      nextRunAt 从未同步，导致 Dashboard/UI 始终显示初始值（"下次运行时间"不更新）。
+// Fix: onBatchComplete 回调在每次批量执行后调用 scheduleRepo.patchNextRunAt。
+describe("automation service - nextRunAt syncs to DB after automatic execution (regression)", () => {
+  it("scheduleRepo.nextRunAt updates after every-interval job fires automatically", async () => {
+    vi.useFakeTimers();
+    const homeDir = createTempDir("nextclaw-automation-nextrun-every-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "自动同步测试员",
+      code: "auto-sync-worker",
+      description: "每 5 秒触发，验证 nextRunAt 同步",
+      systemPrompt: "你是同步测试员"
+    });
+
+    const gateway = buildTestGateway(homeDir, "自动执行完毕");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    const schedule = await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "every",
+      everyMs: 5_000,
+      enabled: true
+    });
+
+    const initialNextRunAt = schedule.nextRunAt;
+    expect(initialNextRunAt).not.toBeNull();
+
+    // 让定时器自动触发
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    // 核心断言：DB 里的 nextRunAt 必须更新，不能仍是初始值
+    const updatedSchedule = await scheduleRepo.getByEmployeeId(employee.id);
+    expect(updatedSchedule?.nextRunAt).not.toBeNull();
+    expect(updatedSchedule?.nextRunAt).not.toBe(initialNextRunAt);
+    // 更新后的时间应大于初始 nextRunAt
+    expect(new Date(updatedSchedule!.nextRunAt!).getTime()).toBeGreaterThan(
+      new Date(initialNextRunAt!).getTime()
+    );
+
+    cron.stop();
+    vi.useRealTimers();
+    await db.destroy();
+  });
+
+  it("scheduleRepo.nextRunAt updates after cron-expr job fires automatically", async () => {
+    vi.useFakeTimers();
+    const baseTime = new Date("2026-01-01T00:00:00.000Z").getTime();
+    vi.setSystemTime(baseTime);
+
+    const homeDir = createTempDir("nextclaw-automation-nextrun-cron-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "每20分钟员工",
+      code: "every-20min-worker",
+      description: "验证 cron 表达式任务自动执行后 nextRunAt 更新",
+      systemPrompt: "你是每20分钟员工"
+    });
+
+    const gateway = buildTestGateway(homeDir, "cron 自动执行完毕");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    // 每 5 秒触发一次，使用 every 模式便于精确控制时序（不受本机时区影响）
+    const schedule = await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "every",
+      everyMs: 5_000,
+      enabled: true
+    });
+
+    const initialNextRunAt = schedule.nextRunAt;
+    expect(initialNextRunAt).not.toBeNull();
+    // initialNextRunAt 应为 5 秒后
+    expect(new Date(initialNextRunAt!).getTime()).toBe(baseTime + 5_000);
+
+    // 推进 6 秒，触发第一次自动执行
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    // 关键断言：scheduleRepo 里的 nextRunAt 必须更新，不应停留在初始值
+    const updatedSchedule = await scheduleRepo.getByEmployeeId(employee.id);
+    expect(updatedSchedule?.nextRunAt).not.toBeNull();
+    expect(updatedSchedule?.nextRunAt).not.toBe(initialNextRunAt);
+    // 更新后的时间应大于初始 nextRunAt
+    expect(new Date(updatedSchedule!.nextRunAt!).getTime()).toBeGreaterThan(
+      new Date(initialNextRunAt!).getTime()
+    );
+
+    // 确认任务确实执行了
+    const runs = await runRepo.listByEmployeeId(employee.id);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+
+    cron.stop();
+    vi.useRealTimers();
+    await db.destroy();
+  });
+
+  it("scheduleRepo.nextRunAt does NOT update on manual runNow (only auto-timer)", async () => {
+    const homeDir = createTempDir("nextclaw-automation-nextrun-manual-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "手动触发员工",
+      code: "manual-trigger-worker",
+      description: "手动触发不影响 nextRunAt",
+      systemPrompt: "你是手动触发测试员"
+    });
+
+    const gateway = buildTestGateway(homeDir, "手动执行完毕");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    const schedule = await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "every",
+      everyMs: 3_600_000, // 1 小时，确保测试期间不自动触发
+      enabled: true
+    });
+
+    const initialNextRunAt = schedule.nextRunAt;
+
+    // 手动立即执行
+    await automation.runNow(employee.id);
+
+    // 手动执行后 scheduleRepo.nextRunAt 不应改变
+    // （nextRunAt 保留到下次自动执行时间，而不是"刚才手动执行的时间"）
+    const afterManual = await scheduleRepo.getByEmployeeId(employee.id);
+    expect(afterManual?.nextRunAt).toBe(initialNextRunAt);
+
+    cron.stop();
+    await db.destroy();
+  });
+});
