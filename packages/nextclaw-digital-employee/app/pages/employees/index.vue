@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
-import { Search, RotateCcw, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle } from "lucide-vue-next";
+import { Search, RotateCcw, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench } from "lucide-vue-next";
 
 type EmployeeResponse = {
   id: string;
@@ -346,11 +346,11 @@ function createEmployeeCode(name: string): string {
   return n || `employee-${Date.now().toString().slice(-6)}`;
 }
 
-function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
-  if (e.latestRun?.status === "failed") return { label: "执行失败", cls: "bg-destructive/10 text-destructive" };
-  if (!e.health.hasSkills) return { label: "待绑定技能", cls: "bg-warning/10 text-warning-foreground" };
-  if (!e.health.hasSchedule) return { label: "待配置任务", cls: "bg-muted text-muted-foreground" };
-  return { label: "运行健康", cls: "bg-primary/10 text-primary" };
+function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastStatus: string } {
+  if (e.latestRun?.status === "failed") return { label: "执行失败", cls: "bg-destructive/10 text-destructive", lastStatus: "failed" };
+  if (!e.health.hasSkills) return { label: "待绑定技能", cls: "bg-warning/10 text-warning-foreground", lastStatus: "no-skills" };
+  if (!e.health.hasSchedule) return { label: "待配置任务", cls: "bg-muted text-muted-foreground", lastStatus: "no-schedule" };
+  return { label: "运行健康", cls: "bg-primary/10 text-primary", lastStatus: "healthy" };
 }
 </script>
 
@@ -387,58 +387,89 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string } {
       <div
         v-for="emp in filteredEmployees"
         :key="emp.id"
-        class="group flex flex-col rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:border-primary/20 hover:shadow-md hover:-translate-y-0.5"
+        class="group flex flex-col rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 overflow-hidden"
       >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h3 class="text-base font-semibold group-hover:text-primary transition-colors">{{ emp.name }}</h3>
-            <p class="text-xs text-muted-foreground font-mono">{{ emp.code }}</p>
+        <!-- 卡片头部：头像 + 姓名 + 状态 -->
+        <div class="flex items-center gap-3 border-b border-border/50 bg-primary/5 px-4 py-3">
+          <!-- 头像圆形 -->
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/20 ring-2 ring-primary/10">
+            <span class="text-base font-bold text-primary select-none">{{ emp.name.slice(0, 1) }}</span>
           </div>
-          <span class="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="resolveHealth(emp).cls">
+          <div class="min-w-0 flex-1">
+            <h3 class="truncate text-sm font-bold tracking-tight transition-colors group-hover:text-primary">{{ emp.name }}</h3>
+            <p class="font-mono text-[10px] text-muted-foreground/60 tracking-wider">NO. {{ emp.code }}</p>
+          </div>
+          <!-- 状态徽章 -->
+          <span
+            class="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+            :class="resolveHealth(emp).cls"
+          >
+            <span
+              class="h-1.5 w-1.5 rounded-full"
+              :class="resolveHealth(emp).lastStatus === 'failed' ? 'bg-destructive animate-pulse' : emp.health.hasSkills && emp.health.hasSchedule ? 'bg-primary animate-pulse' : 'bg-warning'"
+            />
             {{ resolveHealth(emp).label }}
           </span>
         </div>
 
-        <p class="mt-2 flex-1 line-clamp-2 text-sm text-muted-foreground">{{ emp.description || "未填写职责说明" }}</p>
+        <!-- 卡片主体 -->
+        <div class="flex flex-col flex-1 px-4 py-3">
+          <p class="flex-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{{ emp.description || "暂无职责说明" }}</p>
 
-        <div class="mt-3 flex flex-wrap gap-1.5">
-          <span v-for="skill in emp.skills.slice(0, 3)" :key="skill.skillName" class="rounded-full bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
-            {{ skill.skillName }}
-          </span>
-          <span v-if="emp.skills.length > 3" class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">+{{ emp.skills.length - 3 }}</span>
-          <span v-if="emp.skills.length === 0" class="text-[11px] text-muted-foreground">无技能</span>
-        </div>
+          <!-- 技能 -->
+          <div class="mt-3 flex flex-wrap gap-1">
+            <span
+              v-for="skill in emp.skills.slice(0, 3)"
+              :key="skill.skillName"
+              class="inline-flex items-center gap-0.5 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+            >
+              <Zap class="h-2.5 w-2.5" :stroke-width="2" />
+              {{ skill.skillName }}
+            </span>
+            <span v-if="emp.skills.length > 3" class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">+{{ emp.skills.length - 3 }}</span>
+            <span v-if="emp.skills.length === 0" class="inline-flex items-center gap-0.5 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <Wrench class="h-2.5 w-2.5" :stroke-width="1.8" />
+              待分配技能
+            </span>
+          </div>
 
-        <div class="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
-          <span>{{ formatScheduleSummary(emp.schedule ?? null) }}</span>
-          <div class="flex items-center gap-0.5">
-            <button
-              class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
-              title="查看"
-              @click.stop="openViewer(emp)"
-            >
-              <Eye class="h-3.5 w-3.5" :stroke-width="1.8" />
-            </button>
-            <button
-              class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
-              title="编辑"
-              @click.stop="openEditor(emp)"
-            >
-              <Pencil class="h-3.5 w-3.5" :stroke-width="1.8" />
-            </button>
-            <button
-              class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-              title="删除"
-              @click.stop="openDeleteConfirm(emp)"
-            >
-              <Trash2 class="h-3.5 w-3.5" :stroke-width="1.8" />
-            </button>
+          <!-- 排班 -->
+          <div class="mt-2.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Clock class="h-3 w-3 shrink-0" :stroke-width="1.8" />
+            <span class="truncate">{{ formatScheduleSummary(emp.schedule ?? null) }}</span>
+          </div>
+
+          <!-- 操作栏 -->
+          <div class="mt-3 flex items-center justify-between border-t border-border/50 pt-3">
+            <div class="flex items-center gap-0.5">
+              <button
+                class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+                title="查看"
+                @click.stop="openViewer(emp)"
+              >
+                <Eye class="h-3.5 w-3.5" :stroke-width="1.8" />
+              </button>
+              <button
+                class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+                title="编辑"
+                @click.stop="openEditor(emp)"
+              >
+                <Pencil class="h-3.5 w-3.5" :stroke-width="1.8" />
+              </button>
+              <button
+                class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                title="删除"
+                @click.stop="openDeleteConfirm(emp)"
+              >
+                <Trash2 class="h-3.5 w-3.5" :stroke-width="1.8" />
+              </button>
+            </div>
             <NuxtLink
               :to="`/employees/${emp.id}`"
-              class="ml-1 inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-primary transition-colors hover:bg-primary/5"
+              class="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-sm"
             >
-              进入
-              <ExternalLink class="h-3 w-3" :stroke-width="1.8" />
+              进入工作台
+              <ExternalLink class="h-3 w-3" :stroke-width="2" />
             </NuxtLink>
           </div>
         </div>
