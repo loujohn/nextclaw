@@ -236,7 +236,7 @@ function onCardAction(card: IntegrationItem) {
                 <label class="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
                   <div>
                     <p class="text-sm font-medium">启用钉钉</p>
-                    <p class="text-xs text-muted-foreground">与消息渠道中的 DingTalk 开关保持一致</p>
+                    <!-- <p class="text-xs text-muted-foreground">与消息渠道中的 DingTalk 开关保持一致</p> -->
                   </div>
                   <button
                     type="button"
