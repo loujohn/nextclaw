@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
-import { Search, RotateCcw, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench } from "lucide-vue-next";
+import { Search, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench } from "lucide-vue-next";
 import type { DepartmentView } from "~/components/DepartmentTree.vue";
 
 type EmployeeResponse = {
@@ -408,6 +408,74 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastS
   if (!e.health.hasSchedule) return { label: "待配置任务", cls: "bg-muted text-muted-foreground", lastStatus: "no-schedule" };
   return { label: "运行健康", cls: "bg-primary/10 text-primary", lastStatus: "healthy" };
 }
+
+// === 头像/卡片颜色生成（基于名称哈希，每位员工固定色系）===
+// 低饱和度柔和色系：bannerFrom/To 控制 Banner，px = 像素头像前景，bg = 像素头像背景
+type AvatarPalette = { bannerFrom: string; bannerTo: string; px: string; bg: string };
+const AVATAR_PALETTES: AvatarPalette[] = [
+  { bannerFrom: "#c7d2fe", bannerTo: "#a5b4fc", px: "#6366f1", bg: "#eef2ff" }, // soft indigo
+  { bannerFrom: "#fecdd3", bannerTo: "#fca5a5", px: "#f87171", bg: "#fff1f2" }, // soft rose
+  { bannerFrom: "#bae6fd", bannerTo: "#93c5fd", px: "#3b82f6", bg: "#eff6ff" }, // soft blue
+  { bannerFrom: "#a7f3d0", bannerTo: "#6ee7b7", px: "#10b981", bg: "#ecfdf5" }, // soft emerald
+  { bannerFrom: "#fde68a", bannerTo: "#fcd34d", px: "#d97706", bg: "#fffbeb" }, // soft amber
+  { bannerFrom: "#a5f3fc", bannerTo: "#67e8f9", px: "#0891b2", bg: "#ecfeff" }, // soft cyan
+  { bannerFrom: "#e9d5ff", bannerTo: "#d8b4fe", px: "#9333ea", bg: "#faf5ff" }, // soft purple
+  { bannerFrom: "#bbf7d0", bannerTo: "#86efac", px: "#16a34a", bg: "#f0fdf4" }, // soft green
+  { bannerFrom: "#fed7aa", bannerTo: "#fdba74", px: "#ea580c", bg: "#fff7ed" }, // soft orange
+  { bannerFrom: "#fbcfe8", bannerTo: "#f9a8d4", px: "#db2777", bg: "#fdf2f8" }, // soft pink
+  { bannerFrom: "#cffafe", bannerTo: "#a5f3fc", px: "#0e7490", bg: "#ecfeff" }, // soft aqua
+  { bannerFrom: "#d9f99d", bannerTo: "#bef264", px: "#65a30d", bg: "#f7fee7" }, // soft lime
+];
+
+function _nameHash(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (name.charCodeAt(i) + ((h << 5) - h)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function _getEmpPalette(name: string): AvatarPalette {
+  return AVATAR_PALETTES[_nameHash(name) % AVATAR_PALETTES.length]!;
+}
+
+/** Banner：柔和渐变 + 白色圆点纹理叠加，背景更丰富 */
+function getBannerStyle(name: string): Record<string, string> {
+  const p = _getEmpPalette(name);
+  return {
+    backgroundImage: [
+      "radial-gradient(circle, rgba(255,255,255,0.32) 1px, transparent 1px)",
+      `linear-gradient(135deg, ${p.bannerFrom} 0%, ${p.bannerTo} 100%)`
+    ].join(", "),
+    backgroundSize: "14px 14px, 100% 100%"
+  };
+}
+
+/** 确定性像素艺术头像（5×5 对称 Identicon，纯 SVG 内联，无外部请求）*/
+function generatePixelAvatar(name: string): string {
+  const GRID = 5;
+  const CELL = 14;          // 每格 14px → 整体 70×70
+  const total = GRID * CELL;
+  const pal = _getEmpPalette(name);
+  let s = _nameHash(name) >>> 0;
+  const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0x100000000; };
+  const half = Math.ceil(GRID / 2);
+  // 生成左半部分数据，右侧镜像对称
+  const cells: boolean[][] = Array.from({ length: GRID }, () =>
+    Array.from({ length: half }, () => rng() > 0.38)
+  );
+  const rects: string[] = [];
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const col = x < half ? x : GRID - 1 - x;
+      if (cells[y]![col]) {
+        rects.push(`<rect x="${x * CELL}" y="${y * CELL}" width="${CELL}" height="${CELL}" rx="2"/>`);
+      }
+    }
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}"><rect width="${total}" height="${total}" fill="${pal.bg}"/><g fill="${pal.px}">${rects.join("")}</g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
 </script>
 
 <template>
@@ -458,64 +526,97 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastS
     </div>
 
     <!-- Employee Grid -->
-    <div class="stagger-in grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="stagger-in grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <!-- Profile Card -->
       <div
         v-for="emp in filteredEmployees"
         :key="emp.id"
-        class="group flex flex-col rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 overflow-hidden"
+        class="group flex flex-col rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1.5"
       >
-        <!-- 卡片头部：头像 + 姓名 + 状态 -->
-        <div class="flex items-center gap-3 border-b border-border/50 bg-primary/5 px-4 py-3">
-          <!-- 头像圆形 -->
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/20 ring-2 ring-primary/10">
-            <span class="text-base font-bold text-primary select-none">{{ emp.name.slice(0, 1) }}</span>
-          </div>
-          <div class="min-w-0 flex-1">
-            <h3 class="truncate text-sm font-bold tracking-tight transition-colors group-hover:text-primary">{{ emp.name }}</h3>
-            <p class="font-mono text-[10px] text-muted-foreground/60 tracking-wider">NO. {{ emp.code }}</p>
-          </div>
-          <!-- 状态徽章 -->
-          <span
-            class="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-            :class="resolveHealth(emp).cls"
-          >
+        <!-- ① 渐变 Banner —— 每位员工唯一色系 -->
+        <div class="relative h-[72px] overflow-hidden" :style="getBannerStyle(emp.name)">
+          <!-- 装饰圆圈 -->
+          <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10 pointer-events-none" />
+          <div class="absolute right-10 top-3 h-12 w-12 rounded-full bg-white/10 pointer-events-none" />
+          <div class="absolute left-3 -bottom-5 h-16 w-16 rounded-full bg-black/8 pointer-events-none" />
+
+          <!-- 健康状态徽章（右上） -->
+          <span class="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-black/25 backdrop-blur-sm px-2 py-0.5 text-[10px] font-semibold text-white">
             <span
               class="h-1.5 w-1.5 rounded-full"
-              :class="resolveHealth(emp).lastStatus === 'failed' ? 'bg-destructive animate-pulse' : emp.health.hasSkills && emp.health.hasSchedule ? 'bg-primary animate-pulse' : 'bg-warning'"
+              :class="resolveHealth(emp).lastStatus === 'failed' ? 'bg-red-300 animate-pulse' : resolveHealth(emp).lastStatus === 'healthy' ? 'bg-green-300 animate-pulse' : 'bg-yellow-200'"
             />
             {{ resolveHealth(emp).label }}
           </span>
         </div>
 
-        <!-- 卡片主体 -->
-        <div class="flex flex-col flex-1 px-4 py-3">
-          <p class="flex-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{{ emp.description || "暂无职责说明" }}</p>
+        <!-- ② 头像（从 banner 露出） + 模型标签 -->
+        <div class="-mt-6 flex items-end justify-between px-4">
+          <!-- 头像：像素艺术 Identicon（确定性生成，无外部请求）-->
+          <div
+            class="relative h-12 w-12 rounded-xl border-[3px] border-card shadow-lg overflow-hidden transition-transform duration-200 group-hover:scale-110"
+          >
+            <img
+              :src="generatePixelAvatar(emp.name)"
+              :alt="emp.name"
+              class="h-full w-full"
+              draggable="false"
+            />
+            <!-- 在线指示器 -->
+            <span
+              v-if="resolveHealth(emp).lastStatus === 'healthy'"
+              class="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-400 animate-pulse"
+            />
+          </div>
+          <!-- 模型小标签 -->
+          <span
+            v-if="emp.model"
+            class="mb-0.5 max-w-[96px] truncate rounded-full bg-muted/80 px-2 py-0.5 font-mono text-[9px] text-muted-foreground"
+          >
+            {{ emp.model.includes("/") ? emp.model.split("/")[1] : emp.model }}
+          </span>
+        </div>
 
-          <!-- 技能 -->
+        <!-- ③ 卡片主体 -->
+        <div class="flex flex-col flex-1 px-4 pt-2.5 pb-4">
+          <!-- 名称 + 编码 -->
+          <h3 class="truncate text-sm font-bold tracking-tight text-foreground transition-colors duration-150 group-hover:text-primary">
+            {{ emp.name }}
+          </h3>
+          <p class="font-mono text-[9px] tracking-widest text-muted-foreground/45 uppercase">{{ emp.code }}</p>
+
+          <!-- 职责描述 -->
+          <p class="mt-2 flex-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {{ emp.description || "暂无职责说明" }}
+          </p>
+
+          <!-- 技能 pills -->
           <div class="mt-3 flex flex-wrap gap-1">
             <span
               v-for="skill in emp.skills.slice(0, 3)"
               :key="skill.skillName"
-              class="inline-flex items-center gap-0.5 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+              class="inline-flex items-center gap-0.5 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary/80"
             >
               <Zap class="h-2.5 w-2.5" :stroke-width="2" />
               {{ skill.skillName }}
             </span>
-            <span v-if="emp.skills.length > 3" class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">+{{ emp.skills.length - 3 }}</span>
-            <span v-if="emp.skills.length === 0" class="inline-flex items-center gap-0.5 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <span v-if="emp.skills.length > 3" class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              +{{ emp.skills.length - 3 }}
+            </span>
+            <span v-if="emp.skills.length === 0" class="inline-flex items-center gap-0.5 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">
               <Wrench class="h-2.5 w-2.5" :stroke-width="1.8" />
               待分配技能
             </span>
           </div>
 
           <!-- 排班 -->
-          <div class="mt-2.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <div class="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground/70">
             <Clock class="h-3 w-3 shrink-0" :stroke-width="1.8" />
             <span class="truncate">{{ formatScheduleSummary(emp.schedule ?? null) }}</span>
           </div>
 
           <!-- 操作栏 -->
-          <div class="mt-3 flex items-center justify-between border-t border-border/50 pt-3">
+          <div class="mt-3 flex items-center justify-between border-t border-border/40 pt-3">
             <div class="flex items-center gap-0.5">
               <button
                 class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
@@ -550,7 +651,7 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastS
         </div>
       </div>
 
-      <!-- Empty -->
+      <!-- Empty State -->
       <div
         v-if="filteredEmployees.length === 0"
         class="col-span-full flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/10 px-6 py-12 text-center"
