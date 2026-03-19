@@ -8,6 +8,7 @@ export type CreateEmployeeInput = {
   description: string;
   systemPrompt: string;
   model?: string;
+  departmentId?: string | null;
 };
 
 export type UpdateEmployeeInput = {
@@ -15,6 +16,7 @@ export type UpdateEmployeeInput = {
   description: string;
   systemPrompt: string;
   model?: string;
+  departmentId?: string | null;
 };
 
 export type EmployeeView = {
@@ -25,6 +27,7 @@ export type EmployeeView = {
   systemPrompt: string;
   model: string;
   status: string;
+  departmentId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -38,6 +41,7 @@ function toEmployeeView(record: EmployeeRecord): EmployeeView {
     systemPrompt: record.system_prompt,
     model: record.model || "",
     status: record.status,
+    departmentId: record.department_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   };
@@ -56,6 +60,7 @@ export class EmployeeRepository {
       system_prompt: input.systemPrompt.trim(),
       model: input.model?.trim() ?? "",
       status: "active",
+      department_id: input.departmentId ?? null,
       created_at: now,
       updated_at: now
     };
@@ -72,22 +77,28 @@ export class EmployeeRepository {
     return record ? toEmployeeView(record) : null;
   }
 
-  async list(): Promise<EmployeeView[]> {
-    const rows = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).orderBy("created_at", "desc");
+  async list(filter?: { departmentId?: string | null }): Promise<EmployeeView[]> {
+    let query = this.db<EmployeeRecord>(PLATFORM_TABLES.employees).orderBy("created_at", "desc");
+    if (filter?.departmentId !== undefined) {
+      query = query.where({ department_id: filter.departmentId });
+    }
+    const rows = await query;
     return rows.map(toEmployeeView);
   }
 
   async updateById(id: string, input: UpdateEmployeeInput): Promise<EmployeeView | null> {
     const updatedAt = new Date().toISOString();
-    const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
-      .where({ id })
-      .update({
-        name: input.name.trim(),
-        description: input.description.trim(),
-        system_prompt: input.systemPrompt.trim(),
-        model: input.model?.trim() ?? "",
-        updated_at: updatedAt
-      });
+    const patch: Record<string, unknown> = {
+      name: input.name.trim(),
+      description: input.description.trim(),
+      system_prompt: input.systemPrompt.trim(),
+      model: input.model?.trim() ?? "",
+      updated_at: updatedAt
+    };
+    if ("departmentId" in input) {
+      patch.department_id = input.departmentId ?? null;
+    }
+    const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id }).update(patch);
     if (!affected) {
       return null;
     }

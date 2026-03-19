@@ -302,6 +302,20 @@ export function buildChatResultCards(reply: string): ChatResultCardView[] {
   return cards;
 }
 
+export function translateRunText(text: string): string {
+  if (!text) return text;
+  if (/^HEARTBEAT_OK$/i.test(text.trim())) return "心跳正常";
+  return text
+    .replace(/\bHEARTBEAT_OK\b/gi, "心跳正常")
+    .replace(/\bError:\s*Connection\s+error\b/gi, "错误：连接失败")
+    .replace(/\bConnection\s+error\b/gi, "连接失败")
+    .replace(/\bNetwork\s+error\b/gi, "网络错误")
+    .replace(/\bConnection\s+timeout\b/gi, "连接超时")
+    .replace(/\bRequest\s+timeout\b/gi, "请求超时")
+    .replace(/\bFailed\s+to\s+fetch\b/gi, "请求失败")
+    .replace(/\bFetch\s+failed\b/gi, "请求失败");
+}
+
 function readFirstCardContent(result: Record<string, unknown>): string {
   const cards = Array.isArray(result.resultCards) ? result.resultCards : [];
   const firstCard = cards[0];
@@ -337,17 +351,22 @@ function formatRunStatus(status: string): { label: string; tone: RunListEntryVie
   return { label: "等待中", tone: "slate" };
 }
 
+export function formatRunStatusLabel(status: string): string {
+  return formatRunStatus(status).label;
+}
+
 export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
   const employeeNameMap = new Map(input.employees.map((employee) => [employee.id, employee.name]));
   return input.runs.map((run) => {
     const statusMeta = formatRunStatus(run.status);
-    const highlight = readFirstCardContent(run.result) || run.summary || "等待执行结果";
+    const rawHighlight = readFirstCardContent(run.result) || run.summary || "等待执行结果";
+    const highlight = translateRunText(rawHighlight);
     return {
       id: run.id,
       employeeName: employeeNameMap.get(run.employeeId ?? "") ?? "未关联员工",
       statusLabel: statusMeta.label,
       triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
-      summary: run.summary || "尚未生成摘要",
+      summary: translateRunText(run.summary || "尚未生成摘要"),
       highlight,
       tone: statusMeta.tone,
       startedAtLabel: formatDateTime(run.startedAt)

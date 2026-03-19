@@ -117,4 +117,11 @@ export class EmployeeScheduleRepository {
   async deleteByEmployeeId(employeeId: string): Promise<void> {
     await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules).where({ employee_id: employeeId }).delete();
   }
+
+  /** Lightweight update: only patches next_run_at without touching other fields. */
+  async patchNextRunAt(employeeId: string, nextRunAt: string | null): Promise<void> {
+    await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules)
+      .where({ employee_id: employeeId })
+      .update({ next_run_at: nextRunAt, updated_at: new Date().toISOString() });
+  }
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessageView, ChatResultCardView } from "~~/shared/ui-models";
+import { renderMarkdown } from "~/lib/utils";
 import { Send, Copy, ExternalLink, Settings, Sparkles, Loader2, User, Bot, AlertCircle, MessageCircle } from "lucide-vue-next";
 
 const route = useRoute();
@@ -18,7 +19,7 @@ const { data: history, refresh: refreshHistory } = await useFetch<{ ok: boolean;
   `/api/employees/${employeeId.value}/chat/history`,
   { key: computed(() => `employee-chat-history:${employeeId.value}`) }
 );
-const { data: runs, refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
+const { refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
   key: computed(() => `employee-runs:${employeeId.value}`)
 });
 
@@ -40,30 +41,14 @@ const starterPrompts = [
   { text: "模拟一条发给钉钉群的管理摘要", icon: "📝" }
 ];
 
-function renderMarkdown(raw: string): string {
-  let html = raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const langLabel = lang ? `<span class="code-lang">${lang}</span>` : "";
-    return `<div class="code-block">${langLabel}<pre><code>${code.trim()}</code></pre></div>`;
-  });
-
-  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/^[-•]\s+(.+)$/gm, '<li class="md-li">$1</li>');
-  html = html.replace(/((?:<li class="md-li">.*<\/li>\n?)+)/g, '<ul class="md-ul">$1</ul>');
-  html = html.replace(/\n/g, "<br>");
-
-  return html;
-}
-
 async function sendMessage(input = draft.value) {
   if (!input.trim()) return;
   sending.value = true;
   errorMessage.value = "";
+  const optimisticMsg: ChatMessageView = { role: "user", content: input };
+  messages.value = [...messages.value, optimisticMsg];
+  draft.value = "";
+  if (textareaEl.value) textareaEl.value.style.height = "auto";
   try {
     const result = await $fetch<{
       ok: boolean;
@@ -79,11 +64,10 @@ async function sendMessage(input = draft.value) {
     resultCards.value = result.data.resultCards;
     lastRunId.value = result.data.runId;
     messages.value = result.data.messages.filter(m => m.content?.trim());
-    draft.value = "";
-    if (textareaEl.value) textareaEl.value.style.height = "auto";
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
+    messages.value = messages.value.filter(m => m !== optimisticMsg);
   } finally {
     sending.value = false;
   }
@@ -308,21 +292,6 @@ async function copyToClipboard(text: string) {
         </div>
       </div>
 
-      <!-- Recent Runs -->
-      <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <span class="section-label mb-3 block">最近运行</span>
-        <div class="space-y-2">
-          <NuxtLink
-            v-for="run in (runs as any)?.data ?? []"
-            :key="run.id"
-            :to="`/runs?runId=${run.id}`"
-            class="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-all duration-150 hover:bg-muted/50"
-          >
-            <span class="font-medium">{{ run.status }}</span>
-            <span class="truncate text-xs text-muted-foreground">{{ run.summary || run.startedAt }}</span>
-          </NuxtLink>
-        </div>
-      </div>
     </aside>
   </div>
 </template>

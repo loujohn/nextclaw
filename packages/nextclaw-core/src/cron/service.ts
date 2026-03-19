@@ -1,14 +1,18 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import cronParser from "cron-parser";
+import cronParser, { type CronDate } from "cron-parser";
 import type { CronJob, CronJobState, CronPayload, CronSchedule, CronStore } from "./types.js";
 
 const nowMs = () => Date.now();
 
 function computeNextRun(schedule: CronSchedule, now: number): number | null {
   if (schedule.kind === "at") {
-    return schedule.atMs && schedule.atMs > now ? schedule.atMs : null;
+    if (!schedule.atMs) {
+      return null;
+    }
+    // If the scheduled time is already past, fire immediately
+    return schedule.atMs > now ? schedule.atMs : now;
   }
   if (schedule.kind === "every") {
     if (!schedule.everyMs || schedule.everyMs <= 0) {
@@ -18,8 +22,12 @@ function computeNextRun(schedule: CronSchedule, now: number): number | null {
   }
   if (schedule.kind === "cron" && schedule.expr) {
     try {
-      const interval = cronParser.parseExpression(schedule.expr, { currentDate: new Date(now) });
-      return interval.next().getTime();
+      const opts: Parameters<typeof cronParser.parseExpression>[1] = { currentDate: new Date(now) };
+      if (schedule.tz) {
+        opts.tz = schedule.tz;
+      }
+      const interval = cronParser.parseExpression(schedule.expr, opts);
+      return (interval.next() as CronDate).getTime();
     } catch {
       return null;
     }
@@ -32,6 +40,9 @@ export class CronService {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   onJob?: (job: CronJob) => Promise<string | null>;
+  /** Called after a batch of due jobs have executed and the store has been saved.
+   *  Receives the executed jobs with their UPDATED state (including new nextRunAtMs). */
+  onBatchComplete?: (executedJobs: CronJob[]) => void;
 
   constructor(private storePath: string, onJob?: (job: CronJob) => Promise<string | null>) {
     this.onJob = onJob;
@@ -146,6 +157,10 @@ export class CronService {
 
     this.saveStore();
     this.armTimer();
+
+    if (dueJobs.length > 0 && this.onBatchComplete) {
+      this.onBatchComplete(dueJobs);
+    }
   }
 
   private async executeJob(job: CronJob): Promise<void> {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChatResultCardView } from "~~/shared/ui-models";
+import { renderMarkdown } from "~/lib/utils";
 
 defineProps<{ card: ChatResultCardView }>();
 
@@ -32,9 +33,9 @@ const toneBadge: Record<string, string> = {
         {{ kindLabel[card.kind] ?? "详情" }}
       </span>
     </div>
-    <p class="text-sm font-medium leading-relaxed">{{ card.content }}</p>
-    <ul v-if="card.items.length > 1" class="mt-2 space-y-1 pl-4 text-sm text-muted-foreground">
-      <li v-for="item in card.items.slice(1)" :key="item">{{ item }}</li>
+    <div class="result-card-md text-sm font-medium leading-relaxed" v-html="renderMarkdown(card.content)" />
+    <ul v-if="card.items.length > 1" class="result-card-md mt-2 space-y-1 pl-4 text-sm text-muted-foreground">
+      <li v-for="item in card.items.slice(1)" :key="item" v-html="renderMarkdown(item)" />
     </ul>
   </article>
 </template>

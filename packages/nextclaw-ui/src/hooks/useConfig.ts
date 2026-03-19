@@ -372,7 +372,8 @@ export function useCronJobs(params: { all?: boolean } = { all: true }) {
   return useQuery({
     queryKey: ['cron', params],
     queryFn: () => fetchCronJobs(params),
-    staleTime: 10_000
+    staleTime: 10_000,
+    refetchInterval: 30_000
   });
 }
 

@@ -150,10 +150,10 @@ async function toggleSkill(name: string, enabled: boolean) {
         </div>
 
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold">{{ skill.name }}</h3>
-            <span class="rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">{{ skill.categoryLabel }}</span>
-            <span v-if="skill.source !== 'builtin'" class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{{ skill.sourceType }}</span>
+          <div class="flex min-w-0 items-center gap-2">
+            <h3 class="min-w-0 truncate text-sm font-semibold">{{ skill.name }}</h3>
+            <span class="shrink-0 whitespace-nowrap rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">{{ skill.categoryLabel }}</span>
+            <span v-if="skill.source !== 'builtin'" class="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{{ skill.sourceType }}</span>
           </div>
           <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{{ skill.purpose }}</p>
         </div>
@@ -161,7 +161,7 @@ async function toggleSkill(name: string, enabled: boolean) {
         <div class="flex shrink-0 items-center gap-3">
           <span v-if="skill.usageCount > 0" class="text-xs text-muted-foreground">{{ skill.usageCount }} 名员工</span>
           <span
-            class="w-16 text-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+            class="w-20 shrink-0 whitespace-nowrap text-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
             :class="skill.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
           >
             {{ skill.statusLabel }}

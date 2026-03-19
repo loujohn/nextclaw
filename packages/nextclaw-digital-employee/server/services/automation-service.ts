@@ -1,4 +1,4 @@
-import { CronService, HeartbeatService } from "@nextclaw/core";
+import { CronService, HeartbeatService, type CronJob } from "@nextclaw/core";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import {
   EmployeeScheduleRepository,
@@ -41,6 +41,13 @@ export class AutomationService {
         triggerSource: "cron"
       });
       return result.reply;
+    };
+
+    // After each automatic execution batch, sync updated nextRunAtMs back to DB.
+    // This is the fix for "下次运行时间未更新": onJob fires before nextRunAtMs is
+    // recalculated, so we use onBatchComplete (called after all state is updated).
+    this.cronService.onBatchComplete = (executedJobs) => {
+      void this.syncNextRunForJobs(executedJobs);
     };
     await this.cronService.start();
     await this.restartHeartbeatSchedules();
@@ -112,7 +119,9 @@ export class AutomationService {
 
     if (input.scheduleKind === "heartbeat") {
       const intervalS = Math.max(1, Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000));
-      this.startHeartbeatForEmployee(input.employeeId, employee.code, intervalS);
+      if (input.enabled !== false) {
+        this.startHeartbeatForEmployee(input.employeeId, employee.code, intervalS);
+      }
       return this.scheduleRepo.upsert({
         employeeId: input.employeeId,
         scheduleKind: "heartbeat",
@@ -152,10 +161,29 @@ export class AutomationService {
 
   async runNow(employeeId: string): Promise<boolean> {
     const schedule = await this.scheduleRepo.getByEmployeeId(employeeId);
-    if (!schedule?.runtimeJobId) {
+    if (!schedule) {
+      return false;
+    }
+    if (schedule.scheduleKind === "heartbeat") {
+      const hb = this.heartbeats.get(employeeId);
+      if (!hb) {
+        return false;
+      }
+      await hb.triggerNow();
+      return true;
+    }
+    if (!schedule.runtimeJobId) {
       return false;
     }
     return this.cronService.runJob(schedule.runtimeJobId, true);
+  }
+
+  stop(): void {
+    for (const employeeId of [...this.heartbeats.keys()]) {
+      this.stopHeartbeatForEmployee(employeeId);
+    }
+    this.cronService.stop();
+    this.started = false;
   }
 
   async clearSchedule(employeeId: string): Promise<void> {
@@ -165,5 +193,15 @@ export class AutomationService {
     }
     this.stopHeartbeatForEmployee(employeeId);
     await this.scheduleRepo.deleteByEmployeeId(employeeId);
+  }
+
+  /** Sync nextRunAtMs from CronService into scheduleRepo after automatic execution. */
+  private async syncNextRunForJobs(executedJobs: CronJob[]): Promise<void> {
+    for (const job of executedJobs) {
+      if (!job.name.startsWith("employee:")) continue;
+      const employeeId = job.name.slice("employee:".length);
+      const nextRunAt = job.state.nextRunAtMs ? new Date(job.state.nextRunAtMs).toISOString() : null;
+      await this.scheduleRepo.patchNextRunAt(employeeId, nextRunAt);
+    }
   }
 }

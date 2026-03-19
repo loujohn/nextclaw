@@ -10,6 +10,7 @@ type UpdateEmployeeBody = {
   description?: string;
   systemPrompt?: string;
   model?: string;
+  departmentId?: string | null;
   skillNames?: string[];
   scheduleKind?: "cron" | "every" | "heartbeat";
   cronExpr?: string;
@@ -50,7 +51,8 @@ export default defineEventHandler(async (event) => {
     name,
     description: body?.description ?? existing.description,
     systemPrompt: body?.systemPrompt ?? existing.systemPrompt,
-    model: body?.model ?? existing.model
+    model: body?.model ?? existing.model,
+    departmentId: "departmentId" in (body ?? {}) ? body!.departmentId : undefined
   });
   if (!updated) {
     throw createError({

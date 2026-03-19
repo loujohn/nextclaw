@@ -1,8 +1,13 @@
+import { getQuery } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
 
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
   const ctx = await getPlatformContext();
-  const employees = await ctx.employeeRepo.list();
+  const query = getQuery(event);
+  const listFilter = "departmentId" in query
+    ? { departmentId: query.departmentId === "null" ? null : String(query.departmentId) }
+    : undefined;
+  const employees = await ctx.employeeRepo.list(listFilter);
   const enriched = await Promise.all(
     employees.map(async (employee) => {
       const [skills, schedule, runs] = await Promise.all([
