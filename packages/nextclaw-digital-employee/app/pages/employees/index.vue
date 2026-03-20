@@ -599,7 +599,7 @@ function generatePixelAvatar(name: string): string {
         class="group flex flex-col rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1.5"
       >
         <!-- ① 办公工作场景 -->
-        <div class="relative h-[100px] overflow-hidden bg-gradient-to-b from-slate-100 via-slate-200 to-slate-300">
+        <div class="relative h-[100px] overflow-visible bg-gradient-to-b from-slate-100 via-slate-200 to-slate-300">
           <!-- 天花板灯带 -->
           <div class="absolute top-0 left-0 right-0 h-[4px] bg-gradient-to-r from-transparent via-amber-100 to-transparent opacity-80" />
 
@@ -645,23 +645,34 @@ function generatePixelAvatar(name: string): string {
               :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
             >
               <!-- 头发 - 短发 -->
-              <div
-                v-if="getCharacterStyle(emp.name).hairStyle === 'short'"
-                class="absolute -top-[2px] -left-[1px] -right-[1px] h-[10px] rounded-[10px_10px_0_0]"
-                :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-              />
+              <template v-if="getCharacterStyle(emp.name).hairStyle === 'short'">
+                <div
+                  class="absolute -top-[2px] left-[2px] right-[2px] h-[8px] rounded-[8px_8px_0_0]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+                <!-- 短发侧边 -->
+                <div
+                  class="absolute top-[4px] -left-[1px] w-[4px] h-[6px] rounded-l-[2px]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+                <div
+                  class="absolute top-[4px] -right-[1px] w-[4px] h-[6px] rounded-r-[2px]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+              </template>
               <!-- 头发 - 长发 -->
               <template v-else>
                 <div
-                  class="absolute -top-[2px] -left-[3px] -right-[3px] h-[12px] rounded-[12px_12px_0_0]"
+                  class="absolute -top-[3px] -left-[4px] -right-[4px] h-[14px] rounded-[14px_14px_0_0]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+                <!-- 长发垂下 -->
+                <div
+                  class="absolute top-[6px] -left-[5px] w-[8px] h-[20px] rounded-b-[4px]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
                 <div
-                  class="absolute top-[8px] -left-[4px] w-[6px] h-[16px] rounded-b-[4px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[8px] -right-[4px] w-[6px] h-[16px] rounded-b-[4px]"
+                  class="absolute top-[6px] -right-[5px] w-[8px] h-[20px] rounded-b-[4px]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
               </template>
