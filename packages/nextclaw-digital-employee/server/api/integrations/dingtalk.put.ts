@@ -1,15 +1,31 @@
 import { createError, readBody } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { updateDingTalkChannelConfig, type DingTalkChannelUpdate } from "../../runtime/dingtalk-config";
+import {
+  applyDingTalkConfigUpdate,
+  type DingTalkChannelUpdate,
+  type DingTalkEmployeeBindingsView
+} from "../../runtime/dingtalk-config";
+
+type UpdateDingTalkBody = {
+  channel?: DingTalkChannelUpdate;
+  routing?: DingTalkEmployeeBindingsView;
+};
 
 export default defineEventHandler(async (event) => {
-  await getPlatformContext();
-  const body = await readBody<DingTalkChannelUpdate>(event);
+  const ctx = await getPlatformContext();
+  const body = await readBody<UpdateDingTalkBody>(event);
   try {
-    const data = updateDingTalkChannelConfig(body ?? {});
+    const { channel, routing } = await applyDingTalkConfigUpdate(ctx.integrationConnectionRepo, {
+      channel: body?.channel,
+      routing: body?.routing,
+      reload: () => ctx.channelRuntime.reload()
+    });
     return {
       ok: true,
-      data
+      data: {
+        channel,
+        routing
+      }
     };
   } catch (error) {
     throw createError({

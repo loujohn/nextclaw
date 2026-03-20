@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPlatformGatewayConfig } from "../server/runtime/platform-context";
+import { buildPlatformRuntimeConfig } from "../server/runtime/openclaw-runtime";
 
 describe("platform gateway runtime config", () => {
   it("uses explicit provider env vars for model, api base, and api key", () => {
@@ -35,5 +36,53 @@ describe("platform gateway runtime config", () => {
 
     expect(config.providers?.["relay-a"]?.apiKey).toBe("relay-token");
     expect(config.providers?.["relay-a"]?.apiBase).toBe("https://relay-a.internal/v1");
+  });
+
+  it("composes db-backed dingtalk channel config into standard runtime config", () => {
+    const config = buildPlatformRuntimeConfig({
+      workspaceDir: "/tmp/workspace",
+      overrideConfig: buildPlatformGatewayConfig({
+        NEXTCLAW_MODEL: "openai/gpt-5",
+        NEXTCLAW_PROVIDER_API_KEY: "sk-test"
+      }),
+      runtimeConfig: {
+        channels: {
+          dingtalk: {
+            enabled: true,
+            defaultAccountId: "ops-bot",
+            accounts: {
+              "ops-bot": {
+                clientId: "app-key",
+                clientSecret: "app-secret",
+                robotCode: "robot-code",
+                corpId: "corp-id",
+                agentId: "agent-id"
+              }
+            }
+          }
+        },
+        bindings: [
+          {
+            agentId: "ops-bot",
+            match: {
+              channel: "dingtalk",
+              accountId: "ops-bot"
+            }
+          }
+        ]
+      }
+    });
+
+    expect(config.channels.dingtalk.enabled).toBe(true);
+    expect(config.channels.dingtalk.accounts["ops-bot"]?.clientId).toBe("app-key");
+    expect(config.bindings).toContainEqual(
+      expect.objectContaining({
+        agentId: "ops-bot",
+        match: {
+          channel: "dingtalk",
+          accountId: "ops-bot"
+        }
+      })
+    );
   });
 });

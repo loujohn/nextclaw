@@ -1,10 +1,13 @@
 import { getPlatformContext } from "../../runtime/platform-context";
-import { getDingTalkChannelConfig } from "../../runtime/dingtalk-config";
+import { getDingTalkChannelConfig, getDingTalkRoutingConfig } from "../../runtime/dingtalk-config";
 
 export default defineEventHandler(async () => {
-  await getPlatformContext();
+  const ctx = await getPlatformContext();
   return {
     ok: true,
-    data: getDingTalkChannelConfig()
+    data: {
+      channel: await getDingTalkChannelConfig(ctx.integrationConnectionRepo),
+      routing: await getDingTalkRoutingConfig(ctx.integrationConnectionRepo)
+    }
   };
 });

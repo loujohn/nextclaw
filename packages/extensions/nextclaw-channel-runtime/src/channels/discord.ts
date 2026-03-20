@@ -22,7 +22,14 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { getDataPath } from "../utils/helpers.js";
 import { ChannelTypingController } from "./typing-controller.js";
-import { CommandRegistry, isTypingStopControlMessage, type CommandOption } from "@nextclaw/core";
+import {
+  CommandRegistry,
+  evaluateChannelAccessPolicy,
+  isTypingStopControlMessage,
+  matchesMentionPattern,
+  resolveGroupMentionPolicy,
+  type CommandOption
+} from "@nextclaw/core";
 import type { SessionManager } from "@nextclaw/core";
 
 const DEFAULT_MEDIA_MAX_MB = 8;
@@ -393,28 +400,11 @@ export class DiscordChannel extends BaseChannel<Config["channels"]["discord"]> {
   }
 
   private isAllowedByPolicy(params: { senderId: string; channelId: string; isGroup: boolean }): boolean {
-    if (!params.isGroup) {
-      if (this.config.dmPolicy === "disabled") {
-        return false;
-      }
-      const allowFrom = this.config.allowFrom ?? [];
-      if (this.config.dmPolicy === "allowlist" || this.config.dmPolicy === "pairing") {
-        return this.isAllowed(params.senderId);
-      }
-      if (allowFrom.includes("*")) {
-        return true;
-      }
-      return allowFrom.length === 0 ? true : this.isAllowed(params.senderId);
-    }
-
-    if (this.config.groupPolicy === "disabled") {
-      return false;
-    }
-    if (this.config.groupPolicy === "allowlist") {
-      const allowFrom = this.config.groupAllowFrom ?? [];
-      return allowFrom.includes("*") || allowFrom.includes(params.channelId);
-    }
-    return true;
+    return evaluateChannelAccessPolicy(this.config, {
+      senderId: params.senderId,
+      chatId: params.channelId,
+      isGroup: params.isGroup
+    });
   }
 
   private resolveMentionState(params: {
@@ -423,38 +413,24 @@ export class DiscordChannel extends BaseChannel<Config["channels"]["discord"]> {
     channelId: string;
     isGroup: boolean;
   }): { wasMentioned: boolean; requireMention: boolean } {
-    if (!params.isGroup) {
-      return { wasMentioned: false, requireMention: false };
-    }
-    const groups = this.config.groups ?? {};
-    const groupRule = groups[params.channelId] ?? groups["*"];
-    const requireMention = groupRule?.requireMention ?? this.config.requireMention ?? false;
-    if (!requireMention) {
+    const mentionPolicy = resolveGroupMentionPolicy(this.config, {
+      chatId: params.channelId,
+      isGroup: params.isGroup
+    });
+    if (!mentionPolicy.requireMention) {
       return { wasMentioned: false, requireMention: false };
     }
 
-    const patterns = [
-      ...(this.config.mentionPatterns ?? []),
-      ...(groupRule?.mentionPatterns ?? [])
-    ]
-      .map((pattern) => pattern.trim())
-      .filter(Boolean);
     const content = params.message.content ?? "";
     const wasMentionedByUserRef =
       Boolean(params.selfUserId) && params.message.mentions.users.has(params.selfUserId ?? "");
     const wasMentionedByText =
       Boolean(params.selfUserId) &&
       (content.includes(`<@${params.selfUserId}>`) || content.includes(`<@!${params.selfUserId}>`));
-    const wasMentionedByPattern = patterns.some((pattern) => {
-      try {
-        return new RegExp(pattern, "i").test(content);
-      } catch {
-        return content.toLowerCase().includes(pattern.toLowerCase());
-      }
-    });
+    const wasMentionedByPattern = matchesMentionPattern(content, mentionPolicy.mentionPatterns);
     return {
       wasMentioned: wasMentionedByUserRef || wasMentionedByText || wasMentionedByPattern,
-      requireMention
+      requireMention: mentionPolicy.requireMention
     };
   }
 

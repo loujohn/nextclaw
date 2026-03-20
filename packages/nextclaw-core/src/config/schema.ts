@@ -60,11 +60,37 @@ export const FeishuConfigSchema = z.object({
   allowFrom: allowFrom
 });
 
+export const DingTalkAccountConfigSchema = z.object({
+  clientId: z.string().default(""),
+  clientSecret: z.string().default(""),
+  robotCode: z.string().default(""),
+  corpId: z.string().default(""),
+  agentId: z.string().default(""),
+  allowFrom: allowFrom,
+  dmPolicy: dmPolicySchema.default("open"),
+  groupPolicy: groupPolicySchema.default("open"),
+  groupAllowFrom: allowFrom,
+  requireMention: z.boolean().default(false),
+  mentionPatterns: z.array(z.string()).default([]),
+  groups: z.record(GroupRuleSchema).default({})
+});
+
 export const DingTalkConfigSchema = z.object({
   enabled: z.boolean().default(false),
   clientId: z.string().default(""),
   clientSecret: z.string().default(""),
-  allowFrom: allowFrom
+  robotCode: z.string().default(""),
+  corpId: z.string().default(""),
+  agentId: z.string().default(""),
+  allowFrom: allowFrom,
+  dmPolicy: dmPolicySchema.default("open"),
+  groupPolicy: groupPolicySchema.default("open"),
+  groupAllowFrom: allowFrom,
+  requireMention: z.boolean().default(false),
+  mentionPatterns: z.array(z.string()).default([]),
+  groups: z.record(GroupRuleSchema).default({}),
+  defaultAccountId: z.string().default("default"),
+  accounts: z.record(DingTalkAccountConfigSchema).default({})
 });
 
 export const WeComConfigSchema = z.object({
@@ -229,7 +255,8 @@ export const BindingMatchSchema = z.object({
 
 export const AgentBindingSchema = z.object({
   agentId: z.string(),
-  match: BindingMatchSchema
+  match: BindingMatchSchema,
+  metadata: z.record(z.unknown()).default({})
 });
 
 export const SessionAgentToAgentSchema = z.object({

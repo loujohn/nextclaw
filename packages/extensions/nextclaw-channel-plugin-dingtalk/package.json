@@ -2,7 +2,7 @@
   "name": "@nextclaw/channel-plugin-dingtalk",
   "version": "0.1.9",
   "private": false,
-  "description": "NextClaw DingTalk channel plugin (OpenClaw-compatible)",
+  "description": "NextClaw DingTalk channel plugin with multi-account routing",
   "type": "module",
   "exports": {
     ".": {
@@ -11,15 +11,25 @@
   },
   "files": [
     "index.js",
+    "src",
     "openclaw.plugin.json",
     "README.md"
   ],
+  "scripts": {
+    "test": "vitest run src/config-schema.test.ts src/channel.test.ts"
+  },
   "openclaw": {
     "extensions": [
       "index.js"
     ]
   },
   "dependencies": {
-    "@nextclaw/channel-runtime": "workspace:*"
+    "@nextclaw/core": "workspace:*",
+    "dingtalk-stream": "^2.1.4",
+    "jiti": "^1.21.7",
+    "undici": "^6.21.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.2"
   }
 }
