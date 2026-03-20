@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import { Sparkles, CheckCircle2, AlertCircle, Brain, MessageSquare, ListChecks, X, Plus, Trash2 } from "lucide-vue-next";
+import {
+  applyDingTalkAccountRenames,
+  buildDingTalkAccountGroupOverrides,
+  buildEditableDingTalkGroupBindings,
+  createEmptyDingTalkGroupBinding,
+  type EditableDingTalkGroupBinding
+} from "~~/shared/dingtalk-editor-model";
 
 type IntegrationItem = {
   id: string;
@@ -12,32 +19,71 @@ type IntegrationItem = {
 };
 
 type IntegrationPayload = { ok: boolean; data: IntegrationItem[] };
+type EmployeeListPayload = {
+  ok: boolean;
+  data: Array<{ id: string; name: string; code: string }>;
+};
+
+type DingTalkAccountView = {
+  accountId: string;
+  clientId: string;
+  clientSecretSet: boolean;
+  robotCode: string;
+  corpId: string;
+  agentId: string;
+  allowFrom: string[];
+  dmPolicy: string;
+  groupPolicy: string;
+  groupAllowFrom: string[];
+  requireMention: boolean;
+  mentionPatterns: string[];
+  groups: Record<string, { requireMention: boolean; mentionPatterns: string[] }>;
+};
+
 type DingTalkConfigPayload = {
   ok: boolean;
   data: {
-    enabled: boolean;
-    clientId: string;
-    clientSecretSet: boolean;
-    allowFrom: string[];
+    channel: {
+      enabled: boolean;
+      defaultAccountId: string;
+      accounts: DingTalkAccountView[];
+    };
+    routing: {
+      defaultByAccount: Record<string, string>;
+      groups: Array<{
+        groupId: string;
+        employeeCode: string;
+        accountId: string;
+        allowCollaboration: boolean;
+        allowedEmployeeCodes: string[];
+      }>;
+    };
   };
 };
 
+type EditableAccount = DingTalkAccountView & {
+  sourceAccountId: string;
+  clientSecret: string;
+};
+
 const { data, refresh } = await useFetch<IntegrationPayload>("/api/integrations");
+const { data: employeeData } = await useFetch<EmployeeListPayload>("/api/employees");
 
 const integrations = computed(() => data.value?.data ?? []);
+const employees = computed(() => employeeData.value?.data ?? []);
 const configuredCount = computed(() => integrations.value.filter((i) => i.tone === "teal").length);
 const showDingTalkEditor = ref(false);
 const editorLoading = ref(false);
 const editorSaving = ref(false);
 const editorError = ref("");
-const allowFromInput = ref("");
 
 const dingtalkForm = reactive({
   enabled: false,
-  clientId: "",
-  clientSecret: "",
-  clientSecretSet: false,
-  allowFrom: [] as string[]
+  defaultAccountId: "default",
+  accounts: [] as EditableAccount[],
+  deletedAccountIds: [] as string[],
+  defaultByAccount: {} as Record<string, string>,
+  groups: [] as EditableDingTalkGroupBinding[]
 });
 
 const toneClasses: Record<string, { border: string; badge: string; iconBg: string }> = {
@@ -52,35 +98,57 @@ const iconMap: Record<string, typeof Brain> = {
   "钉钉": MessageSquare
 };
 
+const accountOptions = computed(() =>
+  dingtalkForm.accounts
+    .map((account) => account.accountId.trim())
+    .filter(Boolean)
+);
+
 function resetEditorError() {
   editorError.value = "";
 }
 
-function pushAllowFromTag(rawValue: string) {
-  const value = rawValue.trim();
-  if (!value) {
-    return;
-  }
-  if (dingtalkForm.allowFrom.includes(value)) {
-    allowFromInput.value = "";
-    return;
-  }
-  dingtalkForm.allowFrom = [...dingtalkForm.allowFrom, value];
-  allowFromInput.value = "";
+function createEmptyAccount(): EditableAccount {
+  const suffix = String(Date.now()).slice(-5);
+  return {
+    sourceAccountId: "",
+    accountId: `account-${suffix}`,
+    clientId: "",
+    clientSecret: "",
+    clientSecretSet: false,
+    robotCode: "",
+    corpId: "",
+    agentId: "",
+    allowFrom: [],
+    dmPolicy: "open",
+    groupPolicy: "open",
+    groupAllowFrom: [],
+    requireMention: false,
+    mentionPatterns: [],
+    groups: {}
+  };
 }
 
-function removeAllowFromTag(value: string) {
-  dingtalkForm.allowFrom = dingtalkForm.allowFrom.filter((item) => item !== value);
+function createEmptyGroupBinding(): EditableDingTalkGroupBinding {
+  return createEmptyDingTalkGroupBinding(dingtalkForm.defaultAccountId);
 }
 
-function onAllowFromKeydown(event: KeyboardEvent) {
-  if (event.key === "Enter" || event.key === ",") {
-    event.preventDefault();
-    pushAllowFromTag(allowFromInput.value);
-    return;
-  }
-  if (event.key === "Backspace" && !allowFromInput.value.trim() && dingtalkForm.allowFrom.length > 0) {
-    dingtalkForm.allowFrom = dingtalkForm.allowFrom.slice(0, -1);
+function openEditorWithPayload(payload: DingTalkConfigPayload["data"]) {
+  dingtalkForm.enabled = payload.channel.enabled;
+  dingtalkForm.defaultAccountId = payload.channel.defaultAccountId;
+  dingtalkForm.deletedAccountIds = [];
+  dingtalkForm.defaultByAccount = { ...payload.routing.defaultByAccount };
+  dingtalkForm.accounts = payload.channel.accounts.map((account) => ({
+    ...account,
+    sourceAccountId: account.accountId,
+    clientSecret: ""
+  }));
+  dingtalkForm.groups = buildEditableDingTalkGroupBindings({
+    accounts: payload.channel.accounts,
+    routingGroups: payload.routing.groups
+  });
+  if (!dingtalkForm.defaultAccountId && dingtalkForm.accounts[0]) {
+    dingtalkForm.defaultAccountId = dingtalkForm.accounts[0].accountId;
   }
 }
 
@@ -88,16 +156,9 @@ async function openDingTalkEditor() {
   showDingTalkEditor.value = true;
   editorLoading.value = true;
   resetEditorError();
-  allowFromInput.value = "";
-  dingtalkForm.clientSecret = "";
   try {
     const response = await $fetch<DingTalkConfigPayload>("/api/integrations/dingtalk");
-    const payload = response.data;
-    dingtalkForm.enabled = payload.enabled;
-    dingtalkForm.clientId = payload.clientId;
-    dingtalkForm.clientSecret = "";
-    dingtalkForm.clientSecretSet = payload.clientSecretSet;
-    dingtalkForm.allowFrom = [...payload.allowFrom];
+    openEditorWithPayload(response.data);
   } catch (error) {
     editorError.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -110,25 +171,129 @@ function closeDingTalkEditor() {
   editorLoading.value = false;
   editorSaving.value = false;
   editorError.value = "";
-  allowFromInput.value = "";
-  dingtalkForm.clientSecret = "";
+}
+
+function addAccount() {
+  dingtalkForm.accounts = [...dingtalkForm.accounts, createEmptyAccount()];
+  if (!dingtalkForm.defaultAccountId) {
+    dingtalkForm.defaultAccountId = dingtalkForm.accounts[dingtalkForm.accounts.length - 1]?.accountId ?? "default";
+  }
+}
+
+function removeAccount(index: number) {
+  const account = dingtalkForm.accounts[index];
+  if (!account) {
+    return;
+  }
+  if (account.sourceAccountId) {
+    dingtalkForm.deletedAccountIds.push(account.sourceAccountId);
+  }
+  dingtalkForm.accounts = dingtalkForm.accounts.filter((_, currentIndex) => currentIndex !== index);
+  if (dingtalkForm.defaultAccountId === account.accountId) {
+    dingtalkForm.defaultAccountId = dingtalkForm.accounts[0]?.accountId ?? "default";
+  }
+  dingtalkForm.groups = dingtalkForm.groups.filter((group) => group.accountId !== account.accountId);
+  if (dingtalkForm.defaultByAccount[account.accountId]) {
+    delete dingtalkForm.defaultByAccount[account.accountId];
+  }
+}
+
+function addGroupBinding() {
+  dingtalkForm.groups = [...dingtalkForm.groups, createEmptyGroupBinding()];
+}
+
+function removeGroupBinding(index: number) {
+  dingtalkForm.groups = dingtalkForm.groups.filter((_, currentIndex) => currentIndex !== index);
+}
+
+function normalizeCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function saveDingTalkConfig() {
   editorSaving.value = true;
   resetEditorError();
   try {
-    const response = await $fetch<DingTalkConfigPayload>("/api/integrations/dingtalk", {
+    const activeAccounts = dingtalkForm.accounts
+      .map((account) => ({
+        ...account,
+        accountId: account.accountId.trim(),
+        sourceAccountId: account.sourceAccountId.trim()
+      }))
+      .filter((account) => account.accountId);
+
+    const renamedSourceIds = activeAccounts
+      .filter((account) => account.sourceAccountId && account.sourceAccountId !== account.accountId)
+      .map((account) => account.sourceAccountId);
+
+    const remappedRouting = applyDingTalkAccountRenames({
+      accounts: activeAccounts,
+      defaultByAccount: dingtalkForm.defaultByAccount,
+      groups: dingtalkForm.groups
+    });
+    const renamedDefaultAccountId =
+      activeAccounts.find(
+        (account) => account.sourceAccountId === dingtalkForm.defaultAccountId && account.accountId !== account.sourceAccountId
+      )?.accountId ?? dingtalkForm.defaultAccountId;
+    const allowedAccountIds = new Set(activeAccounts.map((account) => account.accountId));
+    const accountGroupOverrides = buildDingTalkAccountGroupOverrides({
+      accounts: activeAccounts,
+      groups: remappedRouting.groups
+    });
+    const routingDefaultByAccount = Object.fromEntries(
+      Object.entries(remappedRouting.defaultByAccount).filter(([accountId]) => allowedAccountIds.has(accountId))
+    );
+    const routingGroups = remappedRouting.groups
+      .map((group) => ({
+        groupId: group.groupId.trim(),
+        accountId: group.accountId.trim(),
+        employeeCode: group.employeeCode.trim(),
+        allowCollaboration: group.allowCollaboration,
+        allowedEmployeeCodes: normalizeCsv(group.allowedEmployeeCodesText)
+      }))
+      .filter((group) => group.groupId && group.accountId && group.employeeCode && allowedAccountIds.has(group.accountId))
+      .map((group) => ({
+        groupId: group.groupId,
+        employeeCode: group.employeeCode,
+        accountId: group.accountId,
+        allowCollaboration: group.allowCollaboration,
+        allowedEmployeeCodes: group.allowedEmployeeCodes
+      }));
+
+    await $fetch<DingTalkConfigPayload>("/api/integrations/dingtalk", {
       method: "PUT",
       body: {
-        enabled: dingtalkForm.enabled,
-        clientId: dingtalkForm.clientId,
-        clientSecret: dingtalkForm.clientSecret,
-        allowFrom: dingtalkForm.allowFrom
+        channel: {
+          enabled: dingtalkForm.enabled,
+          defaultAccountId: renamedDefaultAccountId,
+          removeAccountIds: [...new Set([...dingtalkForm.deletedAccountIds, ...renamedSourceIds])],
+          upserts: activeAccounts.map((account) => ({
+            sourceAccountId: account.sourceAccountId,
+            accountId: account.accountId,
+            clientId: account.clientId,
+            clientSecret: account.clientSecret,
+            robotCode: account.robotCode,
+            corpId: account.corpId,
+            agentId: account.agentId,
+            allowFrom: account.allowFrom,
+            dmPolicy: account.dmPolicy,
+            groupPolicy: account.groupPolicy,
+            groupAllowFrom: account.groupAllowFrom,
+            requireMention: account.requireMention,
+            mentionPatterns: account.mentionPatterns,
+            groups: accountGroupOverrides[account.accountId] ?? {}
+          }))
+        },
+        routing: {
+          defaultByAccount: routingDefaultByAccount,
+          groups: routingGroups
+        }
       }
     });
-    dingtalkForm.clientSecret = "";
-    dingtalkForm.clientSecretSet = response.data.clientSecretSet;
+
     await refresh();
     closeDingTalkEditor();
   } catch (error) {
@@ -152,12 +317,11 @@ function onCardAction(card: IntegrationItem) {
         <span class="section-label">外部连接</span>
         <h1 class="font-display text-3xl font-bold tracking-tight">集成中心</h1>
         <p class="max-w-2xl text-sm text-muted-foreground">
-          配置模型、禅道和钉钉等关键链路，让员工能形成业务闭环。
+          配置模型、业务系统和钉钉入口，让员工可以进私聊、进群，并为后续协作保留清晰路由。
         </p>
       </div>
     </div>
 
-    <!-- Progress -->
     <div class="flex items-center gap-4">
       <div class="h-2 flex-1 overflow-hidden rounded-full bg-muted">
         <div
@@ -170,7 +334,6 @@ function onCardAction(card: IntegrationItem) {
       </span>
     </div>
 
-    <!-- Integration Cards -->
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <article
         v-for="card in integrations"
@@ -201,33 +364,22 @@ function onCardAction(card: IntegrationItem) {
       </article>
     </div>
 
-    <div
-      v-if="integrations.length === 0"
-      class="flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/10 px-6 py-12 text-center"
-    >
-      <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/5">
-        <Sparkles class="h-7 w-7 text-primary/30" :stroke-width="1.5" />
-      </div>
-      <p class="font-medium">还没有配置集成</p>
-      <p class="mt-1 max-w-xs text-sm text-muted-foreground">集成配置完成后，员工才能调用模型和外部服务。</p>
-    </div>
-
     <Teleport to="body">
       <Transition name="slide-over">
         <div v-if="showDingTalkEditor" class="fixed inset-0 z-50 flex justify-end">
           <div class="absolute inset-0 bg-foreground/20 backdrop-blur-sm" @click="closeDingTalkEditor" />
-          <div class="slide-over-panel relative w-full max-w-md overflow-y-auto bg-card shadow-2xl">
+          <div class="slide-over-panel relative w-full max-w-3xl overflow-y-auto bg-card shadow-2xl">
             <div class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 px-6 py-4 backdrop-blur-sm">
               <div>
-                <span class="section-label">钉钉集成</span>
-                <h2 class="mt-0.5 text-lg font-semibold">编辑连接配置</h2>
+                <span class="section-label">钉钉入口</span>
+                <h2 class="mt-0.5 text-lg font-semibold">多机器人与群路由</h2>
               </div>
               <button class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" @click="closeDingTalkEditor">
                 <X class="h-5 w-5" :stroke-width="1.8" />
               </button>
             </div>
 
-            <form class="space-y-4 p-6" @submit.prevent="saveDingTalkConfig">
+            <form class="space-y-6 p-6" @submit.prevent="saveDingTalkConfig">
               <div v-if="editorLoading" class="rounded-lg bg-muted/50 px-3 py-3 text-sm text-muted-foreground">
                 正在加载钉钉配置...
               </div>
@@ -235,8 +387,8 @@ function onCardAction(card: IntegrationItem) {
               <template v-else>
                 <label class="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
                   <div>
-                    <p class="text-sm font-medium">启用钉钉</p>
-                    <!-- <p class="text-xs text-muted-foreground">与消息渠道中的 DingTalk 开关保持一致</p> -->
+                    <p class="text-sm font-medium">启用钉钉入口</p>
+                    <p class="text-xs text-muted-foreground">关闭后，所有钉钉私聊与群入口都会停止响应。</p>
                   </div>
                   <button
                     type="button"
@@ -251,59 +403,145 @@ function onCardAction(card: IntegrationItem) {
                   </button>
                 </label>
 
-                <label class="block space-y-1.5">
-                  <span class="text-sm font-medium">Client ID</span>
-                  <input v-model="dingtalkForm.clientId" class="input-field" placeholder="请输入 DingTalk Client ID" />
-                </label>
-
-                <label class="block space-y-1.5">
-                  <span class="text-sm font-medium">Client Secret</span>
-                  <input v-model="dingtalkForm.clientSecret" type="password" class="input-field" placeholder="留空保持不变" />
-                  <p class="text-[11px] text-muted-foreground">
-                    <span v-if="dingtalkForm.clientSecretSet">当前已设置密钥，留空不会覆盖。</span>
-                    <span v-else>当前未设置密钥。</span>
-                  </p>
-                </label>
-
-                <label class="block space-y-1.5">
-                  <span class="text-sm font-medium">Allow From</span>
-                  <div class="space-y-2 rounded-xl border border-input bg-background px-3 py-2.5">
-                    <div v-if="dingtalkForm.allowFrom.length > 0" class="flex flex-wrap gap-2">
-                      <span
-                        v-for="tag in dingtalkForm.allowFrom"
-                        :key="tag"
-                        class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary"
-                      >
-                        {{ tag }}
-                        <button type="button" class="rounded p-0.5 text-primary/80 hover:bg-primary/15" @click="removeAllowFromTag(tag)">
-                          <Trash2 class="h-3 w-3" :stroke-width="2" />
-                        </button>
-                      </span>
+                <section class="space-y-4">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="section-label">机器人账号</span>
+                      <h3 class="mt-0.5 text-base font-semibold">多账号入口</h3>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <button type="button" class="btn-ghost" @click="addAccount">
+                      <Plus class="h-4 w-4" :stroke-width="1.8" />
+                      新增账号
+                    </button>
+                  </div>
+
+                  <div v-if="dingtalkForm.accounts.length === 0" class="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+                    还没有钉钉机器人账号。先添加一个账号，员工才能通过钉钉私聊或群入口被唤起。
+                  </div>
+
+                  <article v-for="(account, index) in dingtalkForm.accounts" :key="`${account.sourceAccountId}:${index}`" class="space-y-3 rounded-xl border border-border bg-muted/10 p-4">
+                    <div class="flex items-start justify-between gap-4">
+                      <div class="space-y-1">
+                        <span class="section-label">账号 {{ index + 1 }}</span>
+                        <div class="flex items-center gap-3">
+                          <label class="flex items-center gap-2 text-sm">
+                            <input v-model="dingtalkForm.defaultAccountId" type="radio" :value="account.accountId" />
+                            默认入口
+                          </label>
+                          <span class="text-xs text-muted-foreground">员工页可把此账号绑定成默认私聊入口</span>
+                        </div>
+                      </div>
+                      <button type="button" class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive" @click="removeAccount(index)">
+                        <Trash2 class="h-4 w-4" :stroke-width="1.8" />
+                      </button>
+                    </div>
+
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <label class="block space-y-1.5">
+                        <span class="text-sm font-medium">Account ID</span>
+                        <input v-model="account.accountId" class="input-field" placeholder="ops-bot" />
+                      </label>
+                      <label class="block space-y-1.5">
+                        <span class="text-sm font-medium">Client ID</span>
+                        <input v-model="account.clientId" class="input-field" placeholder="请输入 DingTalk Client ID" />
+                      </label>
+                      <label class="block space-y-1.5">
+                        <span class="text-sm font-medium">Client Secret</span>
+                        <input v-model="account.clientSecret" type="password" class="input-field" placeholder="留空保持不变" />
+                        <p class="text-[11px] text-muted-foreground">
+                          <span v-if="account.clientSecretSet">当前已设置密钥，留空不会覆盖。</span>
+                          <span v-else>当前未设置密钥。</span>
+                        </p>
+                      </label>
+                      <label class="block space-y-1.5">
+                        <span class="text-sm font-medium">Robot Code</span>
+                        <input v-model="account.robotCode" class="input-field" placeholder="机器人编码" />
+                      </label>
+                      <label class="block space-y-1.5">
+                        <span class="text-sm font-medium">Corp ID</span>
+                        <input v-model="account.corpId" class="input-field" placeholder="企业 Corp ID" />
+                      </label>
+                      <label class="block space-y-1.5">
+                        <span class="text-sm font-medium">Agent ID</span>
+                        <input v-model="account.agentId" class="input-field" placeholder="应用 Agent ID" />
+                      </label>
+                    </div>
+                  </article>
+                </section>
+
+                <section class="space-y-4 rounded-xl border border-border bg-muted/10 p-4">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="section-label">群路由</span>
+                      <h3 class="mt-0.5 text-base font-semibold">群到员工的入口映射</h3>
+                    </div>
+                    <button type="button" class="btn-ghost" @click="addGroupBinding">
+                      <Plus class="h-4 w-4" :stroke-width="1.8" />
+                      新增群绑定
+                    </button>
+                  </div>
+
+                  <div v-if="dingtalkForm.groups.length === 0" class="rounded-lg bg-background/80 px-4 py-4 text-sm text-muted-foreground">
+                    还没有群路由。配置后，可为每个群单独控制是否必须 @ 机器人，以及由哪个员工对外响应。
+                  </div>
+
+                  <div v-for="(group, index) in dingtalkForm.groups" :key="`${group.groupId}:${index}`" class="grid gap-3 rounded-lg border border-border bg-background/80 p-4 md:grid-cols-2">
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">Group ID</span>
+                      <input v-model="group.groupId" class="input-field" placeholder="cid_xxx" />
+                    </label>
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">入口账号</span>
+                      <select v-model="group.accountId" class="input-field">
+                        <option value="">请选择账号</option>
+                        <option v-for="accountId in accountOptions" :key="accountId" :value="accountId">{{ accountId }}</option>
+                      </select>
+                    </label>
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">主响应员工</span>
+                      <select v-model="group.employeeCode" class="input-field">
+                        <option value="">请选择员工</option>
+                        <option v-for="employee in employees" :key="employee.id" :value="employee.code">{{ employee.name }} · {{ employee.code }}</option>
+                      </select>
+                    </label>
+                    <label class="block space-y-1.5">
+                      <span class="text-sm font-medium">允许后台协作员工</span>
+                      <input v-model="group.allowedEmployeeCodesText" class="input-field" placeholder="risk-bot, daily-bot" />
+                    </label>
+                    <label class="col-span-full flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                      <input v-model="group.requireMention" type="checkbox" />
+                      该群消息必须 @ 机器人后才处理；关闭后，不 @ 也会进入员工链路
+                    </label>
+                    <label class="col-span-full block space-y-1.5">
+                      <span class="text-sm font-medium">@ 识别关键词</span>
                       <input
-                        v-model="allowFromInput"
-                        class="input-field h-9 border-0 bg-transparent px-0 py-0 focus:ring-0"
-                        placeholder="输入后按 Enter 添加"
-                        @keydown="onAllowFromKeydown"
+                        v-model="group.mentionPatternsText"
+                        class="input-field"
+                        :disabled="!group.requireMention"
+                        placeholder="机器人, 日报员工"
                       />
-                      <button
-                        type="button"
-                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                        @click="pushAllowFromTag(allowFromInput)"
-                      >
-                        <Plus class="h-4 w-4" :stroke-width="2" />
+                      <p class="text-xs text-muted-foreground">
+                        用逗号分隔。仅当“必须 @”开启时生效；关闭后可留空。
+                      </p>
+                    </label>
+                    <label class="col-span-full flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                      <input v-model="group.allowCollaboration" type="checkbox" />
+                      允许该群入口员工在后台委托其他员工协作，但仍由入口员工统一对外回复
+                    </label>
+                    <div class="col-span-full flex justify-end">
+                      <button type="button" class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-destructive" @click="removeGroupBinding(index)">
+                        删除群绑定
                       </button>
                     </div>
                   </div>
-                </label>
+                </section>
 
                 <p v-if="editorError" class="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{{ editorError }}</p>
 
                 <div class="flex items-center justify-between gap-2 border-t border-border pt-4">
                   <button type="button" class="btn-ghost" @click="closeDingTalkEditor">取消</button>
                   <button class="btn-primary" :disabled="editorSaving">
-                    {{ editorSaving ? "保存中..." : "保存配置" }}
+                    {{ editorSaving ? "保存中..." : "保存钉钉配置" }}
                   </button>
                 </div>
               </template>

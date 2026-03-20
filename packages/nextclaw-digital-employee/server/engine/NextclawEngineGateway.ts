@@ -3,7 +3,6 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
-  ConfigSchema,
   LLMProvider,
   MessageBus,
   NativeAgentEngine,
@@ -18,12 +17,14 @@ import {
   type SessionEvent,
   HeartbeatService
 } from "@nextclaw/core";
-import { builtinProviderIds } from "@nextclaw/runtime";
-import { loadOpenClawPlugins, type PluginRegistry } from "@nextclaw/openclaw-compat";
+import { buildPlatformRuntimeConfig } from "../runtime/openclaw-runtime";
 
 export type NextclawEngineGatewayOptions = {
   homeDir: string;
   workspaceDir?: string;
+  bus?: MessageBus;
+  sessionManager?: SessionManager;
+  config?: Config;
   extensionRegistry?: ExtensionRegistry;
   defaultConfig?: Record<string, unknown>;
 };
@@ -115,92 +116,6 @@ function findSkillDirectory(rootDir: string): string {
 }
 
 // Synced from packages/nextclaw/src/cli/commands/plugins.ts (toExtensionRegistry)
-function toExtensionRegistry(config: Config, workspaceDir: string): ExtensionRegistry {
-  const pluginRegistry: PluginRegistry = loadOpenClawPlugins({
-    config,
-    workspaceDir,
-    reservedToolNames: [
-      "read_file",
-      "write_file",
-      "edit_file",
-      "list_dir",
-      "exec",
-      "web_search",
-      "web_fetch",
-      "message",
-      "spawn",
-      "sessions_list",
-      "sessions_history",
-      "sessions_send",
-      "memory_search",
-      "memory_get",
-      "subagents",
-      "gateway",
-      "cron"
-    ],
-    reservedChannelIds: [],
-    reservedProviderIds: builtinProviderIds(),
-    reservedEngineKinds: ["native"],
-    logger: {
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-      debug: () => {}
-    }
-  });
-  return {
-    tools: pluginRegistry.tools.map((tool) => ({
-      extensionId: tool.pluginId,
-      factory: tool.factory,
-      names: tool.names,
-      optional: tool.optional,
-      source: tool.source
-    })),
-    channels: pluginRegistry.channels.map((channel) => ({
-      extensionId: channel.pluginId,
-      channel: channel.channel,
-      source: channel.source
-    })),
-    engines: pluginRegistry.engines.map((engine) => ({
-      extensionId: engine.pluginId,
-      kind: engine.kind,
-      factory: engine.factory,
-      source: engine.source
-    })),
-    diagnostics: pluginRegistry.diagnostics.map((diag) => ({
-      level: diag.level,
-      message: diag.message,
-      extensionId: diag.pluginId,
-      source: diag.source
-    }))
-  };
-}
-
-function createConfig(workspaceDir: string, override?: Record<string, unknown>): Config {
-  const base = {
-    agents: {
-      defaults: {
-        workspace: workspaceDir,
-        engine: "native",
-        model: "openai/gpt-5"
-      }
-    }
-  };
-  const merged = {
-    ...base,
-    ...(override ?? {}),
-    agents: {
-      ...base.agents,
-      ...((override?.agents as Record<string, unknown> | undefined) ?? {}),
-      defaults: {
-        ...base.agents.defaults,
-        ...(((override?.agents as { defaults?: Record<string, unknown> } | undefined)?.defaults) ?? {})
-      }
-    }
-  };
-  return ConfigSchema.parse(merged);
-}
-
 // Synced from packages/nextclaw/src/cli/workspace.ts (WorkspaceManager.resolveBuiltinSkillsDir + seedBuiltinSkills)
 function resolveBuiltinSkillsDir(): string | null {
   const candidates = [
@@ -249,12 +164,13 @@ class MissingProvider extends LLMProvider {
 export class NextclawEngineGateway {
   readonly homeDir: string;
   readonly workspaceDir: string;
-  private readonly config: Config;
+  private config: Config;
+  private readonly bus: MessageBus;
   private readonly sessionManager: SessionManager;
   private readonly providerManager: ProviderManager;
-  private readonly extensionRegistry: ExtensionRegistry;
+  private extensionRegistry: ExtensionRegistry;
   private readonly engines: Map<string, AgentEngine> = new Map();
-  private readonly fallbackEngine: AgentEngine;
+  private fallbackEngine: AgentEngine;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
 
   constructor(options: NextclawEngineGatewayOptions) {
@@ -264,13 +180,19 @@ export class NextclawEngineGateway {
     mkdirSync(this.homeDir, { recursive: true });
     mkdirSync(this.workspaceDir, { recursive: true });
     seedBuiltinSkills(this.workspaceDir);
-    this.config = createConfig(this.workspaceDir, options.defaultConfig);
-    this.sessionManager = new SessionManager(this.workspaceDir);
+    this.bus = options.bus ?? new MessageBus();
+    this.sessionManager = options.sessionManager ?? new SessionManager(this.workspaceDir);
+    this.config =
+      options.config ??
+      buildPlatformRuntimeConfig({
+        workspaceDir: this.workspaceDir,
+        overrideConfig: options.defaultConfig
+      });
     this.providerManager = new ProviderManager({
       defaultProvider: new MissingProvider(this.config.agents.defaults.model),
       config: this.config
     });
-    this.extensionRegistry = options.extensionRegistry ?? toExtensionRegistry(this.config, this.workspaceDir);
+    this.extensionRegistry = options.extensionRegistry ?? { tools: [], channels: [], diagnostics: [], engines: [] };
     this.fallbackEngine = this.createEngineForWorkspace("main", this.workspaceDir);
   }
 
@@ -282,7 +204,7 @@ export class NextclawEngineGateway {
       maxIterations: this.config.agents.defaults.maxToolIterations,
       contextTokens: this.config.agents.defaults.contextTokens,
       engineConfig: this.config.agents.defaults.engineConfig,
-      bus: new MessageBus(),
+      bus: this.bus,
       providerManager: this.providerManager,
       sessionManager: this.sessionManager,
       cronService: null,
@@ -294,6 +216,30 @@ export class NextclawEngineGateway {
       extensionRegistry: this.extensionRegistry
     };
     return this.createEngine(engineContext);
+  }
+
+  get messageBus(): MessageBus {
+    return this.bus;
+  }
+
+  get sessions(): SessionManager {
+    return this.sessionManager;
+  }
+
+  get runtimeConfig(): Config {
+    return this.config;
+  }
+
+  applyRuntimeConfig(config: Config, extensionRegistry?: ExtensionRegistry): void {
+    this.config = config;
+    if (extensionRegistry) {
+      this.extensionRegistry = extensionRegistry;
+    }
+    this.providerManager.setConfig(config);
+    this.fallbackEngine.applyRuntimeConfig(config, this.extensionRegistry);
+    for (const engine of this.engines.values()) {
+      engine.applyRuntimeConfig(config, this.extensionRegistry);
+    }
   }
 
   getOrCreateEngine(agentId: string, workspace?: string, model?: string): AgentEngine {

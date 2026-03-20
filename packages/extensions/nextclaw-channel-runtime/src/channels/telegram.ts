@@ -11,8 +11,11 @@ import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { ChannelTypingController } from "./typing-controller.js";
 import {
+  evaluateChannelAccessPolicy,
   isAssistantStreamResetControlMessage,
   isTypingStopControlMessage,
+  matchesMentionPattern,
+  resolveGroupMentionPolicy,
   readAssistantStreamDelta
 } from "@nextclaw/core";
 
@@ -636,27 +639,7 @@ export class TelegramChannel extends BaseChannel<Config["channels"]["telegram"]>
   }
 
   private isAllowedByPolicy(params: { senderId: string; chatId: string; isGroup: boolean }): boolean {
-    if (!params.isGroup) {
-      if (this.config.dmPolicy === "disabled") {
-        return false;
-      }
-      const allowFrom = this.config.allowFrom ?? [];
-      if (this.config.dmPolicy === "allowlist" || this.config.dmPolicy === "pairing") {
-        return this.isAllowed(params.senderId);
-      }
-      if (allowFrom.includes("*")) {
-        return true;
-      }
-      return allowFrom.length === 0 ? true : this.isAllowed(params.senderId);
-    }
-    if (this.config.groupPolicy === "disabled") {
-      return false;
-    }
-    if (this.config.groupPolicy === "allowlist") {
-      const allowFrom = this.config.groupAllowFrom ?? [];
-      return allowFrom.includes("*") || allowFrom.includes(params.chatId);
-    }
-    return true;
+    return evaluateChannelAccessPolicy(this.config, params);
   }
 
   private resolveMentionState(params: {
@@ -664,39 +647,22 @@ export class TelegramChannel extends BaseChannel<Config["channels"]["telegram"]>
     chatId: string;
     isGroup: boolean;
   }): TelegramMentionState {
-    if (!params.isGroup) {
-      return { wasMentioned: false, requireMention: false };
-    }
-    const groups = this.config.groups ?? {};
-    const groupRule = groups[params.chatId] ?? groups["*"];
-    const requireMention = groupRule?.requireMention ?? this.config.requireMention ?? false;
-    if (!requireMention) {
+    const mentionPolicy = resolveGroupMentionPolicy(this.config, params);
+    if (!mentionPolicy.requireMention) {
       return { wasMentioned: false, requireMention: false };
     }
 
     const content = `${params.message.text ?? ""}\n${params.message.caption ?? ""}`.trim();
-    const patterns = [
-      ...(this.config.mentionPatterns ?? []),
-      ...(groupRule?.mentionPatterns ?? [])
-    ]
-      .map((pattern) => pattern.trim())
-      .filter(Boolean);
     const usernameMentioned = this.botUsername ? content.includes(`@${this.botUsername}`) : false;
     const replyToBot =
       Boolean(this.botUserId) &&
       Boolean(params.message.reply_to_message?.from) &&
       params.message.reply_to_message?.from?.id === this.botUserId;
-    const patternMentioned = patterns.some((pattern) => {
-      try {
-        return new RegExp(pattern, "i").test(content);
-      } catch {
-        return content.toLowerCase().includes(pattern.toLowerCase());
-      }
-    });
+    const patternMentioned = matchesMentionPattern(content, mentionPolicy.mentionPatterns);
 
     return {
       wasMentioned: usernameMentioned || replyToBot || patternMentioned,
-      requireMention
+      requireMention: mentionPolicy.requireMention
     };
   }
 }

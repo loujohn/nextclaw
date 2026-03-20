@@ -64,5 +64,5 @@ export interface AgentEngine {
   readonly supportsAbort?: boolean;
   handleInbound(params: AgentEngineInboundRequest): Promise<OutboundMessage | null>;
   processDirect(params: AgentEngineDirectRequest): Promise<string>;
-  applyRuntimeConfig(config: Config): void;
+  applyRuntimeConfig(config: Config, extensionRegistry?: ExtensionRegistry): void;
 }

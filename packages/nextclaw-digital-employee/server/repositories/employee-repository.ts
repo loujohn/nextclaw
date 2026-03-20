@@ -77,6 +77,11 @@ export class EmployeeRepository {
     return record ? toEmployeeView(record) : null;
   }
 
+  async getByCode(code: string): Promise<EmployeeView | null> {
+    const record = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ code: code.trim() }).first();
+    return record ? toEmployeeView(record) : null;
+  }
+
   async list(filter?: { departmentId?: string | null }): Promise<EmployeeView[]> {
     let query = this.db<EmployeeRecord>(PLATFORM_TABLES.employees).orderBy("created_at", "desc");
     if (filter?.departmentId !== undefined) {

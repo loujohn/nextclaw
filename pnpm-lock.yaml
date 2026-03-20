@@ -128,7 +128,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^6.0.1
-        version: 6.4.1(@types/node@20.19.33)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+        version: 6.4.1(@types/node@20.19.33)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
   apps/platform-admin:
     dependencies:
@@ -248,9 +248,22 @@ importers:
 
   packages/extensions/nextclaw-channel-plugin-dingtalk:
     dependencies:
-      '@nextclaw/channel-runtime':
+      '@nextclaw/core':
         specifier: workspace:*
-        version: link:../nextclaw-channel-runtime
+        version: link:../../nextclaw-core
+      dingtalk-stream:
+        specifier: ^2.1.4
+        version: 2.1.4
+      jiti:
+        specifier: ^1.21.7
+        version: 1.21.7
+      undici:
+        specifier: ^6.21.0
+        version: 6.23.0
+    devDependencies:
+      vitest:
+        specifier: ^2.1.2
+        version: 2.1.9(@types/node@20.19.33)(terser@5.46.0)
 
   packages/extensions/nextclaw-channel-plugin-discord:
     dependencies:
@@ -18947,6 +18960,22 @@ snapshots:
       '@types/node': 20.19.33
       fsevents: 2.3.3
       terser: 5.46.0
+
+  vite@6.4.1(@types/node@20.19.33)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
+    dependencies:
+      esbuild: 0.25.12
+      fdir: 6.5.0(picomatch@4.0.3)
+      picomatch: 4.0.3
+      postcss: 8.5.6
+      rollup: 4.57.1
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 20.19.33
+      fsevents: 2.3.3
+      jiti: 1.21.7
+      terser: 5.46.0
+      tsx: 4.21.0
+      yaml: 2.8.2
 
   vite@6.4.1(@types/node@20.19.33)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:

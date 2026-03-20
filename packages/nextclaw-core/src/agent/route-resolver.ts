@@ -163,7 +163,12 @@ function buildSessionKey(params: {
     return `agent:${agentId}:${channel}:${params.accountId}:direct:${peerId}`;
   }
 
-  return `agent:${agentId}:${channel}:${params.peer.kind}:${peerId}`;
+  const accountId = normalizeAccountId(params.accountId);
+  if (accountId === DEFAULT_ACCOUNT_ID) {
+    return `agent:${agentId}:${channel}:${params.peer.kind}:${peerId}`;
+  }
+
+  return `agent:${agentId}:${channel}:${accountId}:${params.peer.kind}:${peerId}`;
 }
 
 export function parseAgentScopedSessionKey(sessionKey?: string | null): ParsedAgentSessionKey | null {

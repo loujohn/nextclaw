@@ -238,8 +238,11 @@ export class AgentLoop {
     this.running = false;
   }
 
-  applyRuntimeConfig(config: Config): void {
+  applyRuntimeConfig(config: Config, extensionRegistry?: ExtensionRegistry): void {
     this.options.config = config;
+    if (extensionRegistry) {
+      this.options.extensionRegistry = extensionRegistry;
+    }
     this.options.providerManager.setConfig(config);
     this.options.model = config.agents.defaults.model;
     this.options.maxIterations = config.agents.defaults.maxToolIterations;

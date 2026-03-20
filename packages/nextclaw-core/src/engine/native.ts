@@ -1,5 +1,6 @@
 import { AgentLoop } from "../agent/loop.js";
 import type { Config } from "../config/schema.js";
+import type { ExtensionRegistry } from "../extensions/types.js";
 import type { AgentEngine, AgentEngineDirectRequest, AgentEngineInboundRequest } from "./types.js";
 
 type AgentLoopOptions = ConstructorParameters<typeof AgentLoop>[0];
@@ -22,7 +23,7 @@ export class NativeAgentEngine implements AgentEngine {
     return this.loop.processDirect(params);
   }
 
-  applyRuntimeConfig(config: Config): void {
-    this.loop.applyRuntimeConfig(config);
+  applyRuntimeConfig(config: Config, extensionRegistry?: ExtensionRegistry): void {
+    this.loop.applyRuntimeConfig(config, extensionRegistry);
   }
 }

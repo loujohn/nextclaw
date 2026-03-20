@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
+import { MessageBus, SessionManager } from "@nextclaw/core";
 import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
@@ -124,5 +125,59 @@ describe("digital employee engine gateway", () => {
     expect(history[0]?.role).toBe("user");
     expect(history[1]?.role).toBe("assistant");
     expect(history[2]?.content).toBe("第二条消息");
+  });
+
+  it("reuses the same message bus and session manager across cached engines", () => {
+    const homeDir = createTempHome();
+    const workspaceDir = join(homeDir, "workspace");
+    const bus = new MessageBus();
+    const sessionManager = new SessionManager(workspaceDir);
+    const seenBuses = new Set<unknown>();
+    const seenSessionManagers = new Set<unknown>();
+
+    const gateway = new NextclawEngineGateway({
+      homeDir,
+      workspaceDir,
+      bus,
+      sessionManager,
+      extensionRegistry: {
+        tools: [],
+        channels: [],
+        diagnostics: [],
+        engines: [
+          {
+            extensionId: "test.mock",
+            source: "workspace",
+            kind: "mock",
+            factory: (context) => {
+              seenBuses.add(context.bus);
+              seenSessionManagers.add(context.sessionManager);
+              return {
+                kind: "mock",
+                handleInbound: async () => null,
+                processDirect: async () => "ok",
+                applyRuntimeConfig: () => undefined
+              };
+            }
+          }
+        ]
+      },
+      defaultConfig: {
+        agents: {
+          defaults: {
+            engine: "mock",
+            model: "openai/gpt-5"
+          }
+        }
+      }
+    });
+
+    gateway.getOrCreateEngine("employee-a", join(homeDir, "agents", "employee-a"));
+    gateway.getOrCreateEngine("employee-b", join(homeDir, "agents", "employee-b"));
+
+    expect(seenBuses.size).toBe(1);
+    expect(seenBuses.has(bus)).toBe(true);
+    expect(seenSessionManagers.size).toBe(1);
+    expect(seenSessionManagers.has(sessionManager)).toBe(true);
   });
 });

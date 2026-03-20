@@ -1,27 +1,6 @@
-import { resolveBuiltinChannelRuntime } from "@nextclaw/channel-runtime";
+import createJiti from "jiti";
 
-const runtime = resolveBuiltinChannelRuntime("dingtalk");
+const jiti = createJiti(import.meta.url, { interopDefault: true });
+const loaded = jiti("./src/index.ts");
 
-const plugin = {
-  id: "builtin-channel-dingtalk",
-  name: "Builtin DingTalk Channel",
-  description: "Builtin NextClaw channel plugin for dingtalk",
-  configSchema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {}
-  },
-  register(api) {
-    api.registerChannel({
-      plugin: {
-        id: "dingtalk",
-        nextclaw: {
-          isEnabled: runtime.isEnabled,
-          createChannel: runtime.createChannel
-        }
-      }
-    });
-  }
-};
-
-export default plugin;
+export default loaded?.default ?? loaded;

@@ -2,8 +2,8 @@ import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
-import { ensureEmployeeWorkspace, syncEmployeeSkills } from "../engine/employee-workspace";
 import { buildChatResultCards, type ChatMessageView, type ChatResultCardView } from "../../shared/ui-models";
+import { prepareEmployeeRuntime } from "./employee-runtime-preparation";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -33,23 +33,12 @@ export class EmployeeRunService {
       throw new Error(`Employee not found: ${params.employeeId}`);
     }
 
-    const employeeSkills = await this.employeeSkillRepo.listByEmployeeId(employee.id);
-    const skillNames = employeeSkills.filter((s) => s.enabled).map((s) => s.skillName);
-
-    const workspace = ensureEmployeeWorkspace(
-      this.gateway.homeDir,
-      {
-        code: employee.code,
-        name: employee.name,
-        description: employee.description,
-        systemPrompt: employee.systemPrompt
-      },
-      this.gateway.workspaceDir
-    );
-
-    if (skillNames.length > 0) {
-      syncEmployeeSkills(this.gateway.homeDir, employee.code, skillNames, this.gateway.workspaceDir);
-    }
+    const { workspace, skillNames } = await prepareEmployeeRuntime({
+      employee,
+      employeeSkillRepo: this.employeeSkillRepo,
+      homeDir: this.gateway.homeDir,
+      workspaceDir: this.gateway.workspaceDir
+    });
 
     const run = await this.runRepo.create({
       employeeId: employee.id,

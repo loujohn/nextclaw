@@ -8,6 +8,8 @@ export * from "./bus/events.js";
 export * from "./bus/control.js";
 export * from "./bus/queue.js";
 export * from "./channels/feishu-probe.js";
+export * from "./channels/base.js";
+export * from "./channels/policy.js";
 export * from "./channels/manager.js";
 export * from "./commands/registry.js";
 export * from "./config/brand.js";

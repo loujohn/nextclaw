@@ -25,3 +25,4 @@ packages/nextclaw/*.tgz
 **/.wrangler/
 
 apps/docs/.vitepress/.temp/
+.worktrees/

@@ -3,9 +3,9 @@ import { buildIntegrationCards } from "../../../shared/ui-models";
 import { getDingTalkChannelConfig } from "../../runtime/dingtalk-config";
 
 export default defineEventHandler(async () => {
-  await getPlatformContext();
+  const ctx = await getPlatformContext();
   const config = buildPlatformGatewayConfig();
-  const dingtalk = getDingTalkChannelConfig();
+  const dingtalk = await getDingTalkChannelConfig(ctx.integrationConnectionRepo);
   const [providerName] = Object.keys(config.providers);
   const providerConfig = providerName ? (config.providers[providerName] ?? { apiKey: "", apiBase: null }) : { apiKey: "", apiBase: null };
 
@@ -22,7 +22,10 @@ export default defineEventHandler(async () => {
         {
           type: "dingtalk",
           enabled: dingtalk.enabled,
-          name: dingtalk.clientId,
+          name:
+            dingtalk.accounts.length > 0
+              ? `默认 ${dingtalk.defaultAccountId} · ${dingtalk.accounts.length} 个机器人入口`
+              : "",
           lastCheckedAt: null
         }
       ]

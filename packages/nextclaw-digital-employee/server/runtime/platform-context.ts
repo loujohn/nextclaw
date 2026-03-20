@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Knex } from "knex";
-import { CronService } from "@nextclaw/core";
+import { CronService, MessageBus, SessionManager } from "@nextclaw/core";
 import { findBuiltinProviderByName } from "@nextclaw/runtime";
 import { createPlatformKnex, ensurePlatformDatabase } from "../db/knex";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
@@ -14,6 +14,10 @@ import { EmployeeScheduleRepository } from "../repositories/employee-schedule-re
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
+import { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
+import { DigitalEmployeeChannelRuntime } from "./channel-runtime";
+import { getDingTalkRuntimeConfig } from "./dingtalk-config";
+import { loadPlatformRuntimeState } from "./openclaw-runtime";
 
 type PlatformContext = {
   homeDir: string;
@@ -25,10 +29,12 @@ type PlatformContext = {
   employeeScheduleRepo: EmployeeScheduleRepository;
   runRepo: RunRecordRepository;
   skillInstallationRepo: SkillInstallationRepository;
+  integrationConnectionRepo: IntegrationConnectionRepository;
   gateway: NextclawEngineGateway;
   skillInstallService: SkillInstallService;
   employeeRunService: EmployeeRunService;
   automationService: AutomationService;
+  channelRuntime: DigitalEmployeeChannelRuntime;
 };
 
 let contextPromise: Promise<PlatformContext> | null = null;
@@ -90,9 +96,21 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       mkdirSync(workspaceDir, { recursive: true });
       const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
       await ensurePlatformDatabase(db);
+      const integrationConnectionRepo = new IntegrationConnectionRepository(db);
+      const initialRuntimeState = loadPlatformRuntimeState({
+        workspaceDir,
+        overrideConfig: buildPlatformGatewayConfig(),
+        runtimeConfig: await getDingTalkRuntimeConfig(integrationConnectionRepo)
+      });
+      const bus = new MessageBus();
+      const sessionManager = new SessionManager(workspaceDir);
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
+        bus,
+        sessionManager,
+        config: initialRuntimeState.config,
+        extensionRegistry: initialRuntimeState.extensionRegistry,
         defaultConfig: buildPlatformGatewayConfig()
       });
       const departmentRepo = new DepartmentRepository(db);
@@ -103,6 +121,17 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const skillInstallationRepo = new SkillInstallationRepository(db);
       const skillInstallService = new SkillInstallService(skillInstallationRepo, gateway);
       const employeeRunService = new EmployeeRunService(employeeRepo, employeeSkillRepo, runRepo, gateway);
+      const channelRuntime = new DigitalEmployeeChannelRuntime({
+        gateway,
+        employeeRepo,
+        employeeSkillRepo,
+        loadState: async () =>
+          loadPlatformRuntimeState({
+            workspaceDir,
+            overrideConfig: buildPlatformGatewayConfig(),
+            runtimeConfig: await getDingTalkRuntimeConfig(integrationConnectionRepo)
+          })
+      });
       const automationService = new AutomationService(
         employeeScheduleRepo,
         employeeRepo,
@@ -110,6 +139,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         new CronService(join(homeDir, "cron", "jobs.json")),
         gateway
       );
+      await channelRuntime.start();
       await automationService.start();
       return {
         homeDir,
@@ -121,10 +151,12 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeScheduleRepo,
         runRepo,
         skillInstallationRepo,
+        integrationConnectionRepo,
         gateway,
         skillInstallService,
         employeeRunService,
-        automationService
+        automationService,
+        channelRuntime
       };
     })();
   }
