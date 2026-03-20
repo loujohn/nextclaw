@@ -427,6 +427,51 @@ const AVATAR_PALETTES: AvatarPalette[] = [
   { bannerFrom: "#d9f99d", bannerTo: "#bef264", px: "#65a30d", bg: "#f7fee7" }, // soft lime
 ];
 
+// === 办公场景人物样式（基于名称哈希随机生成）===
+type CharacterStyle = {
+  skinColor: string;      // 肤色
+  hairColor: string;      // 发色
+  shirtColor: string;     // 衬衫颜色
+  shirtColorLight: string; // 衬衫浅色（衣领）
+  hairStyle: 'short' | 'long' | 'bald';  // 发型
+};
+
+// 肤色选项
+const SKIN_COLORS = [
+  "#fcd9b6",  // 浅肤色
+  "#f5c9a6",  // 中浅肤色
+  "#e8b896",  // 中等肤色
+  "#d4a574",  // 棕肤色
+  "#a67c52",  // 深棕肤色
+  "#8d5a3c",  // 深肤色
+];
+
+// 发色选项
+const HAIR_COLORS = [
+  "#1a1a1a",  // 黑色
+  "#2d1f1a",  // 深棕
+  "#4a3728",  // 棕色
+  "#6b5344",  // 浅棕
+  "#8b7355",  // 金棕
+  "#c4a35a",  // 金色
+  "#a0522d",  // 红棕
+  "#708090",  // 灰色
+];
+
+// 衬衫颜色选项
+const SHIRT_COLORS = [
+  { main: "#3b82f6", light: "#60a5fa" },  // 蓝色
+  { main: "#6366f1", light: "#818cf8" },  // 靛蓝
+  { main: "#8b5cf6", light: "#a78bfa" },  // 紫色
+  { main: "#ec4899", light: "#f472b6" },  // 粉色
+  { main: "#10b981", light: "#34d399" },  // 绿色
+  { main: "#f59e0b", light: "#fbbf24" },  // 橙色
+  { main: "#ef4444", light: "#f87171" },  // 红色
+  { main: "#14b8a6", light: "#2dd4bf" },  // 青色
+  { main: "#64748b", light: "#94a3b8" },  // 灰色
+  { main: "#0ea5e9", light: "#38bdf8" },  // 天蓝
+];
+
 function _nameHash(name: string): number {
   let h = 0;
   for (let i = 0; i < name.length; i++) {
@@ -456,6 +501,18 @@ function getAvatarStyle(name: string): Record<string, string> {
   const p = _getEmpPalette(name);
   return {
     background: `linear-gradient(135deg, ${p.px} 0%, ${p.bannerTo} 100%)`
+  };
+}
+
+/** 获取人物样式（肤色、发色、衬衫、发型）*/
+function getCharacterStyle(name: string): CharacterStyle {
+  const h = _nameHash(name);
+  return {
+    skinColor: SKIN_COLORS[h % SKIN_COLORS.length]!,
+    hairColor: HAIR_COLORS[(h >> 3) % HAIR_COLORS.length]!,
+    shirtColor: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.main,
+    shirtColorLight: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.light,
+    hairStyle: (['short', 'long', 'bald'] as const)[(h >> 9) % 3],
   };
 }
 
@@ -583,18 +640,53 @@ function generatePixelAvatar(name: string): string {
           <!-- 人物剪影 -->
           <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 animate-subtle-float">
             <!-- 头部 -->
-            <div class="relative w-[20px] h-[22px] bg-[#fcd9b6] rounded-[50%_50%_45%_45%] mx-auto animate-head-move">
-              <!-- 头发 -->
-              <div class="absolute -top-[2px] -left-[1px] -right-[1px] h-[10px] bg-[#4a3728] rounded-[10px_10px_0_0]" />
+            <div
+              class="relative w-[20px] h-[22px] rounded-[50%_50%_45%_45%] mx-auto animate-head-move"
+              :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
+            >
+              <!-- 头发 - 短发 -->
+              <div
+                v-if="getCharacterStyle(emp.name).hairStyle === 'short'"
+                class="absolute -top-[2px] -left-[1px] -right-[1px] h-[10px] rounded-[10px_10px_0_0]"
+                :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+              />
+              <!-- 头发 - 长发 -->
+              <template v-else-if="getCharacterStyle(emp.name).hairStyle === 'long'">
+                <div
+                  class="absolute -top-[2px] -left-[3px] -right-[3px] h-[12px] rounded-[12px_12px_0_0]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+                <div
+                  class="absolute top-[8px] -left-[4px] w-[6px] h-[16px] rounded-b-[4px]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+                <div
+                  class="absolute top-[8px] -right-[4px] w-[6px] h-[16px] rounded-b-[4px]"
+                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
+                />
+              </template>
+              <!-- 秃头 - 无头发 -->
             </div>
             <!-- 身体 -->
-            <div class="w-[32px] h-[20px] bg-blue-500 rounded-t-[6px] -mt-[3px] relative">
+            <div
+              class="w-[32px] h-[20px] rounded-t-[6px] -mt-[3px] relative"
+              :style="{ backgroundColor: getCharacterStyle(emp.name).shirtColor }"
+            >
               <!-- 衣领 -->
-              <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[8px] h-[4px] bg-blue-400 rounded-b-[4px]" />
+              <div
+                class="absolute top-0 left-1/2 -translate-x-1/2 w-[8px] h-[4px] rounded-b-[4px]"
+                :style="{ backgroundColor: getCharacterStyle(emp.name).shirtColorLight }"
+              />
               <!-- 左手臂 -->
-              <div class="absolute -left-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-arm-type-left" />
+              <div
+                class="absolute -left-[4px] bottom-0 w-[7px] h-[16px] rounded-[3px] origin-top animate-arm-type-left"
+                :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
+              />
               <!-- 右手臂 -->
-              <div class="absolute -right-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-arm-type-right" />
+              <div
+                class="absolute -right-[4px] bottom-0 w-[7px] h-[16px] rounded-[3px] origin-top animate-arm-type-right"
+                :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
+              />
             </div>
           </div>
 
