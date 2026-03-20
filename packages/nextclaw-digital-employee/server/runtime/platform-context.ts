@@ -12,6 +12,7 @@ import { DepartmentRepository } from "../repositories/department-repository";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeScheduleRepository } from "../repositories/employee-schedule-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
+import { HumanEmployeeRepository } from "../repositories/human-employee-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 
@@ -21,6 +22,7 @@ type PlatformContext = {
   db: Knex;
   departmentRepo: DepartmentRepository;
   employeeRepo: EmployeeRepository;
+  humanEmployeeRepo: HumanEmployeeRepository;
   employeeSkillRepo: EmployeeSkillRepository;
   employeeScheduleRepo: EmployeeScheduleRepository;
   runRepo: RunRecordRepository;
@@ -97,6 +99,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       });
       const departmentRepo = new DepartmentRepository(db);
       const employeeRepo = new EmployeeRepository(db);
+      const humanEmployeeRepo = new HumanEmployeeRepository(db);
       const employeeSkillRepo = new EmployeeSkillRepository(db);
       const employeeScheduleRepo = new EmployeeScheduleRepository(db);
       const runRepo = new RunRecordRepository(db);
@@ -117,6 +120,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         db,
         departmentRepo,
         employeeRepo,
+        humanEmployeeRepo,
         employeeSkillRepo,
         employeeScheduleRepo,
         runRepo,

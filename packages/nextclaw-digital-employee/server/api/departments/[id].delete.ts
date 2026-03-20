@@ -10,14 +10,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: `department not found: ${id}` });
   }
 
-  // 检查本部门及所有子孙部门是否挂有员工
+  // 检查本部门及所有子孙部门是否挂有员工（数字员工 + 人类员工）
   const selfAndDescendants = [id, ...(await ctx.departmentRepo.getAllDescendantIds(id))];
   for (const deptId of selfAndDescendants) {
-    const count = await ctx.departmentRepo.countEmployees(deptId);
-    if (count > 0) {
+    const [digitalCount, humanCount] = await Promise.all([
+      ctx.departmentRepo.countEmployees(deptId),
+      ctx.humanEmployeeRepo.countByDepartmentId(deptId)
+    ]);
+    const totalCount = digitalCount + humanCount;
+    if (totalCount > 0) {
       throw createError({
         statusCode: 409,
-        statusMessage: `cannot delete department with employees: department '${deptId}' still has ${count} employee(s)`
+        statusMessage: `cannot delete department with employees: department '${deptId}' still has ${totalCount} member(s) (${digitalCount} digital, ${humanCount} human)`
       });
     }
   }

@@ -1,6 +1,7 @@
 export const PLATFORM_TABLES = {
   departments: "departments",
   employees: "employees",
+  humanEmployees: "human_employees",
   employeeSkills: "employee_skills",
   employeeSchedules: "employee_schedules",
   skillInstallations: "skill_installations",
@@ -13,8 +14,40 @@ export type DepartmentRecord = {
   id: string;
   name: string;
   description: string;
+  /** 外部系统（如钉钉）的部门 ID，用于数据同步时的匹配 key */
+  external_id: string | null;
   parent_id: string | null;
   sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * 人类员工记录（来自组织架构同步，如钉钉）。
+ * 与"数字员工"（employees 表）并列挂载在部门下，通过不同表区分类型。
+ */
+export type HumanEmployeeRecord = {
+  id: string;
+  /** 外部系统用户 ID（如钉钉 userid） */
+  external_id: string;
+  name: string;
+  avatar: string;
+  /** 职位/职称 */
+  title: string;
+  /** 工号 */
+  job_number: string;
+  /** 是否在职 */
+  active: number; // SQLite 0/1
+  /** 是否管理员 */
+  is_admin: number; // SQLite 0/1
+  /** 是否 boss */
+  is_boss: number; // SQLite 0/1
+  /** 主部门（FK → departments.id） */
+  department_id: string | null;
+  /** 外部系统中该用户所属的所有部门 ID（JSON 数组字符串，供参考） */
+  external_dept_ids: string;
+  /** 外部系统 unionid */
+  unionid: string;
   created_at: string;
   updated_at: string;
 };
