@@ -543,14 +543,14 @@ function generatePixelAvatar(name: string): string {
           <div class="absolute top-0 right-0 w-[60px] h-full bg-gradient-to-l from-slate-200 to-slate-300" />
 
           <!-- 植物装饰 -->
-          <div class="absolute bottom-[45px] left-2 text-base opacity-90 origin-bottom animate-[plant-sway_4s_ease-in-out_infinite]">🪴</div>
+          <div class="absolute bottom-[45px] left-2 text-base opacity-90 origin-bottom animate-plant-sway">🪴</div>
           <div class="absolute bottom-[45px] right-2 text-sm opacity-80">🌿</div>
 
           <!-- 桌面 -->
           <div class="absolute bottom-0 left-0 right-0 h-[42px] bg-gradient-to-b from-gray-500 to-gray-600" />
 
           <!-- 显示器 -->
-          <div class="absolute bottom-[28px] left-1/2 -translate-x-1/2 w-[80px] h-[52px] bg-slate-800 rounded border-2 border-slate-600 animate-[screen-glow_3s_infinite]">
+          <div class="absolute bottom-[28px] left-1/2 -translate-x-1/2 w-[80px] h-[52px] bg-slate-800 rounded border-2 border-slate-600 animate-screen-glow">
             <!-- 屏幕内容 -->
             <div class="m-[5px] h-[calc(100%-10px)] bg-white rounded-sm overflow-hidden">
               <!-- 工具栏 -->
@@ -564,7 +564,7 @@ function generatePixelAvatar(name: string): string {
                 <div class="h-[2px] bg-blue-500 rounded-[1px] w-[50%]" />
                 <div class="h-[2px] bg-slate-200 rounded-[1px] w-[80%] mt-[3px]" />
                 <div class="h-[2px] bg-slate-200 rounded-[1px] w-[70%] mt-[2px]" />
-                <div class="inline-block w-[2px] h-[3px] bg-blue-500 mt-[2px] animate-[cursor-blink_1s_infinite]" />
+                <div class="inline-block w-[2px] h-[3px] bg-blue-500 mt-[2px] animate-cursor-blink" />
               </div>
             </div>
             <!-- 底座 -->
@@ -573,9 +573,9 @@ function generatePixelAvatar(name: string): string {
           </div>
 
           <!-- 人物剪影 -->
-          <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 animate-[subtle-float_3s_ease-in-out_infinite]">
+          <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 animate-subtle-float">
             <!-- 头部 -->
-            <div class="relative w-[20px] h-[22px] bg-[#fcd9b6] rounded-[50%_50%_45%_45%] mx-auto animate-[head-move_4s_ease-in-out_infinite]">
+            <div class="relative w-[20px] h-[22px] bg-[#fcd9b6] rounded-[50%_50%_45%_45%] mx-auto animate-head-move">
               <!-- 头发 -->
               <div class="absolute -top-[2px] -left-[1px] -right-[1px] h-[10px] bg-[#4a3728] rounded-[10px_10px_0_0]" />
             </div>
@@ -584,9 +584,9 @@ function generatePixelAvatar(name: string): string {
               <!-- 衣领 -->
               <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[8px] h-[4px] bg-blue-400 rounded-b-[4px]" />
               <!-- 左手臂 -->
-              <div class="absolute -left-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-[arm-type-left_0.6s_ease-in-out_infinite]" />
+              <div class="absolute -left-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-arm-type-left" />
               <!-- 右手臂 -->
-              <div class="absolute -right-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-[arm-type-right_0.6s_ease-in-out_infinite_0.3s]" />
+              <div class="absolute -right-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-arm-type-right" />
             </div>
           </div>
 
@@ -1274,52 +1274,3 @@ function generatePixelAvatar(name: string): string {
   </div>
   </div>
 </template>
-
-<style scoped>
-/* === 员工卡片工作场景动画 === */
-
-/* 人物浮动 */
-@keyframes subtle-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
-
-/* 头部晃动 */
-@keyframes head-move {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: rotate(2deg); }
-  70% { transform: rotate(-2deg); }
-}
-
-/* 左手臂敲键盘 */
-@keyframes arm-type-left {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: rotate(-15deg); }
-  60% { transform: rotate(-5deg); }
-}
-
-/* 右手臂敲键盘 */
-@keyframes arm-type-right {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: rotate(5deg); }
-  60% { transform: rotate(15deg); }
-}
-
-/* 显示器光晕 */
-@keyframes screen-glow {
-  0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.15); }
-  50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.25); }
-}
-
-/* 光标闪烁 */
-@keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
-/* 植物摇摆 */
-@keyframes plant-sway {
-  0%, 100% { transform: rotate(-2deg); }
-  50% { transform: rotate(2deg); }
-}
-</style>
