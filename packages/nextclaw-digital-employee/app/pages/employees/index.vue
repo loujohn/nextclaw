@@ -451,6 +451,14 @@ function getBannerStyle(name: string): Record<string, string> {
   };
 }
 
+/** 获取头像渐变样式 */
+function getAvatarStyle(name: string): Record<string, string> {
+  const p = _getEmpPalette(name);
+  return {
+    background: `linear-gradient(135deg, ${p.px} 0%, ${p.bannerTo} 100%)`
+  };
+}
+
 /** 确定性像素艺术头像（5×5 对称 Identicon，纯 SVG 内联，无外部请求）*/
 function generatePixelAvatar(name: string): string {
   const GRID = 5;
@@ -605,16 +613,12 @@ function generatePixelAvatar(name: string): string {
 
         <!-- ② 头像（从 banner 露出） + 模型标签 -->
         <div class="-mt-5 flex items-end justify-between px-4">
-          <!-- 头像：像素艺术 Identicon（确定性生成，无外部请求）-->
+          <!-- 头像：渐变色圆形 + 首字 -->
           <div
-            class="relative h-12 w-12 rounded-xl border-[3px] border-card shadow-lg overflow-hidden transition-transform duration-200 group-hover:scale-110"
+            class="relative h-12 w-12 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
+            :style="getAvatarStyle(emp.name)"
           >
-            <img
-              :src="generatePixelAvatar(emp.name)"
-              :alt="emp.name"
-              class="h-full w-full"
-              draggable="false"
-            />
+            <span class="text-white font-bold text-lg select-none">{{ emp.name.charAt(0) }}</span>
             <!-- 在线指示器 -->
             <span
               v-if="resolveHealth(emp).lastStatus === 'healthy'"
