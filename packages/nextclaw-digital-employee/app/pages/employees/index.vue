@@ -507,12 +507,13 @@ function getAvatarStyle(name: string): Record<string, string> {
 /** 获取人物样式（肤色、发色、衬衫、发型）*/
 function getCharacterStyle(name: string): CharacterStyle {
   const h = _nameHash(name);
+  const hairStyleIndex = (h * 7) % 2;  // 更均匀的分布
   return {
     skinColor: SKIN_COLORS[h % SKIN_COLORS.length]!,
     hairColor: HAIR_COLORS[(h >> 3) % HAIR_COLORS.length]!,
     shirtColor: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.main,
     shirtColorLight: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.light,
-    hairStyle: (['short', 'long'] as const)[(h >> 9) % 2],
+    hairStyle: (['short', 'long'] as const)[hairStyleIndex],
   };
 }
 
@@ -644,35 +645,26 @@ function generatePixelAvatar(name: string): string {
               class="relative w-[20px] h-[22px] rounded-[50%_50%_45%_45%] mx-auto animate-head-move"
               :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
             >
-              <!-- 头发 - 短发 -->
+              <!-- 头发 - 短发（男生风格） -->
               <template v-if="getCharacterStyle(emp.name).hairStyle === 'short'">
                 <div
-                  class="absolute -top-[2px] left-[2px] right-[2px] h-[8px] rounded-[8px_8px_0_0]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <!-- 短发侧边 -->
-                <div
-                  class="absolute top-[4px] -left-[1px] w-[4px] h-[6px] rounded-l-[2px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[4px] -right-[1px] w-[4px] h-[6px] rounded-r-[2px]"
+                  class="absolute -top-[3px] left-[1px] right-[1px] h-[10px] rounded-[10px_10px_0_0]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
               </template>
-              <!-- 头发 - 长发 -->
+              <!-- 头发 - 长发（女生风格，披肩长发） -->
               <template v-else>
                 <div
-                  class="absolute -top-[3px] -left-[4px] -right-[4px] h-[14px] rounded-[14px_14px_0_0]"
+                  class="absolute -top-[4px] -left-[5px] -right-[5px] h-[16px] rounded-[16px_16px_4px_4px]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
-                <!-- 长发垂下 -->
+                <!-- 长发垂到肩膀两侧 -->
                 <div
-                  class="absolute top-[6px] -left-[5px] w-[8px] h-[20px] rounded-b-[4px]"
+                  class="absolute top-[10px] -left-[6px] w-[10px] h-[22px] rounded-b-[6px]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
                 <div
-                  class="absolute top-[6px] -right-[5px] w-[8px] h-[20px] rounded-b-[4px]"
+                  class="absolute top-[10px] -right-[6px] w-[10px] h-[22px] rounded-b-[6px]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
               </template>
