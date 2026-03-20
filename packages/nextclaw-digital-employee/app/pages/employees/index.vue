@@ -1221,3 +1221,52 @@ function generatePixelAvatar(name: string): string {
   </div>
   </div>
 </template>
+
+<style scoped>
+/* === 员工卡片工作场景动画 === */
+
+/* 人物浮动 */
+@keyframes subtle-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* 头部晃动 */
+@keyframes head-move {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(2deg); }
+  70% { transform: rotate(-2deg); }
+}
+
+/* 左手臂敲键盘 */
+@keyframes arm-type-left {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-15deg); }
+  60% { transform: rotate(-5deg); }
+}
+
+/* 右手臂敲键盘 */
+@keyframes arm-type-right {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(5deg); }
+  60% { transform: rotate(15deg); }
+}
+
+/* 显示器光晕 */
+@keyframes screen-glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.15); }
+  50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.25); }
+}
+
+/* 光标闪烁 */
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 植物摇摆 */
+@keyframes plant-sway {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+</style>
