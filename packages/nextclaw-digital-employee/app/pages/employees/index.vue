@@ -496,7 +496,8 @@ function getBannerStyle(name: string): Record<string, string> {
   };
 }
 
-// 头像样式缓存
+// 头像样式缓存（带大小限制，避免内存泄漏）
+const AVATAR_STYLE_CACHE_LIMIT = 500;
 const _avatarStyleCache = new Map<string, Record<string, string>>();
 
 /** 获取头像渐变样式 - 带缓存 */
@@ -511,11 +512,17 @@ function getAvatarStyle(name: string): Record<string, string> {
     background: `linear-gradient(135deg, ${p.px} 0%, ${p.bannerTo} 100%)`
   };
 
+  // 限制缓存大小，删除最旧的条目
+  if (_avatarStyleCache.size >= AVATAR_STYLE_CACHE_LIMIT) {
+    const firstKey = _avatarStyleCache.keys().next().value;
+    if (firstKey) _avatarStyleCache.delete(firstKey);
+  }
   _avatarStyleCache.set(name, style);
   return style;
 }
 
-// 角色样式缓存（避免模板中重复计算）
+// 角色样式缓存（带大小限制，避免内存泄漏）
+const CHARACTER_STYLE_CACHE_LIMIT = 500;
 const _characterStyleCache = new Map<string, CharacterStyle>();
 
 /** 获取人物样式（肤色、发色、衬衫、发型）- 带缓存 */
@@ -535,6 +542,11 @@ function getCharacterStyle(name: string): CharacterStyle {
     hairStyle: (['short', 'medium', 'long', 'ponytail', 'curly'] as const)[hairStyleIndex],
   };
 
+  // 限制缓存大小，删除最旧的条目
+  if (_characterStyleCache.size >= CHARACTER_STYLE_CACHE_LIMIT) {
+    const firstKey = _characterStyleCache.keys().next().value;
+    if (firstKey) _characterStyleCache.delete(firstKey);
+  }
   _characterStyleCache.set(name, style);
   return style;
 }
