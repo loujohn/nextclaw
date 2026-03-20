@@ -436,40 +436,40 @@ type CharacterStyle = {
   hairStyle: 'short' | 'long' | 'bald';  // 发型
 };
 
-// 肤色选项
+// 中国人肤色选项（亚洲肤色范围）
 const SKIN_COLORS = [
-  "#fcd9b6",  // 浅肤色
-  "#f5c9a6",  // 中浅肤色
-  "#e8b896",  // 中等肤色
-  "#d4a574",  // 棕肤色
-  "#a67c52",  // 深棕肤色
-  "#8d5a3c",  // 深肤色
+  "#fde8d7",  // 白皙
+  "#fcd9b6",  // 较白
+  "#f5c9a6",  // 中等偏白
+  "#e8b896",  // 中等
+  "#d4a574",  // 健康色
+  "#c99a5c",  // 小麦色
 ];
 
-// 发色选项
+// 中国人发色选项（以黑发为主）
 const HAIR_COLORS = [
+  "#0a0a0a",  // 纯黑
   "#1a1a1a",  // 黑色
-  "#2d1f1a",  // 深棕
-  "#4a3728",  // 棕色
-  "#6b5344",  // 浅棕
-  "#8b7355",  // 金棕
-  "#c4a35a",  // 金色
-  "#a0522d",  // 红棕
-  "#708090",  // 灰色
+  "#2d1f1a",  // 深棕黑
+  "#3d2b1f",  // 棕黑
+  "#4a3728",  // 深棕
+  "#5c4033",  // 棕色
+  "#1a1a2e",  // 偏蓝黑（染发）
+  "#2d2d44",  // 深灰黑（染发）
 ];
 
-// 衬衫颜色选项
+// 衬衫颜色选项（职场常见颜色）
 const SHIRT_COLORS = [
   { main: "#3b82f6", light: "#60a5fa" },  // 蓝色
+  { main: "#1e40af", light: "#3b82f6" },  // 深蓝
   { main: "#6366f1", light: "#818cf8" },  // 靛蓝
-  { main: "#8b5cf6", light: "#a78bfa" },  // 紫色
-  { main: "#ec4899", light: "#f472b6" },  // 粉色
-  { main: "#10b981", light: "#34d399" },  // 绿色
-  { main: "#f59e0b", light: "#fbbf24" },  // 橙色
-  { main: "#ef4444", light: "#f87171" },  // 红色
-  { main: "#14b8a6", light: "#2dd4bf" },  // 青色
-  { main: "#64748b", light: "#94a3b8" },  // 灰色
-  { main: "#0ea5e9", light: "#38bdf8" },  // 天蓝
+  { main: "#0f766e", light: "#14b8a6" },  // 墨绿
+  { main: "#374151", light: "#6b7280" },  // 深灰
+  { main: "#1f2937", light: "#4b5563" },  // 黑灰
+  { main: "#dc2626", light: "#ef4444" },  // 红色
+  { main: "#0891b2", light: "#22d3ee" },  // 青色
+  { main: "#475569", light: "#64748b" },  // 蓝灰
+  { main: "#2563eb", light: "#3b82f6" },  // 宝蓝
 ];
 
 function _nameHash(name: string): number {
