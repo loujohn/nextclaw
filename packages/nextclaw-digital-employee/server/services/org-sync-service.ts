@@ -1,13 +1,10 @@
 import { spawn } from "node:child_process";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type OrgSyncConfigRecord } from "../db/schema";
 
-// __dirname 对 ESM 的兼容
-const _dir = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
-// 脚本相对于 server/ 目录向上两级到 package 根，再进 scripts/
-const SCRIPT_PATH = resolve(_dir, "../../scripts/dingtalk-org-sync.py");
+// process.cwd() 在 Nitro dev/prod 模式下均指向包根目录，比 __dirname 更稳定
+const SCRIPT_PATH = resolve(process.cwd(), "scripts/dingtalk-org-sync.py");
 
 const CONFIG_ID = "default";
 
@@ -53,14 +50,14 @@ export async function getOrgSyncConfig(db: Knex): Promise<OrgSyncConfigView> {
     .where({ id: CONFIG_ID })
     .first();
   if (!record) {
-    // 初始化默认行
+    // 首次初始化：从环境变量读取默认值
     const now = new Date().toISOString();
     const defaults: OrgSyncConfigRecord = {
       id: CONFIG_ID,
-      app_key: "",
-      app_secret: "",
-      cron_expr: "0 1 * * *",
-      enabled: 0,
+      app_key: process.env.DINGTALK_APP_KEY ?? "",
+      app_secret: process.env.DINGTALK_APP_SECRET ?? "",
+      cron_expr: process.env.DINGTALK_CRON_EXPR ?? "0 1 * * *",
+      enabled: process.env.DINGTALK_SYNC_ENABLED === "true" ? 1 : 0,
       last_run_at: null,
       last_run_status: null,
       last_run_summary: "",
@@ -68,6 +65,16 @@ export async function getOrgSyncConfig(db: Knex): Promise<OrgSyncConfigView> {
     };
     await db<OrgSyncConfigRecord>(PLATFORM_TABLES.orgSyncConfig).insert(defaults);
     record = defaults;
+  } else {
+    // 已有记录：若 DB 中字段为空而 env 中已配置，则用 env 覆盖（允许 .env 初始化已有实例）
+    const envPatch: Partial<OrgSyncConfigRecord> = {};
+    if (!record.app_key && process.env.DINGTALK_APP_KEY) envPatch.app_key = process.env.DINGTALK_APP_KEY;
+    if (!record.app_secret && process.env.DINGTALK_APP_SECRET) envPatch.app_secret = process.env.DINGTALK_APP_SECRET;
+    if (Object.keys(envPatch).length > 0) {
+      envPatch.updated_at = new Date().toISOString();
+      await db<OrgSyncConfigRecord>(PLATFORM_TABLES.orgSyncConfig).where({ id: CONFIG_ID }).update(envPatch);
+      record = { ...record, ...envPatch };
+    }
   }
   return toView(record);
 }

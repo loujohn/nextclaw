@@ -2,6 +2,8 @@ node_modules/
 dist/
 .pnpm-store/
 .env
+# 仅追踪 digital-employee 包的 .env（含钉钉配置）
+!packages/nextclaw-digital-employee/.env
 coverage/
 .DS_Store
 .npmrc
