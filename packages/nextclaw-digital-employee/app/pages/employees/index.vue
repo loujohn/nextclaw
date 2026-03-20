@@ -433,7 +433,7 @@ type CharacterStyle = {
   hairColor: string;      // 发色
   shirtColor: string;     // 衬衫颜色
   shirtColorLight: string; // 衬衫浅色（衣领）
-  hairStyle: 'short' | 'long' | 'bald';  // 发型
+  hairStyle: 'short' | 'long';  // 发型
 };
 
 // 中国人肤色选项（亚洲肤色范围）
@@ -512,7 +512,7 @@ function getCharacterStyle(name: string): CharacterStyle {
     hairColor: HAIR_COLORS[(h >> 3) % HAIR_COLORS.length]!,
     shirtColor: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.main,
     shirtColorLight: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.light,
-    hairStyle: (['short', 'long', 'bald'] as const)[(h >> 9) % 3],
+    hairStyle: (['short', 'long'] as const)[(h >> 9) % 2],
   };
 }
 
@@ -651,7 +651,7 @@ function generatePixelAvatar(name: string): string {
                 :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
               />
               <!-- 头发 - 长发 -->
-              <template v-else-if="getCharacterStyle(emp.name).hairStyle === 'long'">
+              <template v-else>
                 <div
                   class="absolute -top-[2px] -left-[3px] -right-[3px] h-[12px] rounded-[12px_12px_0_0]"
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
@@ -665,7 +665,6 @@ function generatePixelAvatar(name: string): string {
                   :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
                 />
               </template>
-              <!-- 秃头 - 无头发 -->
             </div>
             <!-- 身体 -->
             <div
