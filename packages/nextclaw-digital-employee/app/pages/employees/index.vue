@@ -533,25 +533,78 @@ function generatePixelAvatar(name: string): string {
         :key="emp.id"
         class="group flex flex-col rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1.5"
       >
-        <!-- ① 渐变 Banner —— 每位员工唯一色系 -->
-        <div class="relative h-[72px] overflow-hidden" :style="getBannerStyle(emp.name)">
-          <!-- 装饰圆圈 -->
-          <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10 pointer-events-none" />
-          <div class="absolute right-10 top-3 h-12 w-12 rounded-full bg-white/10 pointer-events-none" />
-          <div class="absolute left-3 -bottom-5 h-16 w-16 rounded-full bg-black/8 pointer-events-none" />
+        <!-- ① 办公工作场景 -->
+        <div class="relative h-[100px] overflow-hidden bg-gradient-to-b from-slate-100 via-slate-200 to-slate-300">
+          <!-- 天花板灯带 -->
+          <div class="absolute top-0 left-0 right-0 h-[4px] bg-gradient-to-r from-transparent via-amber-100 to-transparent opacity-80" />
 
-          <!-- 健康状态徽章（右上） -->
-          <span class="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-black/25 backdrop-blur-sm px-2 py-0.5 text-[10px] font-semibold text-white">
+          <!-- 隔断墙 -->
+          <div class="absolute top-0 left-0 w-[60px] h-full bg-gradient-to-r from-slate-200 to-slate-300" />
+          <div class="absolute top-0 right-0 w-[60px] h-full bg-gradient-to-l from-slate-200 to-slate-300" />
+
+          <!-- 植物装饰 -->
+          <div class="absolute bottom-[45px] left-2 text-base opacity-90 origin-bottom animate-[plant-sway_4s_ease-in-out_infinite]">🪴</div>
+          <div class="absolute bottom-[45px] right-2 text-sm opacity-80">🌿</div>
+
+          <!-- 桌面 -->
+          <div class="absolute bottom-0 left-0 right-0 h-[42px] bg-gradient-to-b from-gray-500 to-gray-600" />
+
+          <!-- 显示器 -->
+          <div class="absolute bottom-[28px] left-1/2 -translate-x-1/2 w-[80px] h-[52px] bg-slate-800 rounded border-2 border-slate-600 animate-[screen-glow_3s_infinite]">
+            <!-- 屏幕内容 -->
+            <div class="m-[5px] h-[calc(100%-10px)] bg-white rounded-sm overflow-hidden">
+              <!-- 工具栏 -->
+              <div class="h-[6px] bg-slate-100 flex gap-[2px] p-[2px] items-center">
+                <div class="w-[2px] h-[2px] bg-red-500 rounded-full" />
+                <div class="w-[2px] h-[2px] bg-yellow-500 rounded-full" />
+                <div class="w-[2px] h-[2px] bg-green-500 rounded-full" />
+              </div>
+              <!-- 文档 -->
+              <div class="p-[4px]">
+                <div class="h-[2px] bg-blue-500 rounded-[1px] w-[50%]" />
+                <div class="h-[2px] bg-slate-200 rounded-[1px] w-[80%] mt-[3px]" />
+                <div class="h-[2px] bg-slate-200 rounded-[1px] w-[70%] mt-[2px]" />
+                <div class="inline-block w-[2px] h-[3px] bg-blue-500 mt-[2px] animate-[cursor-blink_1s_infinite]" />
+              </div>
+            </div>
+            <!-- 底座 -->
+            <div class="absolute -bottom-[6px] left-1/2 -translate-x-1/2 w-[14px] h-[6px] bg-slate-600" />
+            <div class="absolute -bottom-[8px] left-1/2 -translate-x-1/2 w-[35px] h-[2px] bg-slate-600 rounded-[1px]" />
+          </div>
+
+          <!-- 人物剪影 -->
+          <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 animate-[subtle-float_3s_ease-in-out_infinite]">
+            <!-- 头部 -->
+            <div class="relative w-[20px] h-[22px] bg-[#fcd9b6] rounded-[50%_50%_45%_45%] mx-auto animate-[head-move_4s_ease-in-out_infinite]">
+              <!-- 头发 -->
+              <div class="absolute -top-[2px] -left-[1px] -right-[1px] h-[10px] bg-[#4a3728] rounded-[10px_10px_0_0]" />
+            </div>
+            <!-- 身体 -->
+            <div class="w-[32px] h-[20px] bg-blue-500 rounded-t-[6px] -mt-[3px] relative">
+              <!-- 衣领 -->
+              <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[8px] h-[4px] bg-blue-400 rounded-b-[4px]" />
+              <!-- 左手臂 -->
+              <div class="absolute -left-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-[arm-type-left_0.6s_ease-in-out_infinite]" />
+              <!-- 右手臂 -->
+              <div class="absolute -right-[4px] bottom-0 w-[7px] h-[16px] bg-[#fcd9b6] rounded-[3px] origin-top animate-[arm-type-right_0.6s_ease-in-out_infinite_0.3s]" />
+            </div>
+          </div>
+
+          <!-- 键盘 -->
+          <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 w-[50px] h-[7px] bg-slate-600 rounded-[2px]" />
+
+          <!-- 健康状态徽章 -->
+          <span class="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[9px] text-slate-700">
             <span
-              class="h-1.5 w-1.5 rounded-full"
-              :class="resolveHealth(emp).lastStatus === 'failed' ? 'bg-red-300 animate-pulse' : resolveHealth(emp).lastStatus === 'healthy' ? 'bg-green-300 animate-pulse' : 'bg-yellow-200'"
+              class="h-[5px] w-[5px] rounded-full"
+              :class="resolveHealth(emp).lastStatus === 'failed' ? 'bg-red-500' : resolveHealth(emp).lastStatus === 'healthy' ? 'bg-green-500' : 'bg-yellow-500'"
             />
             {{ resolveHealth(emp).label }}
           </span>
         </div>
 
         <!-- ② 头像（从 banner 露出） + 模型标签 -->
-        <div class="-mt-6 flex items-end justify-between px-4">
+        <div class="-mt-5 flex items-end justify-between px-4">
           <!-- 头像：像素艺术 Identicon（确定性生成，无外部请求）-->
           <div
             class="relative h-12 w-12 rounded-xl border-[3px] border-card shadow-lg overflow-hidden transition-transform duration-200 group-hover:scale-110"
