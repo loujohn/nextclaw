@@ -1,25 +1,28 @@
 <script setup lang="ts">
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Folder, FolderOpen } from "lucide-vue-next";
-import type { DepartmentTreeNode } from "./DepartmentTree.vue";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Bot, User } from "lucide-vue-next";
+import type { DepartmentTreeNode, HumanMemberBrief, DigitalMemberBrief } from "./DepartmentTree.vue";
 
 const props = defineProps<{
   node: DepartmentTreeNode;
   selectedId: string | null;
   expanded: Set<string>;
   depth: number;
+  humanMembers?: Record<string, HumanMemberBrief[]>;
+  digitalMembers?: Record<string, DigitalMemberBrief[]>;
 }>();
 
 const emit = defineEmits<{
   select: [id: string];
   toggle: [id: string];
-  addChild: [parentId: string];
-  edit: [dept: DepartmentTreeNode];
-  delete: [dept: DepartmentTreeNode];
 }>();
 
 const hasChildren = computed(() => props.node.children.length > 0);
 const isOpen = computed(() => props.expanded.has(props.node.id));
 const isSelected = computed(() => props.selectedId === props.node.id);
+
+const nodeHumanMembers = computed(() => props.humanMembers?.[props.node.id] ?? []);
+const nodeDigitalMembers = computed(() => props.digitalMembers?.[props.node.id] ?? []);
+const hasMemberChips = computed(() => isSelected.value && (nodeHumanMembers.value.length > 0 || nodeDigitalMembers.value.length > 0));
 </script>
 
 <template>
@@ -47,33 +50,34 @@ const isSelected = computed(() => props.selectedId === props.node.id);
       <!-- 名称 -->
       <span class="flex-1 truncate text-[13px]">{{ node.name }}</span>
 
-      <!-- 员工数量 -->
+      <!-- 员工数量（数字员工数） -->
       <span v-if="node.employeeCount > 0" class="text-[10px] font-mono opacity-60">{{ node.employeeCount }}</span>
+    </div>
 
-      <!-- 操作按钮（hover 时显示） -->
-      <div class="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100" @click.stop>
-        <button
-          class="rounded p-0.5 hover:bg-primary/10 hover:text-primary"
-          title="添加子部门"
-          @click="emit('addChild', node.id)"
-        >
-          <Plus class="h-3 w-3" :stroke-width="2.2" />
-        </button>
-        <button
-          class="rounded p-0.5 hover:bg-muted hover:text-foreground"
-          title="编辑"
-          @click="emit('edit', node)"
-        >
-          <Pencil class="h-3 w-3" :stroke-width="1.8" />
-        </button>
-        <button
-          class="rounded p-0.5 hover:bg-destructive/10 hover:text-destructive"
-          title="删除"
-          @click="emit('delete', node)"
-        >
-          <Trash2 class="h-3 w-3" :stroke-width="1.8" />
-        </button>
-      </div>
+    <!-- 选中时展示成员 chips -->
+    <div
+      v-if="hasMemberChips"
+      class="flex flex-wrap gap-1 pb-1"
+      :style="{ paddingLeft: `${(depth * 12) + 28}px` }"
+    >
+      <span
+        v-for="m in nodeDigitalMembers"
+        :key="'d-' + m.id"
+        class="flex items-center gap-1 rounded-full bg-primary/5 border border-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+        :title="m.name"
+      >
+        <Bot class="h-2.5 w-2.5 shrink-0" :stroke-width="1.8" />
+        <span class="max-w-[56px] truncate">{{ m.name }}</span>
+      </span>
+      <span
+        v-for="m in nodeHumanMembers"
+        :key="'h-' + m.id"
+        class="flex items-center gap-1 rounded-full bg-muted border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+        :title="m.name"
+      >
+        <User class="h-2.5 w-2.5 shrink-0" :stroke-width="1.8" />
+        <span class="max-w-[56px] truncate">{{ m.name }}</span>
+      </span>
     </div>
 
     <!-- 子节点 -->
@@ -86,11 +90,10 @@ const isSelected = computed(() => props.selectedId === props.node.id);
           :selected-id="selectedId"
           :expanded="expanded"
           :depth="depth + 1"
+          :human-members="humanMembers"
+          :digital-members="digitalMembers"
           @select="emit('select', $event)"
           @toggle="emit('toggle', $event)"
-          @add-child="emit('addChild', $event)"
-          @edit="emit('edit', $event)"
-          @delete="emit('delete', $event)"
         />
       </div>
     </Transition>

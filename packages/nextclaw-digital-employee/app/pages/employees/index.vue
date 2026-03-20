@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
 import { Search, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench } from "lucide-vue-next";
-import type { DepartmentView } from "~/components/DepartmentTree.vue";
+import type { DepartmentView, HumanMemberBrief, DigitalMemberBrief } from "~/components/DepartmentTree.vue";
 
 type EmployeeResponse = {
   id: string;
@@ -54,6 +54,8 @@ type EmployeeDetailPayload = {
 const { data: employeePayload, refresh } = await useFetch<EmployeeListPayload>("/api/employees");
 const { data: skillPayload } = await useFetch<SkillListPayload>("/api/skills");
 const { data: departmentPayload, refresh: refreshDepts } = await useFetch<{ ok: boolean; data: DepartmentView[] }>("/api/departments");
+type HumanEmployeeListPayload = { ok: boolean; data: HumanMemberBrief[] };
+const { data: humanEmployeePayload, refresh: refreshHumanEmployees } = await useFetch<HumanEmployeeListPayload>("/api/org/human-employees");
 
 const selectedDeptId = ref<string | null>(null);
 
@@ -144,7 +146,7 @@ const employees = computed(() => employeePayload.value?.data ?? []);
 const skills = computed(() => skillPayload.value?.data.filter((s) => s.enabled || s.statusLabel !== "已停用") ?? []);
 const departments = computed(() => departmentPayload.value?.data ?? []);
 
-// 每个部门的员工数量
+// 每个部门的数字员工数量
 const deptEmployeeCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
   for (const emp of employees.value) {
@@ -153,6 +155,31 @@ const deptEmployeeCounts = computed<Record<string, number>>(() => {
     }
   }
   return counts;
+});
+
+// 按部门分组：人类员工
+const humanMembersMap = computed<Record<string, HumanMemberBrief[]>>(() => {
+  const map: Record<string, HumanMemberBrief[]> = {};
+  for (const m of (humanEmployeePayload.value?.data ?? [])) {
+    const deptId = (m as any).departmentId as string | null;
+    if (deptId) {
+      if (!map[deptId]) map[deptId] = [];
+      map[deptId].push(m);
+    }
+  }
+  return map;
+});
+
+// 按部门分组：数字员工
+const digitalMembersMap = computed<Record<string, DigitalMemberBrief[]>>(() => {
+  const map: Record<string, DigitalMemberBrief[]> = {};
+  for (const emp of employees.value) {
+    if (emp.departmentId) {
+      if (!map[emp.departmentId]) map[emp.departmentId] = [];
+      map[emp.departmentId]!.push({ id: emp.id, name: emp.name });
+    }
+  }
+  return map;
 });
 
 // 树形部门选项（层级缩进）
@@ -587,8 +614,10 @@ function generatePixelAvatar(name: string): string {
         :employee-counts="deptEmployeeCounts"
         :selected-id="selectedDeptId"
         :total-count="employees.length"
+        :human-members="humanMembersMap"
+        :digital-members="digitalMembersMap"
         @select="selectedDeptId = $event"
-        @refresh="async () => { await refreshDepts(); await refresh(); }"
+        @refresh="async () => { await refreshDepts(); await refresh(); await refreshHumanEmployees(); }"
       />
     </aside>
 

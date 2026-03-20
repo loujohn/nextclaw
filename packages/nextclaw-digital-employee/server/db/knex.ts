@@ -30,6 +30,7 @@ async function createDepartmentsTable(db: Knex): Promise<void> {
     table.string("id").primary();
     table.string("name").notNullable();
     table.text("description").notNullable().defaultTo("");
+    table.string("external_id").nullable();
     table.string("parent_id").nullable().references("id").inTable(PLATFORM_TABLES.departments).onDelete("SET NULL");
     table.integer("sort_order").notNullable().defaultTo(0);
     table.timestamp("created_at").notNullable();
@@ -161,6 +162,39 @@ async function createRunEventsTable(db: Knex): Promise<void> {
   });
 }
 
+async function createHumanEmployeesTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.humanEmployees);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.humanEmployees, (table) => {
+    table.string("id").primary();
+    table.string("external_id").notNullable().unique();
+    table.string("name").notNullable();
+    table.text("avatar").notNullable().defaultTo("");
+    table.string("title").notNullable().defaultTo("");
+    table.string("job_number").notNullable().defaultTo("");
+    table.boolean("active").notNullable().defaultTo(true);
+    table.boolean("is_admin").notNullable().defaultTo(false);
+    table.boolean("is_boss").notNullable().defaultTo(false);
+    // 主部门，ON DELETE SET NULL，避免部门删除导致人员数据丢失
+    table.string("department_id").nullable().references("id").inTable(PLATFORM_TABLES.departments).onDelete("SET NULL");
+    table.text("external_dept_ids").notNullable().defaultTo("[]");
+    table.string("unionid").notNullable().defaultTo("");
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function migrateAddDepartmentExternalId(db: Knex): Promise<void> {
+  const hasColumn = await db.schema.hasColumn(PLATFORM_TABLES.departments, "external_id");
+  if (!hasColumn) {
+    await db.schema.alterTable(PLATFORM_TABLES.departments, (table) => {
+      table.string("external_id").nullable();
+    });
+  }
+}
+
 async function migrateEmployeesAddModel(db: Knex): Promise<void> {
   const hasColumn = await db.schema.hasColumn(PLATFORM_TABLES.employees, "model");
   if (!hasColumn) {
@@ -179,15 +213,34 @@ async function migrateEmployeesAddDepartmentId(db: Knex): Promise<void> {
   }
 }
 
+async function createOrgSyncConfigTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.orgSyncConfig);
+  if (exists) return;
+  await db.schema.createTable(PLATFORM_TABLES.orgSyncConfig, (table) => {
+    table.string("id").primary(); // fixed "default"
+    table.string("app_key").notNullable().defaultTo("");
+    table.string("app_secret").notNullable().defaultTo("");
+    table.string("cron_expr").notNullable().defaultTo("0 1 * * *");
+    table.boolean("enabled").notNullable().defaultTo(false);
+    table.timestamp("last_run_at").nullable();
+    table.string("last_run_status").nullable();
+    table.text("last_run_summary").notNullable().defaultTo("");
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createDepartmentsTable(db);
   await createEmployeesTable(db);
+  await createHumanEmployeesTable(db);
   await createEmployeeSkillsTable(db);
   await createEmployeeSchedulesTable(db);
   await createSkillInstallationsTable(db);
   await createIntegrationConnectionsTable(db);
   await createRunRecordsTable(db);
   await createRunEventsTable(db);
+  await createOrgSyncConfigTable(db);
   await migrateEmployeesAddModel(db);
   await migrateEmployeesAddDepartmentId(db);
+  await migrateAddDepartmentExternalId(db);
 }

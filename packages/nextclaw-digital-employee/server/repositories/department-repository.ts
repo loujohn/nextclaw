@@ -5,6 +5,7 @@ import { PLATFORM_TABLES, type DepartmentRecord } from "../db/schema";
 export type CreateDepartmentInput = {
   name: string;
   description?: string;
+  externalId?: string | null;
   parentId?: string | null;
   sortOrder?: number;
 };
@@ -12,6 +13,7 @@ export type CreateDepartmentInput = {
 export type UpdateDepartmentInput = {
   name?: string;
   description?: string;
+  externalId?: string | null;
   parentId?: string | null;
   sortOrder?: number;
 };
@@ -20,6 +22,8 @@ export type DepartmentView = {
   id: string;
   name: string;
   description: string;
+  /** 外部系统（如钉钉）的部门 ID，用于数据同步匹配 */
+  externalId: string | null;
   parentId: string | null;
   sortOrder: number;
   createdAt: string;
@@ -31,6 +35,7 @@ function toDepartmentView(record: DepartmentRecord): DepartmentView {
     id: record.id,
     name: record.name,
     description: record.description,
+    externalId: record.external_id ?? null,
     parentId: record.parent_id,
     sortOrder: record.sort_order,
     createdAt: record.created_at,
@@ -47,6 +52,7 @@ export class DepartmentRepository {
       id: randomUUID(),
       name: input.name.trim(),
       description: input.description?.trim() ?? "",
+      external_id: input.externalId ?? null,
       parent_id: input.parentId ?? null,
       sort_order: input.sortOrder ?? 0,
       created_at: now,
@@ -77,6 +83,7 @@ export class DepartmentRepository {
     const patch: Partial<DepartmentRecord> & { updated_at: string } = { updated_at: updatedAt };
     if (typeof input.name === "string") patch.name = input.name.trim();
     if (typeof input.description === "string") patch.description = input.description.trim();
+    if ("externalId" in input) patch.external_id = input.externalId ?? null;
     if ("parentId" in input) patch.parent_id = input.parentId ?? null;
     if (typeof input.sortOrder === "number") patch.sort_order = input.sortOrder;
 
@@ -97,6 +104,25 @@ export class DepartmentRepository {
       .count<{ count: number }>("id as count")
       .first();
     return Number(result?.count ?? 0);
+  }
+
+  /** 按外部 ID（如钉钉 dept_id）查找部门 */
+  async getByExternalId(externalId: string): Promise<DepartmentView | null> {
+    const record = await this.db<DepartmentRecord>(PLATFORM_TABLES.departments)
+      .where({ external_id: externalId })
+      .first();
+    return record ? toDepartmentView(record) : null;
+  }
+
+  /** 返回所有有 external_id 的部门，Map<externalId, DepartmentView>，供同步时复用 UUID */
+  async mapByExternalId(): Promise<Map<string, DepartmentView>> {
+    const rows = await this.db<DepartmentRecord>(PLATFORM_TABLES.departments)
+      .whereNotNull("external_id");
+    const map = new Map<string, DepartmentView>();
+    for (const row of rows) {
+      map.set(row.external_id!, toDepartmentView(row));
+    }
+    return map;
   }
 
   /** 获取指定部门的所有子孙部门 id（用于递归删除检查） */
