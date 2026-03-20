@@ -213,6 +213,22 @@ async function migrateEmployeesAddDepartmentId(db: Knex): Promise<void> {
   }
 }
 
+async function createOrgSyncConfigTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.orgSyncConfig);
+  if (exists) return;
+  await db.schema.createTable(PLATFORM_TABLES.orgSyncConfig, (table) => {
+    table.string("id").primary(); // fixed "default"
+    table.string("app_key").notNullable().defaultTo("");
+    table.string("app_secret").notNullable().defaultTo("");
+    table.string("cron_expr").notNullable().defaultTo("0 1 * * *");
+    table.boolean("enabled").notNullable().defaultTo(false);
+    table.timestamp("last_run_at").nullable();
+    table.string("last_run_status").nullable();
+    table.text("last_run_summary").notNullable().defaultTo("");
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createDepartmentsTable(db);
   await createEmployeesTable(db);
@@ -223,6 +239,7 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createIntegrationConnectionsTable(db);
   await createRunRecordsTable(db);
   await createRunEventsTable(db);
+  await createOrgSyncConfigTable(db);
   await migrateEmployeesAddModel(db);
   await migrateEmployeesAddDepartmentId(db);
   await migrateAddDepartmentExternalId(db);

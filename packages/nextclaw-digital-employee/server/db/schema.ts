@@ -7,7 +7,8 @@ export const PLATFORM_TABLES = {
   skillInstallations: "skill_installations",
   integrationConnections: "integration_connections",
   runRecords: "run_records",
-  runEvents: "run_events"
+  runEvents: "run_events",
+  orgSyncConfig: "org_sync_config"
 } as const;
 
 export type DepartmentRecord = {
@@ -97,4 +98,25 @@ export type RunEventRecord = {
   event_type: string;
   payload_json: string;
   created_at: string;
+};
+
+/**
+ * 组织同步配置（单行，主键固定为 "default"）。
+ * 存储钉钉 AppKey/AppSecret、定时任务触发时间及是否开启。
+ */
+export type OrgSyncConfigRecord = {
+  id: string; // 固定 "default"
+  app_key: string;
+  app_secret: string;
+  /** cron 表达式，如 "0 1 * * *" */
+  cron_expr: string;
+  /** 是否开启定时同步 */
+  enabled: number; // SQLite 0/1
+  /** 上次运行时间 */
+  last_run_at: string | null;
+  /** 上次运行结果 "success" | "failure" | null */
+  last_run_status: string | null;
+  /** 上次运行摘要（成功/失败信息）*/
+  last_run_summary: string;
+  updated_at: string;
 };
