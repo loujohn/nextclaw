@@ -1,8 +1,15 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-03-11",
   devtools: { enabled: true },
-  modules: ["@nuxtjs/tailwindcss"],
   css: ["~/assets/css/tailwind.css"],
+  postcss: {
+    plugins: {
+      tailwindcss: {
+        config: "./tailwind.config.cjs"
+      },
+      autoprefixer: {}
+    }
+  },
   app: {
     head: {
       link: [
@@ -21,9 +28,6 @@ export default defineNuxtConfig({
         }
       ]
     }
-  },
-  tailwindcss: {
-    configPath: "tailwind.config.js"
   },
   nitro: {
     esbuild: {

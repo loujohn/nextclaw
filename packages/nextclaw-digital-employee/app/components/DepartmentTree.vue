@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, RefreshCcw, X, Check } from "lucide-vue-next";
+import { Building2, RefreshCcw, X, Check, LayoutGrid, Users, Bot, Network } from "lucide-vue-next";
 
 export type DepartmentView = {
   id: string;
@@ -22,14 +22,17 @@ export type DigitalMemberBrief = { id: string; name: string };
 const props = defineProps<{
   departments: DepartmentView[];
   employeeCounts: Record<string, number>;
+  humanCounts?: Record<string, number>;
   selectedId: string | null;
   totalCount: number;
+  totalHumanCount?: number;
   humanMembers?: Record<string, HumanMemberBrief[]>;
   digitalMembers?: Record<string, DigitalMemberBrief[]>;
 }>();
 
 const emit = defineEmits<{
   select: [id: string | null];
+  'select-overview': [];
   refresh: [];
 }>();
 
@@ -106,9 +109,19 @@ async function runSync() {
       </button>
     </div>
 
-    <!-- 全部 -->
+    <!-- 总览 -->
     <button
       class="mx-2 mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
+      :class="selectedId === '__overview__' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+      @click="emit('select-overview')"
+    >
+      <LayoutGrid class="h-4 w-4 shrink-0" :stroke-width="1.8" />
+      <span class="flex-1 text-left">总览</span>
+    </button>
+
+    <!-- 全部 -->
+    <button
+      class="mx-2 mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
       :class="selectedId === null ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
       @click="emit('select', null)"
     >
@@ -172,5 +185,6 @@ async function runSync() {
         </div>
       </Transition>
     </Teleport>
+
   </div>
 </template>

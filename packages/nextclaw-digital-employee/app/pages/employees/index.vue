@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
-import { Search, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench } from "lucide-vue-next";
+import { Search, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench, Building2, Users, Bot, Network } from "lucide-vue-next";
 import type { DepartmentView, HumanMemberBrief, DigitalMemberBrief } from "~/components/DepartmentTree.vue";
 
 type EmployeeResponse = {
@@ -58,6 +58,17 @@ type HumanEmployeeListPayload = { ok: boolean; data: HumanMemberBrief[] };
 const { data: humanEmployeePayload, refresh: refreshHumanEmployees } = await useFetch<HumanEmployeeListPayload>("/api/org/human-employees");
 
 const selectedDeptId = ref<string | null>(null);
+// 视图模式：overview=总览，list=员工列表
+const viewMode = ref<'overview' | 'list'>('overview');
+
+function handleSelectDept(id: string | null) {
+  selectedDeptId.value = id;
+  viewMode.value = 'list';
+}
+function handleSelectOverview() {
+  selectedDeptId.value = null;
+  viewMode.value = 'overview';
+}
 
 // Toast 通知系统
 type Toast = { id: number; type: "success" | "error"; message: string };
@@ -168,6 +179,48 @@ const humanMembersMap = computed<Record<string, HumanMemberBrief[]>>(() => {
     }
   }
   return map;
+});
+
+// 每个部门的人类员工数量
+const humanCountsMap = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {};
+  for (const members of Object.entries(humanMembersMap.value)) {
+    counts[members[0]] = members[1].length;
+  }
+  return counts;
+});
+
+// 全局人类员工总数
+const totalHumanCount = computed(() => humanEmployeePayload.value?.data?.length ?? 0);
+
+// 组织树节点（包含子节点递归累加数量）
+type OrgChartNode = {
+  id: string;
+  name: string;
+  humanCount: number;
+  digitalCount: number;
+  children: OrgChartNode[];
+};
+
+const orgChartTree = computed<OrgChartNode[]>(() => {
+  const depts = departments.value;
+  const map = new Map<string, { dept: DepartmentView; children: string[] }>();
+  for (const d of depts) map.set(d.id, { dept: d, children: [] });
+  const roots: string[] = [];
+  for (const d of depts) {
+    if (d.parentId && map.has(d.parentId)) map.get(d.parentId)!.children.push(d.id);
+    else roots.push(d.id);
+  }
+  function buildNode(id: string): OrgChartNode {
+    const entry = map.get(id)!;
+    const children = entry.children.map(buildNode);
+    const ownHuman = humanCountsMap.value[id] ?? 0;
+    const ownDigital = deptEmployeeCounts.value[id] ?? 0;
+    const humanCount = ownHuman + children.reduce((s, c) => s + c.humanCount, 0);
+    const digitalCount = ownDigital + children.reduce((s, c) => s + c.digitalCount, 0);
+    return { id, name: entry.dept.name, humanCount, digitalCount, children };
+  }
+  return roots.map(buildNode);
 });
 
 // 按部门分组：数字员工
@@ -612,17 +665,136 @@ function generatePixelAvatar(name: string): string {
       <DepartmentTree
         :departments="departments"
         :employee-counts="deptEmployeeCounts"
-        :selected-id="selectedDeptId"
+        :human-counts="humanCountsMap"
+        :selected-id="viewMode === 'overview' ? '__overview__' : selectedDeptId"
         :total-count="employees.length"
+        :total-human-count="totalHumanCount"
         :human-members="humanMembersMap"
         :digital-members="digitalMembersMap"
-        @select="selectedDeptId = $event"
+        @select="handleSelectDept"
+        @select-overview="handleSelectOverview"
         @refresh="async () => { await refreshDepts(); await refresh(); await refreshHumanEmployees(); }"
       />
     </aside>
 
     <!-- 右侧主内容区 -->
-    <div class="flex-1 min-w-0 space-y-6 p-6 lg:p-8">
+    <div class="flex-1 min-w-0 overflow-auto p-6 lg:p-8">
+
+    <!-- ===== 总览视图 ===== -->
+    <template v-if="viewMode === 'overview'">
+      <div class="mb-8 flex items-center gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+          <Network class="h-5 w-5 text-primary" :stroke-width="1.6" />
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">组织架构总览</h1>
+          <p class="text-sm text-muted-foreground">
+            共 {{ departments.length }} 个部门 &nbsp;·&nbsp;
+            <span class="text-foreground font-semibold">{{ totalHumanCount }}</span> 名员工 &nbsp;·&nbsp;
+            <span class="text-primary font-semibold">{{ employees.length }}</span> 名数字员工
+          </p>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto pb-8">
+        <div class="org-chart-root">
+          <!-- 根节点 -->
+          <div class="flex justify-center">
+            <div class="org-root-card">
+              <div class="org-card-top-bar" />
+              <div class="org-root-card__header">
+                <div class="org-root-card__icon">
+                  <Building2 class="h-6 w-6" :stroke-width="1.5" />
+                </div>
+                <div class="org-root-card__company">数字重庆政务科技有限公司</div>
+              </div>
+              <div class="org-root-card__footer">
+                <div class="org-stat-row">
+                  <Users class="h-4 w-4 text-muted-foreground" :stroke-width="2" />
+                  <span class="org-stat-row__label">员工</span>
+                  <span class="org-stat-row__value">{{ totalHumanCount }}</span>
+                </div>
+                <div class="org-stat-row org-stat-row--accent">
+                  <Bot class="h-4 w-4 text-primary" :stroke-width="2" />
+                  <span class="org-stat-row__label">数字员工</span>
+                  <span class="org-stat-row__value org-stat-row__value--accent">{{ employees.length }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="orgChartTree.length > 0" class="org-v-line" />
+          <div v-if="orgChartTree.length > 0" class="org-h-rail">
+            <div class="org-h-rail__line" />
+          </div>
+
+          <div v-if="orgChartTree.length > 0" class="org-dept-row">
+            <div v-for="node in orgChartTree" :key="node.id" class="org-dept-col">
+              <div class="org-v-line org-v-line--short" />
+              <div
+                class="org-dept-card"
+                :class="{ 'org-dept-card--selected': selectedDeptId === node.id && viewMode === 'list' }"
+                @click="handleSelectDept(node.id)"
+              >
+                <div class="org-card-top-bar" />
+                <div class="org-dept-card__header">
+                  <div class="org-dept-card__name">{{ node.name }}</div>
+                </div>
+                <div class="org-dept-card__footer">
+                  <div class="org-stat-row-sm">
+                    <Users class="h-3 w-3 text-muted-foreground shrink-0" :stroke-width="2" />
+                    <span class="org-stat-row-sm__value">{{ node.humanCount }}</span>
+                  </div>
+                  <div class="org-stat-row-sm org-stat-row-sm--accent">
+                    <Bot class="h-3 w-3 text-primary shrink-0" :stroke-width="2" />
+                    <span class="org-stat-row-sm__value">{{ node.digitalCount }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <template v-if="node.children.length > 0">
+                <div class="org-v-line" />
+                <div class="org-h-rail"><div class="org-h-rail__line" /></div>
+                <div class="org-dept-row">
+                  <div v-for="child in node.children" :key="child.id" class="org-dept-col">
+                    <div class="org-v-line org-v-line--short" />
+                    <div
+                      class="org-dept-card org-dept-card--sub"
+                      :class="{ 'org-dept-card--selected': selectedDeptId === child.id && viewMode === 'list' }"
+                      @click="handleSelectDept(child.id)"
+                    >
+                      <div class="org-card-top-bar" />
+                      <div class="org-dept-card__header">
+                        <div class="org-dept-card__name text-[12px]">{{ child.name }}</div>
+                      </div>
+                      <div class="org-dept-card__footer">
+                        <div class="org-stat-row-sm">
+                          <Users class="h-3 w-3 text-muted-foreground shrink-0" :stroke-width="2" />
+                          <span class="org-stat-row-sm__value">{{ child.humanCount }}</span>
+                        </div>
+                        <div class="org-stat-row-sm org-stat-row-sm--accent">
+                          <Bot class="h-3 w-3 text-primary shrink-0" :stroke-width="2" />
+                          <span class="org-stat-row-sm__value">{{ child.digitalCount }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div v-if="orgChartTree.length === 0" class="flex flex-col items-center py-16 text-muted-foreground">
+            <Building2 class="h-10 w-10 opacity-20 mb-3" :stroke-width="1.5" />
+            <p class="text-sm">暂无组织数据，请在左侧点击"同步"从钉钉导入</p>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ===== 员工列表视图 ===== -->
+    <template v-else>
+    <div class="space-y-6">
     <!-- Header -->
     <div class="hero-section flex items-start justify-between gap-4">
       <div class="relative space-y-1">
@@ -922,6 +1094,9 @@ function generatePixelAvatar(name: string): string {
           创建员工
         </button>
       </div>
+    </div>
+    </div>
+    </template>
     </div>
 
     <!-- Creator Slide-over -->
@@ -1475,5 +1650,198 @@ function generatePixelAvatar(name: string): string {
       </Transition>
     </Teleport>
   </div>
-  </div>
 </template>
+
+<style scoped>
+/* ===== Org Chart ===== */
+.org-chart-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+  padding-top: 20px;
+}
+
+/* 竖线 */
+.org-v-line {
+  width: 1.5px;
+  height: 28px;
+  background: hsl(var(--border));
+  margin: 0 auto;
+}
+.org-v-line--short {
+  height: 20px;
+}
+
+/* 横向连接轨 */
+.org-h-rail {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.org-h-rail__line {
+  width: calc(100% - 150px);
+  height: 1.5px;
+  background: hsl(var(--border));
+}
+
+/* 部门行 */
+.org-dept-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+  width: 100%;
+}
+.org-dept-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Card Base Shared */
+.org-root-card, .org-dept-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px -4px hsl(var(--foreground) / 0.05), 0 1px 4px hsl(var(--foreground) / 0.02);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.org-root-card:hover, .org-dept-card:hover {
+  box-shadow: 0 8px 30px -6px hsl(var(--foreground) / 0.1), 0 4px 8px -2px hsl(var(--foreground) / 0.04);
+  transform: translateY(-2px);
+  border-color: hsl(var(--border) / 0.8);
+}
+.org-dept-card:hover {
+  border-color: hsl(var(--primary) / 0.4);
+}
+
+.org-dept-card--selected {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 1px hsl(var(--primary)), 0 4px 12px hsl(var(--primary) / 0.12);
+}
+
+/* Top Bars */
+.org-card-top-bar {
+  height: 4px;
+  width: 100%;
+  background: hsl(var(--primary) / 0.3);
+  transition: background 0.2s;
+}
+.org-root-card .org-card-top-bar {
+  background: hsl(var(--primary));
+  height: 5px;
+}
+.org-dept-card:hover .org-card-top-bar, .org-dept-card--selected .org-card-top-bar {
+  background: hsl(var(--primary));
+}
+
+/* Root Header */
+.org-root-card {
+  min-width: 260px;
+}
+.org-root-card__header {
+  padding: 24px 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.org-root-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.org-root-card__company {
+  font-size: 16px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  letter-spacing: 0.02em;
+}
+
+/* Root Footer Stats */
+.org-root-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: hsl(var(--secondary) / 0.3);
+  border-top: 1px solid hsl(var(--border) / 0.5);
+  padding: 16px;
+}
+.org-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.org-stat-row__label {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  margin-right: 4px;
+}
+.org-stat-row__value {
+  font-size: 16px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+.org-stat-row--accent .org-stat-row__value {
+  color: hsl(var(--primary));
+}
+
+/* Dept Header */
+.org-dept-card {
+  min-width: 170px;
+  max-width: 200px;
+  cursor: pointer;
+}
+.org-dept-card--sub {
+  min-width: 150px;
+  max-width: 180px;
+}
+.org-dept-card__header {
+  padding: 16px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.org-dept-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  line-height: 1.4;
+}
+
+/* Dept Footer Stats */
+.org-dept-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  background: hsl(var(--secondary) / 0.2);
+  border-top: 1px solid hsl(var(--border) / 0.4);
+  padding: 12px;
+}
+.org-stat-row-sm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.org-stat-row-sm__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+.org-stat-row-sm--accent .org-stat-row-sm__value {
+  color: hsl(var(--primary));
+}
+</style>

@@ -54,30 +54,31 @@ const hasMemberChips = computed(() => isSelected.value && (nodeHumanMembers.valu
       <span v-if="node.employeeCount > 0" class="text-[10px] font-mono opacity-60">{{ node.employeeCount }}</span>
     </div>
 
-    <!-- 选中时展示成员 chips -->
+    <!-- 选中时展示成员列表（每人一行） -->
     <div
       v-if="hasMemberChips"
-      class="flex flex-wrap gap-1 pb-1"
+      class="pb-1"
       :style="{ paddingLeft: `${(depth * 12) + 28}px` }"
     >
-      <span
+      <div
         v-for="m in nodeDigitalMembers"
         :key="'d-' + m.id"
-        class="flex items-center gap-1 rounded-full bg-primary/5 border border-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+        class="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/5 transition-colors"
         :title="m.name"
       >
-        <Bot class="h-2.5 w-2.5 shrink-0" :stroke-width="1.8" />
-        <span class="max-w-[56px] truncate">{{ m.name }}</span>
-      </span>
-      <span
+        <Bot class="h-3 w-3 shrink-0 opacity-70" :stroke-width="1.8" />
+        <span class="truncate">{{ m.name }}</span>
+      </div>
+      <div
         v-for="m in nodeHumanMembers"
         :key="'h-' + m.id"
-        class="flex items-center gap-1 rounded-full bg-muted border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+        class="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/60 transition-colors"
         :title="m.name"
       >
-        <User class="h-2.5 w-2.5 shrink-0" :stroke-width="1.8" />
-        <span class="max-w-[56px] truncate">{{ m.name }}</span>
-      </span>
+        <User class="h-3 w-3 shrink-0 opacity-60" :stroke-width="1.8" />
+        <span class="truncate">{{ m.name }}</span>
+        <span v-if="m.title" class="ml-auto shrink-0 text-[10px] opacity-50 truncate max-w-[48px]">{{ m.title }}</span>
+      </div>
     </div>
 
     <!-- 子节点 -->
