@@ -496,25 +496,47 @@ function getBannerStyle(name: string): Record<string, string> {
   };
 }
 
-/** 获取头像渐变样式 */
+// 头像样式缓存
+const _avatarStyleCache = new Map<string, Record<string, string>>();
+
+/** 获取头像渐变样式 - 带缓存 */
 function getAvatarStyle(name: string): Record<string, string> {
+  // 检查缓存
+  const cached = _avatarStyleCache.get(name);
+  if (cached) return cached;
+
+  // 计算并缓存
   const p = _getEmpPalette(name);
-  return {
+  const style = {
     background: `linear-gradient(135deg, ${p.px} 0%, ${p.bannerTo} 100%)`
   };
+
+  _avatarStyleCache.set(name, style);
+  return style;
 }
 
-/** 获取人物样式（肤色、发色、衬衫、发型）*/
+// 角色样式缓存（避免模板中重复计算）
+const _characterStyleCache = new Map<string, CharacterStyle>();
+
+/** 获取人物样式（肤色、发色、衬衫、发型）- 带缓存 */
 function getCharacterStyle(name: string): CharacterStyle {
+  // 检查缓存
+  const cached = _characterStyleCache.get(name);
+  if (cached) return cached;
+
+  // 计算并缓存
   const h = _nameHash(name);
   const hairStyleIndex = (h * 7) % 5;  // 5种发型
-  return {
+  const style: CharacterStyle = {
     skinColor: SKIN_COLORS[h % SKIN_COLORS.length]!,
     hairColor: HAIR_COLORS[(h >> 3) % HAIR_COLORS.length]!,
     shirtColor: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.main,
     shirtColorLight: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.light,
     hairStyle: (['short', 'medium', 'long', 'ponytail', 'curly'] as const)[hairStyleIndex],
   };
+
+  _characterStyleCache.set(name, style);
+  return style;
 }
 
 /** 确定性像素艺术头像（5×5 对称 Identicon，纯 SVG 内联，无外部请求）*/
