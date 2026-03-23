@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatScheduleSummary } from "~~/shared/ui-models";
-import { Search, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench, Building2, Users, Bot, Network } from "lucide-vue-next";
+import { Search, ChevronRight, ChevronLeft, Sparkles, Plus, X, ChevronDown, Pencil, Trash2, ExternalLink, Eye, CheckCircle, AlertCircle, Zap, Clock, Wrench, Building2, Users, Bot, Network, TrendingUp, Activity, ChevronsDown, ChevronsUp } from "lucide-vue-next";
 import type { DepartmentView, HumanMemberBrief, DigitalMemberBrief } from "~/components/DepartmentTree.vue";
 
 type EmployeeResponse = {
@@ -61,6 +61,21 @@ const selectedDeptId = ref<string | null>(null);
 // 视图模式：overview=总览，list=员工列表
 const viewMode = ref<'overview' | 'list'>('overview');
 
+// 部门展开状态
+const expandedDepts = ref<Set<string>>(new Set());
+
+function toggleDeptExpand(deptId: string, event?: Event) {
+  if (event) event.stopPropagation();
+  if (expandedDepts.value.has(deptId)) {
+    expandedDepts.value.delete(deptId);
+  } else {
+    expandedDepts.value.add(deptId);
+  }
+}
+function isDeptExpanded(deptId: string): boolean {
+  return expandedDepts.value.has(deptId);
+}
+
 function handleSelectDept(id: string | null) {
   selectedDeptId.value = id;
   viewMode.value = 'list';
@@ -68,6 +83,17 @@ function handleSelectDept(id: string | null) {
 function handleSelectOverview() {
   selectedDeptId.value = null;
   viewMode.value = 'overview';
+}
+
+// 点击部门卡片的逻辑
+function handleDeptCardClick(node: { id: string; children: { id: string }[] }) {
+  // 如果有子部门且已展开，点击卡片收起
+  if (node.children.length > 0 && isDeptExpanded(node.id)) {
+    expandedDepts.value.delete(node.id);
+  } else {
+    // 否则进入员工列表
+    handleSelectDept(node.id);
+  }
 }
 
 // Toast 通知系统
@@ -234,6 +260,68 @@ const digitalMembersMap = computed<Record<string, DigitalMemberBrief[]>>(() => {
   }
   return map;
 });
+
+// 数字员工覆盖率（数字员工 / 总员工数）
+const digitalEmployeeCoverage = computed(() => {
+  const total = totalHumanCount.value + employees.value.length;
+  if (total === 0) return 0;
+  return Math.round((employees.value.length / total) * 100);
+});
+
+// 今日活跃数字员工数（有运行记录的）
+const activeDigitalEmployees = computed(() => {
+  return employees.value.filter(emp => emp.latestRun?.status === 'completed' || emp.latestRun?.status === 'running').length;
+});
+
+// 获取部门员工列表（人类+数字员工混合显示，交替出现）
+function getDeptMembers(deptId: string): Array<{ id: string; name: string; isDigital: boolean }> {
+  const humans = (humanMembersMap.value[deptId] ?? []).map(m => ({
+    id: m.id,
+    name: m.name,
+    isDigital: false
+  }));
+  const digitals = (digitalMembersMap.value[deptId] ?? []).map(m => ({
+    id: m.id,
+    name: m.name,
+    isDigital: true
+  }));
+
+  // 交替混合：先取2个真人 + 2个数字员工，或按实际数量
+  const result: Array<{ id: string; name: string; isDigital: boolean }> = [];
+  const maxTotal = 4;
+  let hIdx = 0, dIdx = 0;
+
+  while (result.length < maxTotal && (hIdx < humans.length || dIdx < digitals.length)) {
+    // 先加真人（最多2个）
+    if (hIdx < humans.length && hIdx < 2) {
+      result.push(humans[hIdx]!);
+      hIdx++;
+    }
+    // 再加数字员工（最多2个）
+    if (result.length < maxTotal && dIdx < digitals.length && dIdx < 2) {
+      result.push(digitals[dIdx]!);
+      dIdx++;
+    }
+    // 如果还不够，继续补充
+    if (result.length < maxTotal && hIdx < humans.length) {
+      result.push(humans[hIdx]!);
+      hIdx++;
+    }
+    if (result.length < maxTotal && dIdx < digitals.length) {
+      result.push(digitals[dIdx]!);
+      dIdx++;
+    }
+    // 防止死循环
+    if (hIdx >= humans.length && dIdx >= digitals.length) break;
+  }
+
+  return result;
+}
+
+// 获取部门总员工数
+function getDeptTotalMembers(deptId: string): number {
+  return (humanCountsMap.value[deptId] ?? 0) + (deptEmployeeCounts.value[deptId] ?? 0);
+}
 
 // 树形部门选项（层级缩进）
 const deptTreeOptions = computed(() => {
@@ -491,6 +579,19 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastS
 
 // === 头像/卡片颜色生成（基于名称哈希，每位员工固定色系）===
 // 低饱和度柔和色系：bannerFrom/To 控制 Banner，px = 像素头像前景，bg = 像素头像背景
+// 部门卡片颜色（渐变色）
+const deptColors = [
+  'linear-gradient(135deg, #6366f1, #8b5cf6)', // 紫色
+  'linear-gradient(135deg, #ec4899, #f472b6)', // 粉色
+  'linear-gradient(135deg, #f59e0b, #fbbf24)', // 橙色
+  'linear-gradient(135deg, #06b6d4, #22d3ee)', // 青色
+  'linear-gradient(135deg, #8b5cf6, #a78bfa)', // 浅紫
+  'linear-gradient(135deg, #ef4444, #f87171)', // 红色
+];
+
+// 部门图标类型
+const deptIcons = ['code', 'box', 'chart', 'activity', 'users', 'dollar'];
+
 type AvatarPalette = { bannerFrom: string; bannerTo: string; px: string; bg: string };
 const AVATAR_PALETTES: AvatarPalette[] = [
   { bannerFrom: "#c7d2fe", bannerTo: "#a5b4fc", px: "#6366f1", bg: "#eef2ff" }, // soft indigo
@@ -659,9 +760,16 @@ function generatePixelAvatar(name: string): string {
 </script>
 
 <template>
-  <div class="flex h-full min-h-screen">
+  <div class="employees-page">
+    <!-- 背景装饰 -->
+    <div class="page-bg">
+      <div class="page-bg__gradient-1" />
+      <div class="page-bg__gradient-2" />
+      <div class="page-bg__grid" />
+    </div>
+
     <!-- 左侧组织树面板 -->
-    <aside class="hidden lg:flex w-[220px] shrink-0 flex-col border-r border-border bg-card/50">
+    <aside class="employees-sidebar">
       <DepartmentTree
         :departments="departments"
         :employee-counts="deptEmployeeCounts"
@@ -678,46 +786,116 @@ function generatePixelAvatar(name: string): string {
     </aside>
 
     <!-- 右侧主内容区 -->
-    <div class="flex-1 min-w-0 overflow-auto p-6 lg:p-8">
+    <main class="employees-main">
 
     <!-- ===== 总览视图 ===== -->
     <template v-if="viewMode === 'overview'">
-      <div class="mb-8 flex items-center gap-3">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-          <Network class="h-5 w-5 text-primary" :stroke-width="1.6" />
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">组织架构总览</h1>
-          <p class="text-sm text-muted-foreground">
-            共 {{ departments.length }} 个部门 &nbsp;·&nbsp;
-            <span class="text-foreground font-semibold">{{ totalHumanCount }}</span> 名员工 &nbsp;·&nbsp;
-            <span class="text-primary font-semibold">{{ employees.length }}</span> 名数字员工
+      <!-- 标题区域 -->
+      <div class="overview-header">
+        <div class="overview-header__content">
+          <h1 class="overview-header__title">组织架构总览</h1>
+          <p class="overview-header__subtitle">
+            {{ departments.length }} 个部门 · {{ totalHumanCount }} 名员工 · {{ employees.length }} 名数字员工
           </p>
+        </div>
+        <button class="overview-create-btn" @click="showCreator = true; resetForm()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          创建员工
+        </button>
+      </div>
+
+      <!-- 紧凑统计区 -->
+      <div class="overview-stats">
+        <!-- 数字员工概况 -->
+        <div class="overview-stats__card overview-stats__card--digital">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="overview-stats__icon">
+            <rect x="3" y="8" width="18" height="12" rx="2"/>
+            <circle cx="9" cy="14" r="1.5"/>
+            <circle cx="15" cy="14" r="1.5"/>
+            <path d="M12 4v4"/>
+            <circle cx="12" cy="3" r="1"/>
+          </svg>
+          <div class="overview-stats__body">
+            <div class="overview-stats__value">{{ employees.length }} <span class="overview-stats__unit">数字员工</span></div>
+            <div class="overview-stats__meta">
+              <span>覆盖率 {{ digitalEmployeeCoverage }}%</span>
+              <span>今日活跃 {{ activeDigitalEmployees }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 真人员工 -->
+        <div class="overview-stats__card overview-stats__card--human">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="overview-stats__icon">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <div class="overview-stats__body">
+            <div class="overview-stats__value overview-stats__value--dark">{{ totalHumanCount }} <span class="overview-stats__unit">真人员工</span></div>
+            <div class="overview-stats__meta overview-stats__meta--muted">分布在 {{ departments.length }} 个部门</div>
+          </div>
+        </div>
+
+        <!-- 人机比例 -->
+        <div class="overview-stats__card overview-stats__card--ratio">
+          <div class="overview-stats__label">人机协作比例</div>
+          <div class="overview-stats__ratio-bar">
+            <div class="overview-stats__ratio-human" :style="{ width: totalHumanCount + employees.length > 0 ? (totalHumanCount / (totalHumanCount + employees.length) * 100) + '%' : '0%' }">
+              真人 {{ totalHumanCount + employees.length > 0 ? Math.round(totalHumanCount / (totalHumanCount + employees.length) * 100) : 0 }}%
+            </div>
+            <div class="overview-stats__ratio-ai">AI</div>
+          </div>
+          <div class="overview-stats__ratio-labels">
+            <span>{{ totalHumanCount }} 人</span>
+            <span>{{ employees.length }} 数字员工</span>
+          </div>
         </div>
       </div>
 
       <div class="overflow-x-auto pb-8">
         <div class="org-chart-root">
           <!-- 根节点 -->
-          <div class="flex justify-center">
+          <div class="org-root-wrapper">
             <div class="org-root-card">
-              <div class="org-card-top-bar" />
               <div class="org-root-card__header">
                 <div class="org-root-card__icon">
-                  <Building2 class="h-6 w-6" :stroke-width="1.5" />
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 21h18"/>
+                    <path d="M5 21V7l8-4v18"/>
+                    <path d="M19 21V11l-6-4"/>
+                    <path d="M9 9h1"/>
+                    <path d="M9 13h1"/>
+                    <path d="M9 17h1"/>
+                  </svg>
                 </div>
                 <div class="org-root-card__company">数字重庆政务科技有限公司</div>
               </div>
               <div class="org-root-card__footer">
-                <div class="org-stat-row">
-                  <Users class="h-4 w-4 text-muted-foreground" :stroke-width="2" />
-                  <span class="org-stat-row__label">员工</span>
-                  <span class="org-stat-row__value">{{ totalHumanCount }}</span>
+                <div class="org-root-stat">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                  </svg>
+                  <div class="org-root-stat__text">
+                    <span class="org-root-stat__value">{{ totalHumanCount }}</span>
+                    <span class="org-root-stat__label">真人</span>
+                  </div>
                 </div>
-                <div class="org-stat-row org-stat-row--accent">
-                  <Bot class="h-4 w-4 text-primary" :stroke-width="2" />
-                  <span class="org-stat-row__label">数字员工</span>
-                  <span class="org-stat-row__value org-stat-row__value--accent">{{ employees.length }}</span>
+                <div class="org-root-stat org-root-stat--accent">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="8" width="18" height="12" rx="2"/>
+                    <circle cx="9" cy="14" r="1"/>
+                    <circle cx="15" cy="14" r="1"/>
+                  </svg>
+                  <div class="org-root-stat__text">
+                    <span class="org-root-stat__value">{{ employees.length }}</span>
+                    <span class="org-root-stat__label">数字员工</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -729,58 +907,160 @@ function generatePixelAvatar(name: string): string {
           </div>
 
           <div v-if="orgChartTree.length > 0" class="org-dept-row">
-            <div v-for="node in orgChartTree" :key="node.id" class="org-dept-col">
+            <div v-for="(node, nodeIdx) in orgChartTree" :key="node.id" class="org-dept-col">
               <div class="org-v-line org-v-line--short" />
+              <!-- 一级部门卡片 -->
               <div
                 class="org-dept-card"
-                :class="{ 'org-dept-card--selected': selectedDeptId === node.id && viewMode === 'list' }"
-                @click="handleSelectDept(node.id)"
+                :class="{ 'org-dept-card--selected': selectedDeptId === node.id && viewMode === 'list', 'org-dept-card--expanded': isDeptExpanded(node.id) }"
+                :style="{ '--dept-color': deptColors[nodeIdx % deptColors.length] }"
+                @click="handleDeptCardClick(node)"
               >
-                <div class="org-card-top-bar" />
+                <!-- 部门图标和名称 -->
                 <div class="org-dept-card__header">
-                  <div class="org-dept-card__name">{{ node.name }}</div>
-                </div>
-                <div class="org-dept-card__footer">
-                  <div class="org-stat-row-sm">
-                    <Users class="h-3 w-3 text-muted-foreground shrink-0" :stroke-width="2" />
-                    <span class="org-stat-row-sm__value">{{ node.humanCount }}</span>
+                  <div class="org-dept-card__icon">
+                    <svg v-if="deptIcons[nodeIdx % deptIcons.length] === 'code'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <polyline points="16 18 22 12 16 6"/>
+                      <polyline points="8 6 2 12 8 18"/>
+                    </svg>
+                    <svg v-else-if="deptIcons[nodeIdx % deptIcons.length] === 'box'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <path d="M12 8v8"/>
+                      <path d="M8 12h8"/>
+                    </svg>
+                    <svg v-else-if="deptIcons[nodeIdx % deptIcons.length] === 'chart'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+                      <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+                    </svg>
+                    <svg v-else-if="deptIcons[nodeIdx % deptIcons.length] === 'activity'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                    <svg v-else-if="deptIcons[nodeIdx % deptIcons.length] === 'users'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <line x1="12" y1="1" x2="12" y2="23"/>
+                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
                   </div>
-                  <div class="org-stat-row-sm org-stat-row-sm--accent">
-                    <Bot class="h-3 w-3 text-primary shrink-0" :stroke-width="2" />
-                    <span class="org-stat-row-sm__value">{{ node.digitalCount }}</span>
+                  <div class="org-dept-card__title-row">
+                    <span class="org-dept-card__name">{{ node.name }}</span>
+                    <span v-if="node.children.length > 0" class="org-dept-card__subcount">{{ node.children.length }} 个子部门</span>
+                    <button
+                      v-if="node.children.length > 0"
+                      class="org-dept-card__expand-btn"
+                      @click="toggleDeptExpand(node.id, $event)"
+                    >
+                      <svg v-if="!isDeptExpanded(node.id)" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                      <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 人数统计 -->
+                <div class="org-dept-card__stats">
+                  <div class="org-dept-stat org-dept-stat--human">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <span class="org-dept-stat__value">{{ node.humanCount }}</span>
+                    <span class="org-dept-stat__label">真人</span>
+                  </div>
+                  <div class="org-dept-stat org-dept-stat--digital">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="8" width="18" height="12" rx="2"/>
+                      <circle cx="9" cy="14" r="1"/>
+                      <circle cx="15" cy="14" r="1"/>
+                    </svg>
+                    <span class="org-dept-stat__value">{{ node.digitalCount }}</span>
+                    <span class="org-dept-stat__label">数字</span>
+                  </div>
+                </div>
+
+                <!-- 比例条 -->
+                <div class="org-dept-card__ratio">
+                  <div class="org-dept-card__ratio-bar">
+                    <div
+                      class="org-dept-card__ratio-human"
+                      :style="{ width: (node.humanCount + node.digitalCount) > 0 ? (node.humanCount / (node.humanCount + node.digitalCount) * 100) + '%' : '0%' }"
+                    ></div>
+                    <div
+                      class="org-dept-card__ratio-digital"
+                      :style="{ width: (node.humanCount + node.digitalCount) > 0 ? (node.digitalCount / (node.humanCount + node.digitalCount) * 100) + '%' : '0%' }"
+                    ></div>
+                  </div>
+                  <div class="org-dept-card__ratio-labels">
+                    <span>{{ (node.humanCount + node.digitalCount) > 0 ? Math.round(node.humanCount / (node.humanCount + node.digitalCount) * 100) : 0 }}% 真人</span>
+                    <span>{{ (node.humanCount + node.digitalCount) > 0 ? Math.round(node.digitalCount / (node.humanCount + node.digitalCount) * 100) : 0 }}% 数字员工</span>
                   </div>
                 </div>
               </div>
 
-              <template v-if="node.children.length > 0">
-                <div class="org-v-line" />
-                <div class="org-h-rail"><div class="org-h-rail__line" /></div>
-                <div class="org-dept-row">
-                  <div v-for="child in node.children" :key="child.id" class="org-dept-col">
-                    <div class="org-v-line org-v-line--short" />
-                    <div
-                      class="org-dept-card org-dept-card--sub"
-                      :class="{ 'org-dept-card--selected': selectedDeptId === child.id && viewMode === 'list' }"
-                      @click="handleSelectDept(child.id)"
-                    >
-                      <div class="org-card-top-bar" />
-                      <div class="org-dept-card__header">
-                        <div class="org-dept-card__name text-[12px]">{{ child.name }}</div>
-                      </div>
-                      <div class="org-dept-card__footer">
-                        <div class="org-stat-row-sm">
-                          <Users class="h-3 w-3 text-muted-foreground shrink-0" :stroke-width="2" />
-                          <span class="org-stat-row-sm__value">{{ child.humanCount }}</span>
-                        </div>
-                        <div class="org-stat-row-sm org-stat-row-sm--accent">
-                          <Bot class="h-3 w-3 text-primary shrink-0" :stroke-width="2" />
-                          <span class="org-stat-row-sm__value">{{ child.digitalCount }}</span>
+              <!-- 子部门（可展开/收起） -->
+              <Transition name="org-expand">
+                <template v-if="node.children.length > 0 && isDeptExpanded(node.id)">
+                  <div class="org-sub-depts">
+                    <div class="org-v-line" />
+                    <div class="org-h-rail"><div class="org-h-rail__line" /></div>
+                    <div class="org-dept-row">
+                      <div v-for="child in node.children" :key="child.id" class="org-dept-col">
+                        <div class="org-v-line org-v-line--short" />
+                        <div
+                          class="org-dept-card org-dept-card--sub"
+                          :class="{ 'org-dept-card--selected': selectedDeptId === child.id && viewMode === 'list' }"
+                          :style="{ '--dept-color': deptColors[Math.abs(child.id.charCodeAt(0)) % deptColors.length] }"
+                          @click="handleSelectDept(child.id)"
+                        >
+                          <div class="org-dept-card__header">
+                            <div class="org-dept-card__title-row">
+                              <span class="org-dept-card__name">{{ child.name }}</span>
+                            </div>
+                          </div>
+                          <div class="org-dept-card__stats">
+                            <div class="org-dept-stat org-dept-stat--human">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                              </svg>
+                              <span class="org-dept-stat__value">{{ child.humanCount }}</span>
+                              <span class="org-dept-stat__label">真人</span>
+                            </div>
+                            <div class="org-dept-stat org-dept-stat--digital">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="8" width="18" height="12" rx="2"/>
+                                <circle cx="9" cy="14" r="1"/>
+                                <circle cx="15" cy="14" r="1"/>
+                              </svg>
+                              <span class="org-dept-stat__value">{{ child.digitalCount }}</span>
+                              <span class="org-dept-stat__label">数字</span>
+                            </div>
+                          </div>
+                          <div class="org-dept-card__ratio">
+                            <div class="org-dept-card__ratio-bar">
+                              <div
+                                class="org-dept-card__ratio-human"
+                                :style="{ width: (child.humanCount + child.digitalCount) > 0 ? (child.humanCount / (child.humanCount + child.digitalCount) * 100) + '%' : '0%' }"
+                              ></div>
+                              <div
+                                class="org-dept-card__ratio-digital"
+                                :style="{ width: (child.humanCount + child.digitalCount) > 0 ? (child.digitalCount / (child.humanCount + child.digitalCount) * 100) + '%' : '0%' }"
+                              ></div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </template>
+                </template>
+              </Transition>
             </div>
           </div>
 
@@ -794,48 +1074,52 @@ function generatePixelAvatar(name: string): string {
 
     <!-- ===== 员工列表视图 ===== -->
     <template v-else>
-    <div class="space-y-6">
+    <div class="employee-list-view">
     <!-- Header -->
-    <div class="hero-section flex items-start justify-between gap-4">
-      <div class="relative space-y-1">
-        <span class="section-label">员工管理</span>
-        <h1 class="font-display text-3xl font-bold tracking-tight">
+    <div class="list-header">
+      <div class="list-header__content">
+        <span class="list-header__badge">员工管理</span>
+        <h1 class="list-header__title">
           {{ selectedDeptName }}
-          <span v-if="selectedDeptId" class="ml-2 text-lg font-normal text-muted-foreground">· 员工中心</span>
+          <span v-if="selectedDeptId" class="list-header__subtitle">· 员工中心</span>
         </h1>
-        <p class="text-sm text-muted-foreground">
-          {{ selectedDeptId ? `查看「${selectedDeptName}」部门下的员工` : '创建、管理和运营你的数字员工团队。' }}
+        <p class="list-header__desc">
+          {{ selectedDeptId ? `查看「${selectedDeptName}」部门下的员工` : '创建、管理和运营你的数字员工团队' }}
         </p>
       </div>
-      <button class="btn-primary shrink-0" @click="showCreator = true; resetForm()">
+      <button class="create-btn" @click="showCreator = true; resetForm()">
         <Plus class="h-4 w-4" :stroke-width="2" />
-        创建员工
+        <span>创建员工</span>
       </button>
     </div>
 
-    <!-- Search -->
-    <div class="flex items-center gap-4">
-      <label class="flex flex-1 items-center gap-2 rounded-lg border border-input bg-card px-3 py-2.5 transition-all duration-150 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
-        <Search class="h-4 w-4 text-muted-foreground" :stroke-width="1.8" />
+    <!-- Search & Filter Bar -->
+    <div class="search-bar">
+      <div class="search-input">
+        <Search class="h-4 w-4" :stroke-width="1.8" />
         <input
           v-model="query"
           placeholder="搜索名称、编码或职责…"
-          class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          class="search-input__field"
         />
-      </label>
-      <p class="shrink-0 text-sm text-muted-foreground">{{ filteredEmployees.length }} 名员工</p>
+        <kbd v-if="!query" class="search-input__shortcut">⌘K</kbd>
+      </div>
+      <div class="search-bar__stats">
+        <span class="search-bar__count">{{ filteredEmployees.length }}</span>
+        <span class="search-bar__label">名员工</span>
+      </div>
     </div>
 
     <!-- Employee Grid -->
-    <div class="stagger-in grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div class="employee-grid">
       <!-- Profile Card -->
       <div
         v-for="emp in filteredEmployees"
         :key="emp.id"
-        class="group flex flex-col rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1.5"
+        class="employee-card"
       >
         <!-- ① 办公工作场景 -->
-        <div class="relative h-[100px] overflow-visible bg-gradient-to-b from-slate-100 via-slate-200 to-slate-300">
+        <div class="employee-card__scene">
           <!-- 天花板灯带 -->
           <div class="absolute top-0 left-0 right-0 h-[4px] bg-gradient-to-r from-transparent via-amber-100 to-transparent opacity-80" />
 
@@ -973,95 +1257,92 @@ function generatePixelAvatar(name: string): string {
           <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 w-[50px] h-[7px] bg-slate-600 rounded-[2px]" />
 
           <!-- 健康状态徽章 -->
-          <span class="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[9px] text-slate-700">
+          <span class="employee-card__status">
             <span
-              class="h-[5px] w-[5px] rounded-full"
-              :class="resolveHealth(emp).lastStatus === 'failed' ? 'bg-red-500' : resolveHealth(emp).lastStatus === 'healthy' ? 'bg-green-500' : 'bg-yellow-500'"
+              class="employee-card__status-dot"
+              :class="resolveHealth(emp).lastStatus === 'failed' ? 'employee-card__status-dot--error' : resolveHealth(emp).lastStatus === 'healthy' ? 'employee-card__status-dot--success' : 'employee-card__status-dot--warning'"
             />
             {{ resolveHealth(emp).label }}
           </span>
         </div>
 
         <!-- ② 头像（从 banner 露出） + 模型标签 -->
-        <div class="-mt-5 flex items-end justify-between px-4">
+        <div class="employee-card__header">
           <!-- 头像：渐变色圆形 + 首字 -->
           <div
-            class="relative h-12 w-12 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
+            class="employee-card__avatar"
             :style="getAvatarStyle(emp.name)"
           >
-            <span class="text-white font-bold text-lg select-none">{{ emp.name.charAt(0) }}</span>
+            <span class="employee-card__avatar-text">{{ emp.name.charAt(0) }}</span>
             <!-- 在线指示器 -->
             <span
               v-if="resolveHealth(emp).lastStatus === 'healthy'"
-              class="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-400 animate-pulse"
+              class="employee-card__avatar-badge"
             />
           </div>
           <!-- 模型小标签 -->
-          <span
-            v-if="emp.model"
-            class="mb-0.5 max-w-[96px] truncate rounded-full bg-muted/80 px-2 py-0.5 font-mono text-[9px] text-muted-foreground"
-          >
+          <span v-if="emp.model" class="employee-card__model">
             {{ emp.model.includes("/") ? emp.model.split("/")[1] : emp.model }}
           </span>
         </div>
 
         <!-- ③ 卡片主体 -->
-        <div class="flex flex-col flex-1 px-4 pt-2.5 pb-4">
+        <div class="employee-card__body">
           <!-- 名称 + 编码 -->
-          <h3 class="truncate text-sm font-bold tracking-tight text-foreground transition-colors duration-150 group-hover:text-primary">
+          <h3 class="employee-card__name">
             {{ emp.name }}
           </h3>
-          <p class="font-mono text-[9px] tracking-widest text-muted-foreground/45 uppercase">{{ emp.code }}</p>
+          <p class="employee-card__code">{{ emp.code }}</p>
 
           <!-- 职责描述 -->
-          <p class="mt-2 flex-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          <p class="employee-card__desc">
             {{ emp.description || "暂无职责说明" }}
           </p>
 
           <!-- 技能 pills -->
-          <div class="mt-3 flex flex-wrap gap-1">
+          <div class="employee-card__skills">
             <span
               v-for="skill in emp.skills.slice(0, 3)"
               :key="skill.skillName"
-              class="inline-flex items-center gap-0.5 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary/80"
+              class="employee-card__skill"
             >
               <Zap class="h-2.5 w-2.5" :stroke-width="2" />
               {{ skill.skillName }}
             </span>
-            <span v-if="emp.skills.length > 3" class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <span v-if="emp.skills.length > 3" class="employee-card__skill-more">
               +{{ emp.skills.length - 3 }}
             </span>
-            <span v-if="emp.skills.length === 0" class="inline-flex items-center gap-0.5 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">
+            <span v-if="emp.skills.length === 0" class="employee-card__skill-empty">
               <Wrench class="h-2.5 w-2.5" :stroke-width="1.8" />
               待分配技能
             </span>
           </div>
 
           <!-- 排班 -->
-          <div class="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground/70">
+          <div class="employee-card__schedule">
             <Clock class="h-3 w-3 shrink-0" :stroke-width="1.8" />
             <span class="truncate">{{ formatScheduleSummary(emp.schedule ?? null) }}</span>
           </div>
 
           <!-- 操作栏 -->
-          <div class="mt-3 flex items-center justify-between border-t border-border/40 pt-3">
-            <div class="flex items-center gap-0.5">
+          <div class="employee-card__actions">
+            <div class="employee-card__actions-left">
               <button
-                class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+                class="employee-card__action-btn"
                 title="查看"
                 @click.stop="openViewer(emp)"
               >
                 <Eye class="h-3.5 w-3.5" :stroke-width="1.8" />
               </button>
               <button
-                class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+                class="employee-card__action-btn"
                 title="编辑"
                 @click.stop="openEditor(emp)"
               >
                 <Pencil class="h-3.5 w-3.5" :stroke-width="1.8" />
               </button>
               <button
-                class="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                class="employee-card__action-btn employee-card__action-btn--danger"
                 title="删除"
                 @click.stop="openDeleteConfirm(emp)"
               >
@@ -1070,7 +1351,7 @@ function generatePixelAvatar(name: string): string {
             </div>
             <NuxtLink
               :to="`/employees/${emp.id}`"
-              class="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-sm"
+              class="employee-card__enter-btn"
             >
               进入工作台
               <ExternalLink class="h-3 w-3" :stroke-width="2" />
@@ -1082,22 +1363,22 @@ function generatePixelAvatar(name: string): string {
       <!-- Empty State -->
       <div
         v-if="filteredEmployees.length === 0"
-        class="col-span-full flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/10 px-6 py-12 text-center"
+        class="employee-empty"
       >
-        <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/5">
-          <Sparkles class="h-7 w-7 text-primary/30" :stroke-width="1.5" />
+        <div class="employee-empty__icon">
+          <Sparkles class="h-7 w-7" :stroke-width="1.5" />
         </div>
-        <p class="font-medium">还没有员工</p>
-        <p class="mt-1 max-w-xs text-sm text-muted-foreground">点击右上角"创建员工"按钮，三步创建你的第一个数字员工。</p>
-        <button class="btn-primary mt-4" @click="showCreator = true; resetForm()">
+        <p class="employee-empty__title">还没有员工</p>
+        <p class="employee-empty__desc">点击右上角"创建员工"按钮，三步创建你的第一个数字员工。</p>
+        <button class="create-btn create-btn--lg" @click="showCreator = true; resetForm()">
           <Plus class="h-4 w-4" :stroke-width="2" />
           创建员工
         </button>
       </div>
     </div>
-    </div>
+  </div>
     </template>
-    </div>
+  </main>
 
     <!-- Creator Slide-over -->
     <Teleport to="body">
@@ -1653,20 +1934,648 @@ function generatePixelAvatar(name: string): string {
 </template>
 
 <style scoped>
+/* ===== Page Layout ===== */
+.employees-page {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+}
+
+.page-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.page-bg__gradient-1 {
+  position: absolute;
+  top: -30%;
+  right: -20%;
+  width: 70%;
+  height: 70%;
+  background: radial-gradient(ellipse, hsl(162 50% 70% / 0.08) 0%, transparent 60%);
+  filter: blur(60px);
+}
+.page-bg__gradient-2 {
+  position: absolute;
+  bottom: -30%;
+  left: -15%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(ellipse, hsl(220 50% 70% / 0.06) 0%, transparent 60%);
+  filter: blur(60px);
+}
+.page-bg__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.25) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+  opacity: 0.4;
+}
+
+.employees-sidebar {
+  display: none;
+  width: 240px;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-right: 1px solid hsl(var(--border));
+  background: hsl(var(--card) / 0.6);
+  backdrop-filter: blur(8px);
+}
+@media (min-width: 1024px) {
+  .employees-sidebar {
+    display: flex;
+  }
+}
+
+.employees-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 32px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== Employee List View ===== */
+.employee-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.list-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.list-header__content {
+  flex: 1;
+}
+.list-header__badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 8px;
+}
+.list-header__title {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: hsl(var(--foreground));
+  line-height: 1.2;
+}
+.list-header__subtitle {
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
+  margin-left: 8px;
+}
+.list-header__desc {
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+  margin-top: 6px;
+}
+
+.create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--primary-foreground));
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.85) 100%);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.25);
+}
+.create-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px hsl(var(--primary) / 0.35);
+}
+.create-btn--lg {
+  padding: 14px 28px;
+  font-size: 15px;
+}
+
+/* ===== Search Bar ===== */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.search-input {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  color: hsl(var(--muted-foreground));
+  transition: all 0.2s ease;
+}
+.search-input:focus-within {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+}
+.search-input__field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: hsl(var(--foreground));
+  outline: none;
+}
+.search-input__field::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+.search-input__shortcut {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.5);
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border));
+}
+.search-bar__stats {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.search-bar__count {
+  font-size: 18px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+.search-bar__label {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* ===== Employee Grid ===== */
+.employee-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+/* ===== Employee Card ===== */
+.employee-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  border: 1px solid hsl(var(--border) / 0.6);
+  background: hsl(var(--card));
+  overflow: hidden;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.03);
+}
+.employee-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 40px -8px hsl(var(--foreground) / 0.12);
+  border-color: hsl(var(--primary) / 0.3);
+}
+
+.employee-card__scene {
+  position: relative;
+  height: 110px;
+  overflow: visible;
+  background: linear-gradient(180deg, hsl(210 30% 95%) 0%, hsl(210 20% 88%) 100%);
+}
+
+.employee-card__status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: hsl(0 0% 100% / 0.9);
+  backdrop-filter: blur(4px);
+  font-size: 10px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.7);
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.08);
+}
+.employee-card__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.employee-card__status-dot--success {
+  background: hsl(142 76% 46%);
+  box-shadow: 0 0 6px hsl(142 76% 46% / 0.5);
+}
+.employee-card__status-dot--warning {
+  background: hsl(38 92% 50%);
+}
+.employee-card__status-dot--error {
+  background: hsl(4 70% 55%);
+}
+
+.employee-card__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 16px;
+  margin-top: -22px;
+  position: relative;
+  z-index: 1;
+}
+.employee-card__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid hsl(var(--card));
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+.employee-card:hover .employee-card__avatar {
+  transform: scale(1.08);
+}
+.employee-card__avatar-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 2px hsl(var(--foreground) / 0.2);
+}
+.employee-card__avatar-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--card));
+  background: hsl(142 76% 46%);
+  animation: pulse 2s infinite;
+}
+.employee-card__model {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.6);
+  padding: 4px 10px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+.employee-card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 12px 16px 16px;
+}
+.employee-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  transition: color 0.2s;
+}
+.employee-card:hover .employee-card__name {
+  color: hsl(var(--primary));
+}
+.employee-card__code {
+  font-size: 9px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground) / 0.5);
+  margin-top: 2px;
+}
+.employee-card__desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: hsl(var(--muted-foreground));
+  margin-top: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+.employee-card__skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.employee-card__skill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.employee-card__skill-more {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.5);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.employee-card__skill-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground) / 0.6);
+  background: hsl(var(--muted) / 0.3);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.employee-card__schedule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground) / 0.7);
+  margin-top: 10px;
+}
+.employee-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid hsl(var(--border) / 0.4);
+}
+.employee-card__actions-left {
+  display: flex;
+  gap: 4px;
+}
+.employee-card__action-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+}
+.employee-card:hover .employee-card__action-btn {
+  opacity: 1;
+}
+.employee-card__action-btn:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.employee-card__action-btn--danger:hover {
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+.employee-card__enter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+  padding: 8px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.employee-card__enter-btn:hover {
+  background: hsl(var(--primary) / 0.9);
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+}
+
+/* ===== Empty State ===== */
+.employee-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 24px;
+  border-radius: 20px;
+  border: 2px dashed hsl(var(--border));
+  background: hsl(var(--muted) / 0.1);
+  text-align: center;
+}
+.employee-empty__icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  background: hsl(var(--primary) / 0.05);
+  color: hsl(var(--primary) / 0.3);
+  margin-bottom: 16px;
+}
+.employee-empty__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.employee-empty__desc {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  max-width: 280px;
+  margin-top: 8px;
+}
+
+/* ===== Overview Header ===== */
+.overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.overview-header__content {
+  flex: 1;
+}
+.overview-header__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+.overview-header__subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+.overview-create-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #0f172a;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.overview-create-btn:hover {
+  background: #1e293b;
+}
+
+/* ===== Overview Stats ===== */
+.overview-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.overview-stats__card {
+  flex: 1;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.overview-stats__card--digital {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border: none;
+}
+.overview-stats__card--digital .overview-stats__icon {
+  color: rgba(255, 255, 255, 0.9);
+}
+.overview-stats__card--digital .overview-stats__value {
+  color: white;
+}
+.overview-stats__card--digital .overview-stats__unit {
+  color: rgba(255, 255, 255, 0.7);
+}
+.overview-stats__card--digital .overview-stats__meta {
+  color: rgba(255, 255, 255, 0.8);
+}
+.overview-stats__card--ratio {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+.overview-stats__icon {
+  flex-shrink: 0;
+  color: #3b82f6;
+}
+.overview-stats__body {
+  flex: 1;
+}
+.overview-stats__value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+}
+.overview-stats__value--dark {
+  color: #0f172a;
+}
+.overview-stats__unit {
+  font-size: 14px;
+  font-weight: 400;
+  color: #64748b;
+}
+.overview-stats__meta {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.overview-stats__meta--muted {
+  color: #94a3b8;
+}
+.overview-stats__label {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.overview-stats__ratio-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+.overview-stats__ratio-human {
+  background: #3b82f6;
+  height: 20px;
+  border-radius: 5px 0 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  min-width: 40px;
+  padding: 0 6px;
+}
+.overview-stats__ratio-ai {
+  background: #10b981;
+  height: 20px;
+  border-radius: 0 5px 5px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0 8px;
+}
+.overview-stats__ratio-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
 /* ===== Org Chart ===== */
 .org-chart-root {
   display: flex;
   flex-direction: column;
   align-items: center;
   user-select: none;
-  padding-top: 20px;
+  padding-top: 24px;
 }
 
 /* 竖线 */
 .org-v-line {
-  width: 1.5px;
-  height: 28px;
-  background: hsl(var(--border));
+  width: 2px;
+  height: 24px;
+  background: #cbd5e1;
   margin: 0 auto;
 }
 .org-v-line--short {
@@ -1681,9 +2590,9 @@ function generatePixelAvatar(name: string): string {
   justify-content: center;
 }
 .org-h-rail__line {
-  width: calc(100% - 150px);
-  height: 1.5px;
-  background: hsl(var(--border));
+  width: 80%;
+  height: 2px;
+  background: #cbd5e1;
 }
 
 /* 部门行 */
@@ -1691,7 +2600,7 @@ function generatePixelAvatar(name: string): string {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 24px;
+  gap: 14px;
   width: 100%;
 }
 .org-dept-col {
@@ -1700,148 +2609,285 @@ function generatePixelAvatar(name: string): string {
   align-items: center;
 }
 
-/* Card Base Shared */
-.org-root-card, .org-dept-card {
-  position: relative;
+/* 根节点包装 */
+.org-root-wrapper {
   display: flex;
-  flex-direction: column;
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px -4px hsl(var(--foreground) / 0.05), 0 1px 4px hsl(var(--foreground) / 0.02);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.org-root-card:hover, .org-dept-card:hover {
-  box-shadow: 0 8px 30px -6px hsl(var(--foreground) / 0.1), 0 4px 8px -2px hsl(var(--foreground) / 0.04);
-  transform: translateY(-2px);
-  border-color: hsl(var(--border) / 0.8);
-}
-.org-dept-card:hover {
-  border-color: hsl(var(--primary) / 0.4);
+  justify-content: center;
 }
 
-.org-dept-card--selected {
-  border-color: hsl(var(--primary));
-  box-shadow: 0 0 0 1px hsl(var(--primary)), 0 4px 12px hsl(var(--primary) / 0.12);
-}
-
-/* Top Bars */
-.org-card-top-bar {
-  height: 4px;
-  width: 100%;
-  background: hsl(var(--primary) / 0.3);
-  transition: background 0.2s;
-}
-.org-root-card .org-card-top-bar {
-  background: hsl(var(--primary));
-  height: 5px;
-}
-.org-dept-card:hover .org-card-top-bar, .org-dept-card--selected .org-card-top-bar {
-  background: hsl(var(--primary));
-}
-
-/* Root Header */
+/* 根节点卡片 */
 .org-root-card {
-  min-width: 260px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 .org-root-card__header {
-  padding: 24px 32px 20px;
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 14px;
 }
 .org-root-card__icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: hsl(var(--primary) / 0.08);
-  color: hsl(var(--primary));
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  color: white;
 }
 .org-root-card__company {
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.org-root-card__footer {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #f1f5f9;
+}
+.org-root-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #3b82f6;
+}
+.org-root-stat--accent {
+  color: #10b981;
+}
+.org-root-stat__text {
+  text-align: left;
+}
+.org-root-stat__value {
+  font-size: 18px;
   font-weight: 700;
-  color: hsl(var(--foreground));
-  letter-spacing: 0.02em;
+  color: #0f172a;
+  display: block;
+}
+.org-root-stat__label {
+  font-size: 9px;
+  color: #94a3b8;
 }
 
-/* Root Footer Stats */
-.org-root-card__footer {
+/* 部门卡片 */
+.org-dept-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  min-width: 190px;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
+}
+.org-dept-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.org-dept-card--selected {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+.org-dept-card--sub {
+  min-width: 160px;
+  padding: 12px 14px;
+}
+
+/* 部门卡片头部 */
+.org-dept-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.org-dept-card__icon {
+  width: 32px;
+  height: 32px;
+  background: var(--dept-color, linear-gradient(135deg, #6366f1, #8b5cf6));
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  background: hsl(var(--secondary) / 0.3);
-  border-top: 1px solid hsl(var(--border) / 0.5);
-  padding: 16px;
+  color: white;
+  flex-shrink: 0;
 }
-.org-stat-row {
+.org-dept-card__title-row {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-.org-stat-row__label {
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-  margin-right: 4px;
-}
-.org-stat-row__value {
-  font-size: 16px;
-  font-weight: 700;
-  color: hsl(var(--foreground));
-}
-.org-stat-row--accent .org-stat-row__value {
-  color: hsl(var(--primary));
-}
-
-/* Dept Header */
-.org-dept-card {
-  min-width: 170px;
-  max-width: 200px;
-  cursor: pointer;
-}
-.org-dept-card--sub {
-  min-width: 150px;
-  max-width: 180px;
-}
-.org-dept-card__header {
-  padding: 16px 20px 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .org-dept-card__name {
   font-size: 13px;
   font-weight: 600;
-  color: hsl(var(--foreground));
-  line-height: 1.4;
+  color: #0f172a;
+}
+.org-dept-card__subcount {
+  font-size: 10px;
+  color: #94a3b8;
+}
+.org-dept-card__expand-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  transition: all 0.2s;
+}
+.org-dept-card__expand-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
-/* Dept Footer Stats */
-.org-dept-card__footer {
+/* 部门统计 */
+.org-dept-card__stats {
   display: flex;
-  align-items: center;
-  justify-content: space-evenly;
-  background: hsl(var(--secondary) / 0.2);
-  border-top: 1px solid hsl(var(--border) / 0.4);
-  padding: 12px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
-.org-stat-row-sm {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.org-dept-stat {
+  flex: 1;
+  background: #eff6ff;
+  border-radius: 6px;
+  padding: 8px;
+  text-align: center;
 }
-.org-stat-row-sm__value {
+.org-dept-stat--digital {
+  background: #ecfdf5;
+}
+.org-dept-stat__value {
   font-size: 14px;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground));
+  font-weight: 700;
+  color: #1e40af;
 }
-.org-stat-row-sm--accent .org-stat-row-sm__value {
-  color: hsl(var(--primary));
+.org-dept-stat--digital .org-dept-stat__value {
+  color: #059669;
+}
+.org-dept-stat__label {
+  font-size: 8px;
+  color: #3b82f6;
+  display: block;
+}
+.org-dept-stat--digital .org-dept-stat__label {
+  color: #10b981;
+}
+
+/* 比例条 */
+.org-dept-card__ratio {
+  margin-top: 4px;
+}
+.org-dept-card__ratio-bar {
+  height: 3px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+}
+.org-dept-card__ratio-human {
+  background: #3b82f6;
+}
+.org-dept-card__ratio-digital {
+  background: #10b981;
+}
+.org-dept-card__ratio-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+/* 子部门 */
+.org-sub-depts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-origin: top center;
+}
+
+/* Expand Animation */
+.org-expand-enter-active {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.org-expand-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.org-expand-enter-from,
+.org-expand-leave-to {
+  opacity: 0;
+  transform: translateY(-16px) scaleY(0.9);
+}
+
+/* ===== Avatar Preview ===== */
+.org-dept-card__avatars {
+  padding: 12px 16px 14px;
+  border-top: 1px solid hsl(var(--border) / 0.3);
+  background: linear-gradient(180deg, hsl(var(--background) / 0.3) 0%, hsl(var(--background) / 0.6) 100%);
+}
+.org-dept-card__avatars--sub {
+  padding: 10px 12px 12px;
+}
+.org-avatar-group {
+  display: flex;
+  justify-content: center;
+}
+.org-avatar-group--sm {
+  transform: scale(0.9);
+}
+.org-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: -10px;
+  border: 2px solid hsl(var(--card));
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.org-avatar:first-child {
+  margin-left: 0;
+}
+.org-avatar:hover {
+  transform: translateY(-3px) scale(1.15);
+  z-index: 10 !important;
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.15);
+}
+.org-avatar--human {
+  background: linear-gradient(135deg, hsl(220 70% 55%) 0%, hsl(220 70% 45%) 100%);
+  color: white;
+  box-shadow: 0 2px 8px hsl(220 70% 45% / 0.35);
+}
+.org-avatar--digital {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.75) 100%);
+  color: white;
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.35);
+}
+.org-avatar--more {
+  background: linear-gradient(135deg, hsl(var(--muted)) 0%, hsl(var(--muted) / 0.8) 100%);
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  border: 2px dashed hsl(var(--border));
+}
+.org-avatar--xs {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+  margin-left: -8px;
 }
 </style>

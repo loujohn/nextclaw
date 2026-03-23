@@ -88,6 +88,38 @@ module.exports = {
         pulse: {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.5" }
+        },
+        // 员工卡片工作场景动画
+        "subtle-float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-2px)" }
+        },
+        "head-move": {
+          "0%, 100%": { transform: "rotate(0deg)" },
+          "30%": { transform: "rotate(2deg)" },
+          "70%": { transform: "rotate(-2deg)" }
+        },
+        "arm-type-left": {
+          "0%, 100%": { transform: "rotate(0deg)" },
+          "30%": { transform: "rotate(-15deg)" },
+          "60%": { transform: "rotate(-5deg)" }
+        },
+        "arm-type-right": {
+          "0%, 100%": { transform: "rotate(0deg)" },
+          "30%": { transform: "rotate(5deg)" },
+          "60%": { transform: "rotate(15deg)" }
+        },
+        "screen-glow": {
+          "0%, 100%": { boxShadow: "0 0 15px rgba(59, 130, 246, 0.15)" },
+          "50%": { boxShadow: "0 0 25px rgba(59, 130, 246, 0.25)" }
+        },
+        "cursor-blink": {
+          "0%, 50%": { opacity: "1" },
+          "51%, 100%": { opacity: "0" }
+        },
+        "plant-sway": {
+          "0%, 100%": { transform: "rotate(-2deg)" },
+          "50%": { transform: "rotate(2deg)" }
         }
       },
       animation: {
@@ -95,7 +127,15 @@ module.exports = {
         "fade-out": "fade-out 0.15s ease-in",
         "slide-in-right": "slide-in-right 0.2s ease-out",
         "scale-in": "scale-in 0.15s ease-out",
-        pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"
+        pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        // 员工卡片工作场景动画
+        "subtle-float": "subtle-float 3s ease-in-out infinite",
+        "head-move": "head-move 4s ease-in-out infinite",
+        "arm-type-left": "arm-type-left 0.6s ease-in-out infinite",
+        "arm-type-right": "arm-type-right 0.6s ease-in-out infinite 0.3s",
+        "screen-glow": "screen-glow 3s infinite",
+        "cursor-blink": "cursor-blink 1s infinite",
+        "plant-sway": "plant-sway 4s ease-in-out infinite"
       }
     }
   },
