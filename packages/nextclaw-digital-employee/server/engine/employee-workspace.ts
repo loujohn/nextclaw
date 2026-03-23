@@ -1,6 +1,6 @@
 // Synced approach from packages/nextclaw/src/cli/workspace.ts (WorkspaceManager.createWorkspaceTemplates)
 // Keep consistent with upstream template seeding logic.
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { APP_NAME } from "@nextclaw/core";
 
@@ -22,7 +22,6 @@ export function ensureEmployeeWorkspace(
 ): string {
   const wsDir = resolveEmployeeWorkspace(homeDir, employee.code);
   mkdirSync(wsDir, { recursive: true });
-  mkdirSync(join(wsDir, "skills"), { recursive: true });
   mkdirSync(join(wsDir, "memory"), { recursive: true });
 
   seedFromTemplates(wsDir);
@@ -85,21 +84,6 @@ function seedFromGlobal(wsDir: string, globalWorkspaceDir: string): void {
       cpSync(src, dest);
     }
   }
-
-  const globalSkillsDir = join(globalWorkspaceDir, "skills");
-  const localSkillsDir = join(wsDir, "skills");
-  if (existsSync(globalSkillsDir)) {
-    try {
-      for (const entry of readdirSync(globalSkillsDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const dest = join(localSkillsDir, entry.name);
-        if (existsSync(dest)) continue;
-        cpSync(join(globalSkillsDir, entry.name), dest, { recursive: true });
-      }
-    } catch {
-      // ignore
-    }
-  }
 }
 
 function writeSoulFile(wsDir: string, emp: EmployeeIdentity): void {
@@ -122,24 +106,15 @@ function writeIdentityFile(wsDir: string, emp: EmployeeIdentity): void {
   writeFileSync(join(wsDir, "IDENTITY.md"), content, "utf-8");
 }
 
+// Skills are loaded from the global workspace/skills directory by the engine.
+// Per-agent skill copying is no longer needed.
 export function syncEmployeeSkills(
-  homeDir: string,
-  employeeCode: string,
-  skillNames: string[],
-  globalWorkspaceDir: string
+  _homeDir: string,
+  _employeeCode: string,
+  _skillNames: string[],
+  _globalWorkspaceDir: string
 ): void {
-  const wsDir = resolveEmployeeWorkspace(homeDir, employeeCode);
-  const localSkillsDir = join(wsDir, "skills");
-  mkdirSync(localSkillsDir, { recursive: true });
-
-  const globalSkillsDir = join(globalWorkspaceDir, "skills");
-  for (const skillName of skillNames) {
-    const src = join(globalSkillsDir, skillName);
-    const dest = join(localSkillsDir, skillName);
-    if (existsSync(src) && !existsSync(dest)) {
-      cpSync(src, dest, { recursive: true });
-    }
-  }
+  // no-op: skills are resolved from global workspace at runtime
 }
 
 export function removeEmployeeWorkspace(homeDir: string, employeeCode: string): void {

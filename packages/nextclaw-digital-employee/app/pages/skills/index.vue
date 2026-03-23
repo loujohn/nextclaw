@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search, FolderInput, GitBranch, Sparkles, Loader2, Plus, X, Download, Users, Zap } from "lucide-vue-next";
+import { Search, FolderInput, GitBranch, Sparkles, Loader2, Plus, X, Download, Users, Zap, FolderOpen } from "lucide-vue-next";
 
 type SkillItem = {
   name: string;
@@ -23,6 +23,21 @@ const form = reactive({ sourceType: "local", source: "" });
 const importing = ref(false);
 const importError = ref("");
 const togglingSkill = ref("");
+const pickingDir = ref(false);
+
+async function pickDirectory() {
+  pickingDir.value = true;
+  try {
+    const res = await $fetch<{ ok: boolean; data: { path: string } }>("/api/config/pick-directory", { method: "POST" });
+    if (res.ok && res.data.path) {
+      form.source = res.data.path;
+    }
+  } catch {
+    // 用户取消或不支持时静默忽略
+  } finally {
+    pickingDir.value = false;
+  }
+}
 const { data, refresh } = await useFetch<SkillListPayload>("/api/skills");
 
 const allSkills = computed(() => data.value?.data ?? []);
@@ -217,14 +232,27 @@ async function toggleSkill(name: string, enabled: boolean) {
                 </label>
                 <label class="block space-y-1.5">
                   <span class="text-sm font-medium">来源地址</span>
-                  <div class="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5">
-                    <FolderInput v-if="form.sourceType === 'local'" class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
-                    <GitBranch v-else class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
-                    <input
-                      v-model="form.source"
-                      placeholder="本地路径或 Git 地址"
-                      class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    />
+                  <div class="flex gap-2">
+                    <div class="flex flex-1 items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5">
+                      <FolderInput v-if="form.sourceType === 'local'" class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+                      <GitBranch v-else class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+                      <input
+                        v-model="form.source"
+                        :placeholder="form.sourceType === 'local' ? '选择或输入本地目录路径' : 'Git 仓库地址'"
+                        class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                      />
+                    </div>
+                    <button
+                      v-if="form.sourceType === 'local'"
+                      type="button"
+                      class="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                      :disabled="pickingDir"
+                      @click="pickDirectory"
+                    >
+                      <Loader2 v-if="pickingDir" class="h-4 w-4 animate-spin" />
+                      <FolderOpen v-else class="h-4 w-4" :stroke-width="1.8" />
+                      浏览
+                    </button>
                   </div>
                 </label>
                 <button
@@ -240,7 +268,7 @@ async function toggleSkill(name: string, enabled: boolean) {
               <div class="mt-8 rounded-lg bg-muted/30 p-4">
                 <p class="text-sm font-medium">导入说明</p>
                 <ul class="mt-2 space-y-1.5 text-xs text-muted-foreground">
-                  <li>• <strong>本地目录</strong>：指向包含技能定义的文件夹路径</li>
+                  <li>• <strong>本地目录</strong>：点击「浏览」用系统选择框选取目录，或直接粘贴绝对路径</li>
                   <li>• <strong>Git 仓库</strong>：支持 HTTPS 或 SSH 格式的仓库地址</li>
                   <li>• 导入后技能默认处于停用状态，需手动启用</li>
                 </ul>
