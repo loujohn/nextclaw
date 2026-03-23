@@ -38,6 +38,10 @@ WORKDIR /app
 # Copy the self-contained Nitro output (includes bundled node_modules)
 COPY --from=builder /app/packages/nextclaw-digital-employee/.output ./
 
+# Copy entrypoint (backs up SQLite before each start)
+COPY packages/nextclaw-digital-employee/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Persistent data directory (SQLite DB + agent workspace)
 RUN mkdir -p /data
 
@@ -52,4 +56,4 @@ EXPOSE 3000
 
 VOLUME ["/data"]
 
-CMD ["node", "server/index.mjs"]
+ENTRYPOINT ["/entrypoint.sh"]
