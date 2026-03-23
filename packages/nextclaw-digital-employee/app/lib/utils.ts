@@ -5,6 +5,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function formatTime(ts?: string): string {
+  const date = ts ? new Date(ts) : new Date();
+  const y = date.getFullYear();
+  const mo = (date.getMonth() + 1).toString().padStart(2, "0");
+  const d = date.getDate().toString().padStart(2, "0");
+  const h = date.getHours().toString().padStart(2, "0");
+  const m = date.getMinutes().toString().padStart(2, "0");
+  return `${y}-${mo}-${d} ${h}:${m}`;
+}
+
 export function renderMarkdown(raw: string): string {
   let html = raw
     .replace(/&/g, "&amp;")

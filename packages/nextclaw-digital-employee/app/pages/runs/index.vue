@@ -153,7 +153,7 @@ const badgeClass: Record<string, string> = {
       </button>
       <button
         class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all"
-        :class="statusFilter === 'amber' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        :class="statusFilter === 'amber' ? 'bg-amber-400 text-white shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
         @click="setFilter(statusFilter === 'amber' ? null : 'amber')"
       >
         <Play class="h-3.5 w-3.5" :stroke-width="2" />

@@ -61,6 +61,7 @@ export type RunEmployeeTurnResult = {
 export type SessionHistoryMessage = {
   role: "user" | "assistant" | "system";
   content: string;
+  timestamp?: string;
 };
 
 function parseSkillName(skillFilePath: string): string {
@@ -386,16 +387,17 @@ export class NextclawEngineGateway {
     if (!session) {
       return [];
     }
-    return this.sessionManager
-      .getHistory(session)
+    const maxMessages = 50;
+    const recent = session.messages.length > maxMessages
+      ? session.messages.slice(-maxMessages)
+      : session.messages;
+    return recent
       .map((message) => {
         const role = message.role;
         const content = message.content;
+        const timestamp = typeof message.timestamp === "string" ? message.timestamp : undefined;
         if ((role === "user" || role === "assistant" || role === "system") && typeof content === "string") {
-          return {
-            role,
-            content
-          };
+          return { role, content, timestamp } satisfies SessionHistoryMessage;
         }
         return null;
       })

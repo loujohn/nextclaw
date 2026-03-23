@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ChatMessageView, ChatResultCardView } from "~~/shared/ui-models";
-import { renderMarkdown } from "~/lib/utils";
-import { Send, Copy, ExternalLink, Settings, Sparkles, Loader2, User, Bot, AlertCircle, MessageCircle } from "lucide-vue-next";
+import { renderMarkdown, formatTime } from "~/lib/utils";
+import { Send, Copy, ExternalLink, Settings, Sparkles, User, Bot, AlertCircle, MessageCircle, StopCircle } from "lucide-vue-next";
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
@@ -14,6 +14,7 @@ const messages = ref<ChatMessageView[]>([]);
 const threadEl = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const copied = ref(false);
+const abortController = ref<AbortController | null>(null);
 const { data: employee, refresh: refreshEmployee } = await useEmployeeDetail(employeeId);
 const { data: history, refresh: refreshHistory } = await useFetch<{ ok: boolean; data: ChatMessageView[] }>(
   `/api/employees/${employeeId.value}/chat/history`,
@@ -27,25 +28,28 @@ watchEffect(() => {
   messages.value = (history.value?.data ?? []).filter(m => m.content?.trim());
 });
 
-watch(messages, () => {
+function scrollToBottom() {
   nextTick(() => {
     if (threadEl.value) {
       threadEl.value.scrollTop = threadEl.value.scrollHeight;
     }
   });
+}
+
+onMounted(() => {
+  scrollToBottom();
 });
 
-const starterPrompts = [
-  { text: "立即总结今天高风险项目", icon: "📊" },
-  { text: "只看本周延期任务和负责人", icon: "⏰" },
-  { text: "模拟一条发给钉钉群的管理摘要", icon: "📝" }
-];
+watch(messages, () => {
+  scrollToBottom();
+});
 
 async function sendMessage(input = draft.value) {
   if (!input.trim()) return;
   sending.value = true;
   errorMessage.value = "";
-  const optimisticMsg: ChatMessageView = { role: "user", content: input };
+  abortController.value = new AbortController();
+  const optimisticMsg: ChatMessageView = { role: "user", content: input, timestamp: new Date().toISOString() };
   messages.value = [...messages.value, optimisticMsg];
   draft.value = "";
   if (textareaEl.value) textareaEl.value.style.height = "auto";
@@ -60,17 +64,35 @@ async function sendMessage(input = draft.value) {
         resultCards: ChatResultCardView[];
         runSummary: string;
       };
-    }>(`/api/employees/${employeeId.value}/chat`, { method: "POST", body: { message: input } });
+    }>(`/api/employees/${employeeId.value}/chat`, {
+      method: "POST",
+      body: { message: input },
+      signal: abortController.value.signal,
+    });
     resultCards.value = result.data.resultCards;
     lastRunId.value = result.data.runId;
     messages.value = result.data.messages.filter(m => m.content?.trim());
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error);
+    const e = error as Error & { cause?: Error };
+    const isAbort =
+      e?.name === "AbortError" ||
+      e?.cause?.name === "AbortError" ||
+      (typeof e?.message === "string" && e.message.toLowerCase().includes("aborted"));
     messages.value = messages.value.filter(m => m !== optimisticMsg);
+    if (isAbort) {
+      draft.value = input;
+    } else {
+      errorMessage.value = e instanceof Error ? e.message : String(e);
+    }
   } finally {
     sending.value = false;
+    abortController.value = null;
   }
+}
+
+function cancelMessage() {
+  abortController.value?.abort();
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -104,18 +126,7 @@ async function copyToClipboard(text: string) {
           <h2 class="mt-0.5 text-lg font-semibold">与 {{ employee?.data?.name ?? "员工" }} 对话</h2>
           <p class="text-sm text-muted-foreground">发送指令、查看结果和执行下一步动作。</p>
         </div>
-        <div v-if="messages.length === 0" class="flex flex-wrap gap-2">
-          <button
-            v-for="prompt in starterPrompts"
-            :key="prompt.text"
-            type="button"
-            class="group flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-medium transition-all duration-150 hover:border-primary/30 hover:bg-primary/5 hover:text-primary hover:shadow-sm"
-            @click="sendMessage(prompt.text)"
-          >
-            <span class="text-sm">{{ prompt.icon }}</span>
-            {{ prompt.text }}
-          </button>
-        </div>
+
       </div>
 
       <!-- Message Thread -->
@@ -127,12 +138,12 @@ async function copyToClipboard(text: string) {
         <template v-for="(msg, i) in messages" :key="`${msg.role}-${i}-${msg.timestamp ?? 'na'}`">
           <!-- User Message -->
           <div v-if="msg.role === 'user'" class="flex items-start justify-end gap-3 animate-fade-in">
-            <div class="max-w-[80%] space-y-1">
+            <div class="max-w-[80%] min-w-0 space-y-1">
               <div class="flex items-center justify-end gap-2">
-                <span class="text-[11px] text-muted-foreground">{{ msg.timestamp ?? "刚刚" }}</span>
+                <span class="text-[11px] text-muted-foreground">{{ formatTime(msg.timestamp) }}</span>
                 <span class="text-xs font-semibold text-primary">你</span>
               </div>
-              <div class="rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm">
+              <div class="rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm break-words overflow-hidden">
                 <div v-html="renderMarkdown(msg.content)" />
               </div>
             </div>
@@ -146,12 +157,12 @@ async function copyToClipboard(text: string) {
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-emerald-400/20">
               <Bot class="h-4 w-4 text-primary" :stroke-width="2" />
             </div>
-            <div class="max-w-[80%] space-y-1">
+            <div class="max-w-[80%] min-w-0 space-y-1">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold text-foreground">{{ employee?.data?.name }}</span>
-                <span class="text-[11px] text-muted-foreground">{{ msg.timestamp ?? "刚刚" }}</span>
+                <span class="text-[11px] text-muted-foreground">{{ formatTime(msg.timestamp) }}</span>
               </div>
-              <div class="chat-bubble-assistant rounded-2xl rounded-tl-md border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm">
+              <div class="chat-bubble-assistant rounded-2xl rounded-tl-md border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm overflow-hidden">
                 <div v-html="renderMarkdown(msg.content)" />
               </div>
             </div>
@@ -194,7 +205,7 @@ async function copyToClipboard(text: string) {
           </div>
           <p class="font-medium text-muted-foreground">开始对话</p>
           <p class="mt-1 max-w-xs text-xs text-muted-foreground">
-            在下方输入指令开始对话，或点击上方的快捷提示快速开始。
+            在下方输入指令开始对话。
           </p>
         </div>
       </div>
@@ -214,12 +225,13 @@ async function copyToClipboard(text: string) {
           <p class="text-[11px] text-muted-foreground">Enter 发送 · Shift+Enter 换行</p>
           <button
             class="btn-primary rounded-xl px-5"
-            :disabled="sending || !draft.trim()"
-            @click="sendMessage()"
+            :class="sending ? 'bg-destructive hover:bg-destructive/90' : ''"
+            :disabled="!sending && !draft.trim()"
+            @click="sending ? cancelMessage() : sendMessage()"
           >
-            <Loader2 v-if="sending" class="h-3.5 w-3.5 animate-spin" />
+            <StopCircle v-if="sending" class="h-3.5 w-3.5" />
             <Send v-else class="h-3.5 w-3.5" :stroke-width="2" />
-            {{ sending ? "执行中" : "发送" }}
+            {{ sending ? "终止" : "发送" }}
           </button>
         </div>
       </div>
