@@ -1,0 +1,26 @@
+services:
+  digital-employee:
+    build:
+      # Build context is the monorepo root (Dockerfile needs full workspace)
+      context: ../..
+      dockerfile: packages/nextclaw-digital-employee/Dockerfile
+    image: nextclaw-digital-employee:latest
+    container_name: nextclaw-digital-employee
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persistent storage: SQLite DB + agent workspace files
+      - digital-employee-data:/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  digital-employee-data:
+    driver: local
