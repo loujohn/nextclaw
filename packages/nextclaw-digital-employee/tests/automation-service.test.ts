@@ -6,6 +6,7 @@ import { CronService } from "@nextclaw/core";
 import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeScheduleRepository } from "../server/repositories/employee-schedule-repository";
+import { EmployeeScheduleJobRepository } from "../server/repositories/employee-schedule-job-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { RunRecordRepository } from "../server/repositories/run-record-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
@@ -73,7 +74,7 @@ describe("automation service - cron schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "项目管理助手",
       code: "project-manager",
@@ -84,7 +85,7 @@ describe("automation service - cron schedule", () => {
     const gateway = buildTestGateway(homeDir, "cron 任务已完成");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     const schedule = await automation.upsertSchedule({
@@ -113,7 +114,7 @@ describe("automation service - cron schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "日报助手",
       code: "daily-reporter",
@@ -124,7 +125,7 @@ describe("automation service - cron schedule", () => {
     const gateway = buildTestGateway(homeDir, "日报已生成");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron1 = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation1 = new AutomationService(scheduleRepo, employeeRepo, runService, cron1, gateway);
+    const automation1 = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron1, gateway);
     await automation1.start();
     await automation1.upsertSchedule({
       employeeId: employee.id,
@@ -136,7 +137,7 @@ describe("automation service - cron schedule", () => {
 
     // 模拟重启：新建 CronService 实例，从磁盘加载
     const cron2 = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation2 = new AutomationService(scheduleRepo, employeeRepo, runService, cron2, gateway);
+    const automation2 = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron2, gateway);
     await automation2.start();
     const status = cron2.status();
     expect(status.jobs).toBe(1);
@@ -160,7 +161,7 @@ describe("automation service - every (interval) schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "监控助手",
       code: "monitor",
@@ -171,7 +172,7 @@ describe("automation service - every (interval) schedule", () => {
     const gateway = buildTestGateway(homeDir, "巡检完毕");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     const schedule = await automation.upsertSchedule({
@@ -202,7 +203,7 @@ describe("automation service - every (interval) schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "定时检测",
       code: "interval-worker",
@@ -213,7 +214,7 @@ describe("automation service - every (interval) schedule", () => {
     const gateway = buildTestGateway(homeDir, "interval 触发成功");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
     await automation.upsertSchedule({
       employeeId: employee.id,
@@ -245,7 +246,7 @@ describe("automation service - heartbeat schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "心跳巡检员",
       code: "heartbeat-worker",
@@ -261,7 +262,7 @@ describe("automation service - heartbeat schedule", () => {
     const gateway1 = buildTestGateway(homeDir, "心跳正常");
     const runService1 = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway1);
     const cron1 = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation1 = new AutomationService(scheduleRepo, employeeRepo, runService1, cron1, gateway1);
+    const automation1 = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService1, cron1, gateway1);
     await automation1.start();
 
     const schedule = await automation1.upsertSchedule({
@@ -282,7 +283,7 @@ describe("automation service - heartbeat schedule", () => {
     const gateway2 = buildTestGateway(homeDir, "心跳恢复正常");
     const runService2 = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway2);
     const cron2 = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation2 = new AutomationService(scheduleRepo, employeeRepo, runService2, cron2, gateway2);
+    const automation2 = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService2, cron2, gateway2);
     await automation2.start();
 
     // DB 记录应已被 automation2 恢复
@@ -313,7 +314,7 @@ describe("automation service - heartbeat schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "心跳 tick 测试",
       code: "heartbeat-tick",
@@ -329,7 +330,7 @@ describe("automation service - heartbeat schedule", () => {
     const gateway = buildTestGateway(homeDir, "心跳 tick 触发成功");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
     await automation.upsertSchedule({
       employeeId: employee.id,
@@ -357,7 +358,7 @@ describe("automation service - heartbeat schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "手动触发心跳",
       code: "manual-heartbeat",
@@ -372,7 +373,7 @@ describe("automation service - heartbeat schedule", () => {
     const gateway = buildTestGateway(homeDir, "手动心跳已触发");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
     await automation.upsertSchedule({
       employeeId: employee.id,
@@ -401,7 +402,7 @@ describe("automation service - heartbeat schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "禁用心跳",
       code: "disabled-heartbeat",
@@ -416,7 +417,7 @@ describe("automation service - heartbeat schedule", () => {
     const gateway = buildTestGateway(homeDir, "不应出现的触发");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     // 以 enabled: false 创建 heartbeat 调度
@@ -447,7 +448,7 @@ describe("automation service - heartbeat schedule", () => {
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "幂等心跳",
       code: "idempotent-heartbeat",
@@ -462,7 +463,7 @@ describe("automation service - heartbeat schedule", () => {
     const gateway = buildTestGateway(homeDir, "幂等触发");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     // 连续两次 upsert 相同 heartbeat（第二次内部会调用 existing.stop() + new start()，
@@ -508,7 +509,7 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "自动同步测试员",
       code: "auto-sync-worker",
@@ -519,7 +520,7 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     const gateway = buildTestGateway(homeDir, "自动执行完毕");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     const schedule = await automation.upsertSchedule({
@@ -561,7 +562,7 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "每20分钟员工",
       code: "every-20min-worker",
@@ -572,7 +573,7 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     const gateway = buildTestGateway(homeDir, "cron 自动执行完毕");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     // 每 5 秒触发一次，使用 every 模式便于精确控制时序（不受本机时区影响）
@@ -617,7 +618,7 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const scheduleRepo = new EmployeeScheduleRepository(db);
-    const runRepo = new RunRecordRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
     const employee = await employeeRepo.create({
       name: "手动触发员工",
       code: "manual-trigger-worker",
@@ -628,7 +629,7 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     const gateway = buildTestGateway(homeDir, "手动执行完毕");
     const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
     const cron = new CronService(join(homeDir, "cron", "jobs.json"));
-    const automation = new AutomationService(scheduleRepo, employeeRepo, runService, cron, gateway);
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
     await automation.start();
 
     const schedule = await automation.upsertSchedule({

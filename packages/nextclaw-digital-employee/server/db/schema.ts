@@ -4,6 +4,7 @@ export const PLATFORM_TABLES = {
   humanEmployees: "human_employees",
   employeeSkills: "employee_skills",
   employeeSchedules: "employee_schedules",
+  employeeScheduleJobs: "employee_schedule_jobs",
   skillInstallations: "skill_installations",
   integrationConnections: "integration_connections",
   runRecords: "run_records",

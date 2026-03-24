@@ -11,6 +11,7 @@ import { SkillInstallService } from "../services/skill-install-service";
 import { DepartmentRepository } from "../repositories/department-repository";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeScheduleRepository } from "../repositories/employee-schedule-repository";
+import { EmployeeScheduleJobRepository } from "../repositories/employee-schedule-job-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { HumanEmployeeRepository } from "../repositories/human-employee-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
@@ -29,6 +30,7 @@ type PlatformContext = {
   humanEmployeeRepo: HumanEmployeeRepository;
   employeeSkillRepo: EmployeeSkillRepository;
   employeeScheduleRepo: EmployeeScheduleRepository;
+  employeeScheduleJobRepo: EmployeeScheduleJobRepository;
   runRepo: RunRecordRepository;
   skillInstallationRepo: SkillInstallationRepository;
   integrationConnectionRepo: IntegrationConnectionRepository;
@@ -120,6 +122,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const humanEmployeeRepo = new HumanEmployeeRepository(db);
       const employeeSkillRepo = new EmployeeSkillRepository(db);
       const employeeScheduleRepo = new EmployeeScheduleRepository(db);
+      const employeeScheduleJobRepo = new EmployeeScheduleJobRepository(db);
       const runRepo = new RunRecordRepository(db);
       const skillInstallationRepo = new SkillInstallationRepository(db);
       const skillInstallService = new SkillInstallService(skillInstallationRepo, gateway);
@@ -137,6 +140,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       });
       const automationService = new AutomationService(
         employeeScheduleRepo,
+        employeeScheduleJobRepo,
         employeeRepo,
         employeeRunService,
         new CronService(join(homeDir, "cron", "jobs.json")),
@@ -153,6 +157,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         humanEmployeeRepo,
         employeeSkillRepo,
         employeeScheduleRepo,
+        employeeScheduleJobRepo,
         runRepo,
         skillInstallationRepo,
         integrationConnectionRepo,

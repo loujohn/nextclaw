@@ -10,6 +10,7 @@ const isOverviewTab = computed(() => route.path === `/employees/${employeeId.val
 const tabs = computed(() => [
   { label: "概览", to: `/employees/${employeeId.value}` },
   { label: "聊天", to: `/employees/${employeeId.value}/chat` },
+  { label: "定时任务", to: `/employees/${employeeId.value}/jobs` },
   { label: "运行记录", to: `/employees/${employeeId.value}/runs` }
 ]);
 </script>

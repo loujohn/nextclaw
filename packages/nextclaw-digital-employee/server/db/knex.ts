@@ -229,12 +229,34 @@ async function createOrgSyncConfigTable(db: Knex): Promise<void> {
   });
 }
 
+async function createEmployeeScheduleJobsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.employeeScheduleJobs);
+  if (exists) return;
+  await db.schema.createTable(PLATFORM_TABLES.employeeScheduleJobs, (table) => {
+    table.string("id").primary();
+    table.string("employee_id").notNullable().references("id").inTable(PLATFORM_TABLES.employees).onDelete("CASCADE");
+    table.string("name").notNullable().defaultTo("");
+    table.text("description").notNullable().defaultTo("");
+    table.string("schedule_kind").notNullable().defaultTo("cron");
+    table.string("cron_expr").nullable();
+    table.bigInteger("every_ms").nullable();
+    table.integer("heartbeat_interval_s").nullable();
+    table.text("task_prompt").notNullable().defaultTo("");
+    table.boolean("enabled").notNullable().defaultTo(true);
+    table.string("runtime_job_id").nullable();
+    table.timestamp("next_run_at").nullable();
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createDepartmentsTable(db);
   await createEmployeesTable(db);
   await createHumanEmployeesTable(db);
   await createEmployeeSkillsTable(db);
   await createEmployeeSchedulesTable(db);
+  await createEmployeeScheduleJobsTable(db);
   await createSkillInstallationsTable(db);
   await createIntegrationConnectionsTable(db);
   await createRunRecordsTable(db);

@@ -89,7 +89,7 @@ async function saveDingTalkBinding() {
       <pre class="mt-3 rounded-lg bg-muted/50 p-4 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">{{ data.data.systemPrompt || "尚未配置系统提示词" }}</pre>
     </section>
 
-    <div class="grid gap-5 lg:grid-cols-2">
+    <div v-if="false" class="grid gap-5 lg:grid-cols-2">
       <!-- Automation -->
       <section class="rounded-xl border border-border bg-card p-5 shadow-sm">
         <span class="section-label">自动化</span>
