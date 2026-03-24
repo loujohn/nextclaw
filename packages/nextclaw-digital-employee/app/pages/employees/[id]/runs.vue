@@ -1,13 +1,59 @@
 <script setup lang="ts">
-import { formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
 import { renderMarkdown } from "~/lib/utils";
-import { Sparkles, X } from "lucide-vue-next";
+import { Sparkles, X, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, Play } from "lucide-vue-next";
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
-const { data } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
-  key: computed(() => `employee-runs:${employeeId.value}:history`)
+
+type RunItem = {
+  id: string;
+  statusLabel: string;
+  triggerLabel: string;
+  summary: string;
+  highlight: string;
+  tone: "teal" | "amber" | "slate" | "danger";
+  startedAtLabel: string;
+};
+
+const toneConfig: Record<string, { dot: string; border: string; icon: typeof CheckCircle2 }> = {
+  teal: { dot: "bg-primary", border: "border-primary/20", icon: CheckCircle2 },
+  amber: { dot: "bg-amber-400", border: "border-amber-200", icon: Clock },
+  slate: { dot: "bg-muted-foreground", border: "border-border", icon: Clock },
+  danger: { dot: "bg-destructive", border: "border-destructive/20", icon: AlertTriangle }
+};
+
+const badgeClass: Record<string, string> = {
+  teal: "bg-primary/10 text-primary",
+  amber: "bg-amber-50 text-amber-600",
+  slate: "bg-muted text-muted-foreground",
+  danger: "bg-destructive/10 text-destructive"
+};
+
+type RunListPayload = {
+  ok: boolean;
+  data: {
+    items: RunItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  };
+};
+
+const PAGE_SIZE = 10;
+const currentPage = ref(1);
+
+function buildApiUrl() {
+  const params = new URLSearchParams({ page: String(currentPage.value), pageSize: String(PAGE_SIZE) });
+  return `/api/employees/${employeeId.value}/runs?${params.toString()}`;
+}
+
+const { data, pending } = await useFetch<RunListPayload>(() => buildApiUrl(), {
+  key: computed(() => `employee-runs:${employeeId.value}:history:${currentPage.value}`)
 });
+
+const runs = computed(() => data.value?.data.items ?? []);
+const total = computed(() => data.value?.data.total ?? 0);
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
 type RunDetailPayload = {
   ok: boolean;
@@ -25,6 +71,22 @@ const selectedRunId = ref("");
 const selectedRun = ref<RunDetailPayload | null>(null);
 const loadingDetail = ref(false);
 
+const visiblePages = computed(() => {
+  const tp = totalPages.value;
+  const cp = currentPage.value;
+  if (tp <= 7) {
+    return Array.from({ length: tp }, (_, i) => i + 1) as (number | "...")[];
+  }
+  const pages: (number | "...")[] = [1];
+  if (cp > 3) pages.push("...");
+  for (let p = Math.max(2, cp - 1); p <= Math.min(tp - 1, cp + 1); p++) {
+    pages.push(p);
+  }
+  if (cp < tp - 2) pages.push("...");
+  pages.push(tp);
+  return pages;
+});
+
 async function openDetail(runId: string) {
   selectedRunId.value = runId;
   loadingDetail.value = true;
@@ -39,48 +101,117 @@ function closeDetail() {
   selectedRunId.value = "";
   selectedRun.value = null;
 }
+
+function goToPage(page: number) {
+  if (page < 1 || page > totalPages.value) return;
+  currentPage.value = page;
+}
 </script>
 
 <template>
-  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
-    <div class="mb-4 flex items-center justify-between">
-      <div>
-        <span class="section-label">历史记录</span>
-        <h2 class="mt-0.5 text-lg font-semibold">运行历史</h2>
-      </div>
-      <NuxtLink to="/runs" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-        运行中心 →
-      </NuxtLink>
+  <div class="space-y-4">
+
+    <div v-if="pending" class="flex flex-col items-center py-12 text-center">
+      <div class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <p class="mt-3 text-sm text-muted-foreground">加载中...</p>
     </div>
 
-    <div class="space-y-2">
-      <button
-        v-for="run in (data as any)?.data ?? []"
+    <div v-else-if="runs.length > 0" class="grid gap-4 sm:grid-cols-2">
+      <div
+        v-for="run in runs"
         :key="run.id"
-        class="group block w-full rounded-lg border border-border p-3 text-left transition-all hover:border-primary/20 hover:shadow-sm"
-        :class="selectedRunId === run.id ? 'border-primary/30 bg-primary/5' : ''"
-        @click="openDetail(run.id)"
+        class="group flex flex-col rounded-xl border bg-card p-4 shadow-sm transition-all duration-150 hover:shadow-md"
+        :class="[toneConfig[run.tone]?.border ?? 'border-border', selectedRunId === run.id ? 'ring-2 ring-primary/30' : '']"
       >
-        <div class="flex items-center justify-between gap-2">
-          <span class="shrink-0 whitespace-nowrap text-sm font-semibold group-hover:text-primary">{{ formatRunStatusLabel(run.status) }}</span>
-          <span class="min-w-0 truncate text-xs text-muted-foreground">{{ formatDateTime(run.startedAt) }}</span>
+        <!-- Card Header -->
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted/40"
+              :class="run.tone === 'amber' ? 'animate-pulse' : ''"
+            >
+              <span class="h-2.5 w-2.5 rounded-full" :class="toneConfig[run.tone]?.dot ?? 'bg-muted-foreground'" />
+            </span>
+            <span class="truncate text-sm font-semibold">{{ run.triggerLabel }}</span>
+          </div>
+          <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="badgeClass[run.tone]">
+            {{ run.statusLabel }}
+          </span>
         </div>
+
+        <!-- Meta -->
+        <p class="mt-2 text-xs text-muted-foreground">{{ run.startedAtLabel }}</p>
+
+        <!-- Highlight -->
         <div
-          class="run-detail-md mt-1.5 max-h-24 overflow-y-auto text-sm text-muted-foreground"
-          v-html="renderMarkdown(translateRunText(run.summary) || '等待结果摘要')"
+          v-if="run.highlight"
+          class="run-detail-md mt-2.5 line-clamp-2 max-h-12 overflow-hidden text-sm font-medium text-foreground/80"
+          v-html="renderMarkdown(run.highlight)"
         />
-      </button>
+
+        <!-- Summary -->
+        <div
+          v-if="run.summary"
+          class="run-detail-md mt-1 line-clamp-2 max-h-9 overflow-hidden text-xs text-muted-foreground"
+          v-html="renderMarkdown(run.summary)"
+        />
+
+        <!-- Detail Button -->
+        <div class="mt-auto pt-3 border-t border-border/50 flex justify-end">
+          <button
+            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 bg-muted/60 text-muted-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="selectedRunId === run.id && loadingDetail"
+            @click="openDetail(run.id)"
+          >
+            <component :is="toneConfig[run.tone]?.icon ?? Clock" class="h-3 w-3" :stroke-width="2" />
+            详情
+          </button>
+        </div>
+      </div>
     </div>
 
-    <div
-      v-if="((data as any)?.data ?? []).length === 0"
-      class="mt-4 flex items-center gap-3 rounded-lg border border-dashed border-border p-4"
-    >
+    <div v-else class="flex items-center gap-3 rounded-lg border border-dashed border-border p-4">
       <Sparkles class="h-4 w-4 shrink-0 text-primary" :stroke-width="1.8" />
       <div>
         <p class="text-sm font-medium">还没有运行历史</p>
         <p class="text-xs text-muted-foreground">先通过聊天或自动任务触发一次执行。</p>
       </div>
+    </div>
+
+    <div v-if="!pending && totalPages > 1" class="flex items-center justify-center gap-2">
+      <button
+        class="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-all"
+        :class="currentPage <= 1 ? 'opacity-40 cursor-not-allowed bg-muted/30 text-muted-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        :disabled="currentPage <= 1"
+        @click="goToPage(currentPage - 1)"
+      >
+        <ChevronLeft class="h-4 w-4" :stroke-width="2" />
+        上一页
+      </button>
+
+      <div class="flex items-center gap-1">
+        <template v-for="(p, i) in visiblePages" :key="i">
+          <span v-if="p === '...'" class="flex h-8 w-6 items-center justify-center text-sm text-muted-foreground">…</span>
+          <button
+            v-else
+            class="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-all"
+            :class="p === currentPage ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+            @click="goToPage(p as number)"
+          >
+            {{ p }}
+          </button>
+        </template>
+      </div>
+
+      <button
+        class="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-all"
+        :class="currentPage >= totalPages ? 'opacity-40 cursor-not-allowed bg-muted/30 text-muted-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        :disabled="currentPage >= totalPages"
+        @click="goToPage(currentPage + 1)"
+      >
+        下一页
+        <ChevronRight class="h-4 w-4" :stroke-width="2" />
+      </button>
     </div>
   </div>
 

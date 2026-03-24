@@ -109,6 +109,23 @@ export class RunRecordRepository {
     return rows.map(toRunRecordView);
   }
 
+  async listPagedByEmployeeId(params: { employeeId: string; page: number; pageSize: number }): Promise<{ items: RunRecordView[]; total: number }> {
+    const offset = (params.page - 1) * params.pageSize;
+    const [rows, countResult] = await Promise.all([
+      this.db<RunRecord>(PLATFORM_TABLES.runRecords)
+        .where({ employee_id: params.employeeId })
+        .orderBy("started_at", "desc")
+        .limit(params.pageSize)
+        .offset(offset),
+      this.db<RunRecord>(PLATFORM_TABLES.runRecords)
+        .where({ employee_id: params.employeeId })
+        .count({ count: "id" })
+        .first()
+    ]);
+    const total = Number(countResult?.count ?? 0);
+    return { items: rows.map(toRunRecordView), total };
+  }
+
   async list(limit = 50): Promise<RunRecordView[]> {
     const rows = await this.db<RunRecord>(PLATFORM_TABLES.runRecords)
       .orderBy("started_at", "desc")
