@@ -45,7 +45,7 @@ export class AutomationService {
           employeeId: schedJob.employeeId,
           message,
           triggerType: "scheduled",
-          triggerSource: "cron"
+          triggerSource: schedJob.id
         });
         return result.reply;
       }

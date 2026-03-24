@@ -55,6 +55,7 @@ export type ChatResultCardView = {
 
 export type RunListInput = {
   employees: Array<{ id: string; name: string }>;
+  jobs?: Array<{ id: string; name: string }>;
   runs: Array<{
     id: string;
     employeeId: string | null;
@@ -72,6 +73,7 @@ export type RunListEntryView = {
   employeeName: string;
   statusLabel: string;
   triggerLabel: string;
+  scheduleJobName: string | null;
   summary: string;
   highlight: string;
   tone: "teal" | "amber" | "slate" | "danger";
@@ -357,15 +359,19 @@ export function formatRunStatusLabel(status: string): string {
 
 export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
   const employeeNameMap = new Map(input.employees.map((employee) => [employee.id, employee.name]));
+  const jobNameMap = new Map((input.jobs ?? []).map((job) => [job.id, job.name]));
   return input.runs.map((run) => {
     const statusMeta = formatRunStatus(run.status);
     const rawHighlight = readFirstCardContent(run.result) || run.summary || "等待执行结果";
     const highlight = translateRunText(rawHighlight);
+    const isScheduled = run.triggerType === "scheduled";
+    const scheduleJobName = isScheduled ? (jobNameMap.get(run.triggerSource) ?? null) : null;
     return {
       id: run.id,
       employeeName: employeeNameMap.get(run.employeeId ?? "") ?? "未关联员工",
       statusLabel: statusMeta.label,
       triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
+      scheduleJobName,
       summary: translateRunText(run.summary || "尚未生成摘要"),
       highlight,
       tone: statusMeta.tone,

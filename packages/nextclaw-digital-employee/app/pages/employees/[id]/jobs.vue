@@ -285,35 +285,55 @@ function scheduleIcon(kind: string) {
 
           <!-- Right: actions -->
           <div class="flex shrink-0 items-center gap-1.5">
-            <button
-              class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="立即执行"
-              :disabled="runningJobId === job.id"
-              @click="runJobNow(job.id)"
-            >
-              <Play class="h-3.5 w-3.5" :class="runningJobId === job.id ? 'animate-pulse' : ''" :stroke-width="1.8" />
-            </button>
-            <button
-              class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              :title="job.enabled ? '停用' : '启用'"
-              @click="toggleEnabled(job)"
-            >
-              <component :is="job.enabled ? ToggleRight : ToggleLeft" class="h-3.5 w-3.5" :stroke-width="1.8" />
-            </button>
-            <button
-              class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="编辑"
-              @click="openEdit(job)"
-            >
-              <Pencil class="h-3.5 w-3.5" :stroke-width="1.8" />
-            </button>
-            <button
-              class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-              title="删除"
-              @click="deleteJob(job.id)"
-            >
-              <Trash2 class="h-3.5 w-3.5" :stroke-width="1.8" />
-            </button>
+            <!-- 立即执行 -->
+            <span class="relative group/tip">
+              <button
+                class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                :disabled="runningJobId === job.id"
+                @click="runJobNow(job.id)"
+              >
+                <Play class="h-3.5 w-3.5" :class="runningJobId === job.id ? 'animate-pulse' : ''" :stroke-width="1.8" />
+              </button>
+              <span class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100 z-20">
+                立即执行
+              </span>
+            </span>
+            <!-- 启用 / 停用 -->
+            <span class="relative group/tip">
+              <button
+                class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                @click="toggleEnabled(job)"
+              >
+                <component :is="job.enabled ? ToggleRight : ToggleLeft" class="h-3.5 w-3.5" :stroke-width="1.8" />
+              </button>
+              <span class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100 z-20">
+                {{ job.enabled ? '停用任务' : '启用任务' }}
+              </span>
+            </span>
+            <!-- 编辑 -->
+            <span class="relative group/tip">
+              <button
+                class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                @click="openEdit(job)"
+              >
+                <Pencil class="h-3.5 w-3.5" :stroke-width="1.8" />
+              </button>
+              <span class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100 z-20">
+                编辑任务
+              </span>
+            </span>
+            <!-- 删除 -->
+            <span class="relative group/tip">
+              <button
+                class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                @click="deleteJob(job.id)"
+              >
+                <Trash2 class="h-3.5 w-3.5" :stroke-width="1.8" />
+              </button>
+              <span class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100 z-20">
+                删除任务
+              </span>
+            </span>
           </div>
         </div>
       </div>

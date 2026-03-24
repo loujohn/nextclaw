@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { renderMarkdown } from "~/lib/utils";
-import { Sparkles, X, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, Play } from "lucide-vue-next";
+import { Sparkles, X, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Clock, CalendarClock } from "lucide-vue-next";
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
@@ -9,11 +9,14 @@ type RunItem = {
   id: string;
   statusLabel: string;
   triggerLabel: string;
+  scheduleJobName: string | null;
   summary: string;
   highlight: string;
   tone: "teal" | "amber" | "slate" | "danger";
   startedAtLabel: string;
 };
+
+type JobOption = { id: string; name: string };
 
 const toneConfig: Record<string, { dot: string; border: string; icon: typeof CheckCircle2 }> = {
   teal: { dot: "bg-primary", border: "border-primary/20", icon: CheckCircle2 },
@@ -39,16 +42,26 @@ type RunListPayload = {
   };
 };
 
+type JobListPayload = { ok: boolean; data: JobOption[] };
+
 const PAGE_SIZE = 10;
 const currentPage = ref(1);
+const jobFilter = ref<string | null>(null);
+
+const { data: jobPayload } = await useFetch<JobListPayload>(
+  () => `/api/employees/${employeeId.value}/jobs`,
+  { key: computed(() => `employee-jobs:${employeeId.value}`) }
+);
+const jobOptions = computed(() => jobPayload.value?.data ?? []);
 
 function buildApiUrl() {
   const params = new URLSearchParams({ page: String(currentPage.value), pageSize: String(PAGE_SIZE) });
+  if (jobFilter.value) params.set("jobId", jobFilter.value);
   return `/api/employees/${employeeId.value}/runs?${params.toString()}`;
 }
 
 const { data, pending } = await useFetch<RunListPayload>(() => buildApiUrl(), {
-  key: computed(() => `employee-runs:${employeeId.value}:history:${currentPage.value}`)
+  key: computed(() => `employee-runs:${employeeId.value}:history:${currentPage.value}:${jobFilter.value ?? "all"}`)
 });
 
 const runs = computed(() => data.value?.data.items ?? []);
@@ -61,6 +74,7 @@ type RunDetailPayload = {
     employeeName: string;
     statusLabel: string;
     triggerLabel: string;
+    scheduleJobName: string | null;
     summary: string;
     result: Record<string, unknown>;
     events: Array<{ id: string; seq: number; eventType: string }>;
@@ -106,10 +120,36 @@ function goToPage(page: number) {
   if (page < 1 || page > totalPages.value) return;
   currentPage.value = page;
 }
+
+function setJobFilter(jobId: string | null) {
+  jobFilter.value = jobId;
+  currentPage.value = 1;
+}
 </script>
 
 <template>
   <div class="space-y-4">
+
+    <!-- 定时任务筛选 -->
+    <div v-if="jobOptions.length > 0" class="flex flex-wrap items-center gap-2">
+      <CalendarClock class="h-3.5 w-3.5 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+      <button
+        class="rounded-full px-3 py-1 text-xs font-medium transition-all"
+        :class="jobFilter === null ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        @click="setJobFilter(null)"
+      >
+        全部来源
+      </button>
+      <button
+        v-for="job in jobOptions"
+        :key="job.id"
+        class="rounded-full px-3 py-1 text-xs font-medium transition-all"
+        :class="jobFilter === job.id ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        @click="setJobFilter(jobFilter === job.id ? null : job.id)"
+      >
+        {{ job.name }}
+      </button>
+    </div>
 
     <div v-if="pending" class="flex flex-col items-center py-12 text-center">
       <div class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -132,7 +172,10 @@ function goToPage(page: number) {
             >
               <span class="h-2.5 w-2.5 rounded-full" :class="toneConfig[run.tone]?.dot ?? 'bg-muted-foreground'" />
             </span>
-            <span class="truncate text-sm font-semibold">{{ run.triggerLabel }}</span>
+            <div class="min-w-0">
+              <span class="truncate text-sm font-semibold">{{ run.triggerLabel }}</span>
+              <span v-if="run.scheduleJobName" class="ml-1.5 truncate text-xs text-muted-foreground">· {{ run.scheduleJobName }}</span>
+            </div>
           </div>
           <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="badgeClass[run.tone]">
             {{ run.statusLabel }}
@@ -173,7 +216,7 @@ function goToPage(page: number) {
     <div v-else class="flex items-center gap-3 rounded-lg border border-dashed border-border p-4">
       <Sparkles class="h-4 w-4 shrink-0 text-primary" :stroke-width="1.8" />
       <div>
-        <p class="text-sm font-medium">还没有运行历史</p>
+        <p class="text-sm font-medium">{{ jobFilter ? '该定时任务暂无运行记录' : '还没有运行历史' }}</p>
         <p class="text-xs text-muted-foreground">先通过聊天或自动任务触发一次执行。</p>
       </div>
     </div>
@@ -245,6 +288,15 @@ function goToPage(page: number) {
               <div class="rounded-lg bg-muted/30 p-3">
                 <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">事件数</p>
                 <p class="mt-1 text-sm font-semibold">{{ selectedRun.data.events.length }}</p>
+              </div>
+            </div>
+
+            <!-- Schedule Job Source -->
+            <div v-if="selectedRun.data.scheduleJobName" class="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
+              <CalendarClock class="h-4 w-4 shrink-0 text-primary" :stroke-width="1.8" />
+              <div>
+                <p class="text-[11px] font-medium text-muted-foreground">来源定时任务</p>
+                <p class="text-sm font-semibold text-primary">{{ selectedRun.data.scheduleJobName }}</p>
               </div>
             </div>
 

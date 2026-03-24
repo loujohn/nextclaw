@@ -13,15 +13,17 @@ export default defineEventHandler(async (event) => {
   const rawStatus = typeof query.status === "string" ? query.status : undefined;
   const status = rawStatus && ALLOWED_STATUSES.has(rawStatus) ? rawStatus : undefined;
   const ctx = await getPlatformContext();
-  const [{ items: runs, total }, employees] = await Promise.all([
+  const [{ items: runs, total }, employees, allJobs] = await Promise.all([
     ctx.runRepo.listPaged({ page, pageSize, status }),
-    ctx.employeeRepo.list()
+    ctx.employeeRepo.list(),
+    ctx.employeeScheduleJobRepo.listAllEnabled()
   ]);
   return {
     ok: true,
     data: {
       items: buildRunListEntries({
         employees: employees.map((employee) => ({ id: employee.id, name: employee.name })),
+        jobs: allJobs.map((job) => ({ id: job.id, name: job.name })),
         runs
       }),
       total,

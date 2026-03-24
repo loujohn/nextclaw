@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkles, X, Play, CheckCircle2, AlertTriangle, Clock, ChevronLeft, ChevronRight } from "lucide-vue-next";
+import { Sparkles, X, Play, CheckCircle2, AlertTriangle, Clock, ChevronLeft, ChevronRight, CalendarClock } from "lucide-vue-next";
 import { renderMarkdown } from "~/lib/utils";
 
 type RunItem = {
@@ -7,6 +7,7 @@ type RunItem = {
   employeeName: string;
   statusLabel: string;
   triggerLabel: string;
+  scheduleJobName: string | null;
   summary: string;
   highlight: string;
   tone: "teal" | "amber" | "slate" | "danger";
@@ -29,6 +30,7 @@ type RunDetailPayload = {
     employeeName: string;
     statusLabel: string;
     triggerLabel: string;
+    scheduleJobName: string | null;
     summary: string;
     result: Record<string, unknown>;
     events: Array<{ id: string; seq: number; eventType: string }>;
@@ -204,7 +206,7 @@ const badgeClass: Record<string, string> = {
 
         <!-- Meta -->
         <p class="mt-2 text-xs text-muted-foreground">
-          {{ run.triggerLabel }} · {{ run.startedAtLabel }}
+          {{ run.triggerLabel }}<span v-if="run.scheduleJobName" class="text-primary"> · {{ run.scheduleJobName }}</span> · {{ run.startedAtLabel }}
         </p>
 
         <!-- Highlight -->
@@ -314,6 +316,15 @@ const badgeClass: Record<string, string> = {
                 <div class="rounded-lg bg-muted/30 p-3">
                   <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">事件数</p>
                   <p class="mt-1 text-sm font-semibold">{{ selectedRun.data.events.length }}</p>
+                </div>
+              </div>
+
+              <!-- Schedule Job Source -->
+              <div v-if="selectedRun.data.scheduleJobName" class="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
+                <CalendarClock class="h-4 w-4 shrink-0 text-primary" :stroke-width="1.8" />
+                <div>
+                  <p class="text-[11px] font-medium text-muted-foreground">来源定时任务</p>
+                  <p class="text-sm font-semibold text-primary">{{ selectedRun.data.scheduleJobName }}</p>
                 </div>
               </div>
 

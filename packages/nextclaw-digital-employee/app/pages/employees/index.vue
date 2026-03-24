@@ -366,8 +366,7 @@ const filteredEmployees = computed(() => {
 const steps = [
   { title: "基础信息", desc: "定义员工的身份与角色" },
   { title: "工作设定", desc: "模型与行为偏好" },
-  { title: "能力配置", desc: "选择员工可使用的技能" },
-  { title: "自动任务", desc: "设置定时执行的工作" }
+  { title: "能力配置", desc: "选择员工可使用的技能" }
 ];
 
 async function createEmployee() {
@@ -1316,12 +1315,6 @@ function generatePixelAvatar(name: string): string {
               <Wrench class="h-2.5 w-2.5" :stroke-width="1.8" />
               待分配技能
             </span>
-          </div>
-
-          <!-- 排班 -->
-          <div class="employee-card__schedule">
-            <Clock class="h-3 w-3 shrink-0" :stroke-width="1.8" />
-            <span class="truncate">{{ formatScheduleSummary(emp.schedule ?? null) }}</span>
           </div>
 
           <!-- 操作栏 -->
