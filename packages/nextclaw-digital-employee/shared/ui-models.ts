@@ -10,7 +10,7 @@ export type DashboardSummaryInput = {
 };
 
 export type SkillCatalogInput = {
-  availableSkills: Array<{ name: string; path: string; source: string }>;
+  availableSkills: Array<{ name: string; path: string; source: string; description?: string }>;
   installations: Array<{ skillName: string; sourceType: string; sourceUri: string; enabled: boolean }>;
   skillBindings: Array<{ employeeId: string; employeeName: string; skillName: string }>;
 };
@@ -215,7 +215,7 @@ export function buildSkillCatalogEntries(input: SkillCatalogInput): SkillCatalog
         usageCount: usedBy.length,
         usedBy,
         statusLabel: installation ? (enabled ? "已启用" : "已停用") : skill.source === "builtin" ? "内置可用" : "已发现未登记",
-        purpose: inferSkillPurpose(skill.name),
+        purpose: skill.description?.trim() || inferSkillPurpose(skill.name),
         categoryLabel: inferSkillCategory(skill.name)
       };
     });

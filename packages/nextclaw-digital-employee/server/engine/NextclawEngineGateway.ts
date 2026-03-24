@@ -33,6 +33,7 @@ export type AvailableSkillView = {
   name: string;
   path: string;
   source: SkillInfo["source"];
+  description?: string;
 };
 
 export type ImportedSkillView = {
@@ -311,11 +312,18 @@ export class NextclawEngineGateway {
 
   async listAvailableSkills(): Promise<AvailableSkillView[]> {
     const loader = new SkillsLoader(this.workspaceDir);
-    return loader.listSkills(false).map((skill: SkillInfo) => ({
-      name: skill.name,
-      path: skill.path,
-      source: skill.source
-    }));
+    return loader.listSkills(false).map((skill: SkillInfo) => {
+      const metadata = loader.getSkillMetadata?.(skill.name);
+      const description = typeof metadata?.description === "string" && metadata.description.trim()
+        ? metadata.description.trim()
+        : undefined;
+      return {
+        name: skill.name,
+        path: skill.path,
+        source: skill.source,
+        ...(description ? { description } : {})
+      };
+    });
   }
 
   async importFromLocalPath(sourcePath: string): Promise<ImportedSkillView> {
