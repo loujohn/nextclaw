@@ -30,6 +30,9 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
+    output: {
+      dir: "dist"
+    },
     esbuild: {
       options: {
         target: "es2022"

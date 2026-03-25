@@ -36,7 +36,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Copy the self-contained Nitro output (includes bundled node_modules)
-COPY --from=builder /app/packages/nextclaw-digital-employee/.output ./
+COPY --from=builder /app/packages/nextclaw-digital-employee/dist ./
 
 # Copy entrypoint (backs up SQLite before each start)
 COPY packages/nextclaw-digital-employee/docker-entrypoint.sh /entrypoint.sh
