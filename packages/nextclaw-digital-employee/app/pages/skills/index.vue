@@ -23,19 +23,32 @@ const form = reactive({ sourceType: "local", source: "" });
 const importing = ref(false);
 const importError = ref("");
 const togglingSkill = ref("");
-const pickingDir = ref(false);
+const uploadingDir = ref(false);
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
-async function pickDirectory() {
-  pickingDir.value = true;
+async function handleDirUpload(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const fileList = input.files;
+  if (!fileList || fileList.length === 0) return;
+
+  uploadingDir.value = true;
+  importError.value = "";
   try {
-    const res = await $fetch<{ ok: boolean; data: { path: string } }>("/api/config/pick-directory", { method: "POST" });
-    if (res.ok && res.data.path) {
-      form.source = res.data.path;
-    }
-  } catch {
-    // 用户取消或不支持时静默忽略
+    const files = await Promise.all(
+      Array.from(fileList).map(async (f) => ({
+        path: f.webkitRelativePath || f.name,
+        content: await f.text()
+      }))
+    );
+    await $fetch("/api/skills/upload", { method: "POST", body: { files } });
+    showImporter.value = false;
+    await refresh();
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : String(error);
   } finally {
-    pickingDir.value = false;
+    uploadingDir.value = false;
+    // reset so same folder can be re-selected
+    input.value = "";
   }
 }
 const { data, refresh } = await useFetch<SkillListPayload>("/api/skills");
@@ -242,17 +255,25 @@ async function toggleSkill(name: string, enabled: boolean) {
                         class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                       />
                     </div>
-                    <button
-                      v-if="form.sourceType === 'local'"
-                      type="button"
-                      class="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-                      :disabled="pickingDir"
-                      @click="pickDirectory"
-                    >
-                      <Loader2 v-if="pickingDir" class="h-4 w-4 animate-spin" />
-                      <FolderOpen v-else class="h-4 w-4" :stroke-width="1.8" />
-                      浏览
-                    </button>
+                    <template v-if="form.sourceType === 'local'">
+                      <input
+                        ref="fileInputRef"
+                        type="file"
+                        webkitdirectory
+                        class="sr-only"
+                        @change="handleDirUpload"
+                      />
+                      <button
+                        type="button"
+                        class="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        :disabled="uploadingDir"
+                        @click="fileInputRef?.click()"
+                      >
+                        <Loader2 v-if="uploadingDir" class="h-4 w-4 animate-spin" />
+                        <FolderOpen v-else class="h-4 w-4" :stroke-width="1.8" />
+                        {{ uploadingDir ? '上传中...' : '浏览上传' }}
+                      </button>
+                    </template>
                   </div>
                 </label>
                 <button
@@ -268,7 +289,7 @@ async function toggleSkill(name: string, enabled: boolean) {
               <div class="mt-8 rounded-lg bg-muted/30 p-4">
                 <p class="text-sm font-medium">导入说明</p>
                 <ul class="mt-2 space-y-1.5 text-xs text-muted-foreground">
-                  <li>• <strong>本地目录</strong>：点击「浏览」用系统选择框选取目录，或直接粘贴绝对路径</li>
+                  <li>• <strong>本地目录</strong>：点击「浏览上传」从本机选取技能目录自动上传，或直接粘贴服务端绝对路径后点「导入技能」</li>
                   <li>• <strong>Git 仓库</strong>：支持 HTTPS 或 SSH 格式的仓库地址</li>
                   <li>• 导入后技能默认处于停用状态，需手动启用</li>
                 </ul>
