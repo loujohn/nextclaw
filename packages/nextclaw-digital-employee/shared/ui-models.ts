@@ -398,6 +398,81 @@ function getIntegrationTitle(type: string): string {
   return type;
 }
 
+// ── Automation Summary (multi-job model) ──────────────────────────────────────
+
+export type AutomationJobBrief = {
+  enabled: boolean;
+  nextRunAt: string | null;
+};
+
+export type AutomationSummaryView = {
+  totalJobs: number;
+  enabledJobs: number;
+  nextScheduledRunAt: string | null;
+  hasFailedRecently: boolean;
+  countLabel: string;
+  statusLabel: string;
+  tone: "teal" | "amber" | "slate" | "danger";
+  healthOk: boolean;
+};
+
+export function buildAutomationSummary(
+  jobs: AutomationJobBrief[],
+  recentScheduledRuns: Array<{ status: string }>
+): AutomationSummaryView {
+  const totalJobs = jobs.length;
+  const enabledJobs = jobs.filter((j) => j.enabled).length;
+  const pausedJobs = totalJobs - enabledJobs;
+
+  const nextScheduledRunAt =
+    jobs
+      .filter((j) => j.enabled && j.nextRunAt)
+      .map((j) => j.nextRunAt!)
+      .sort()[0] ?? null;
+
+  const hasFailedRecently = recentScheduledRuns.some((r) => r.status === "failed");
+
+  const countLabel =
+    totalJobs === 0 ? "暂无任务" : totalJobs === 1 ? "1 个任务" : `${totalJobs} 个任务`;
+
+  let statusLabel: string;
+  let tone: AutomationSummaryView["tone"];
+  let healthOk: boolean;
+
+  if (totalJobs === 0) {
+    statusLabel = "未配置";
+    tone = "slate";
+    healthOk = false;
+  } else if (hasFailedRecently) {
+    statusLabel = "存在失败";
+    tone = "danger";
+    healthOk = false;
+  } else if (enabledJobs === 0) {
+    statusLabel = "全部暂停";
+    tone = "amber";
+    healthOk = false;
+  } else if (pausedJobs > 0) {
+    statusLabel = `${pausedJobs} 个暂停`;
+    tone = "amber";
+    healthOk = false;
+  } else {
+    statusLabel = "运行健康";
+    tone = "teal";
+    healthOk = true;
+  }
+
+  return {
+    totalJobs,
+    enabledJobs,
+    nextScheduledRunAt,
+    hasFailedRecently,
+    countLabel,
+    statusLabel,
+    tone,
+    healthOk
+  };
+}
+
 export function buildIntegrationCards(input: IntegrationCardsInput): IntegrationCardView[] {
   const integrationMap = new Map(input.integrations.map((item) => [item.type, item]));
   const cards: IntegrationCardView[] = [

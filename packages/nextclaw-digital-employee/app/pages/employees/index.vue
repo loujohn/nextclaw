@@ -15,6 +15,8 @@ type EmployeeResponse = {
   skills: Array<{ skillName: string }>;
   schedule?: { scheduleKind: string; nextRunAt?: string | null } | null;
   latestRun?: { status: string; summary: string } | null;
+  jobsCount: number;
+  enabledJobsCount: number;
   health: {
     hasSkills: boolean;
     hasSchedule: boolean;
@@ -572,7 +574,8 @@ function createEmployeeCode(name: string): string {
 function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastStatus: string } {
   if (e.latestRun?.status === "failed") return { label: "执行失败", cls: "bg-destructive/10 text-destructive", lastStatus: "failed" };
   if (!e.health.hasSkills) return { label: "待绑定技能", cls: "bg-warning/10 text-warning-foreground", lastStatus: "no-skills" };
-  if (!e.health.hasSchedule) return { label: "待配置任务", cls: "bg-muted text-muted-foreground", lastStatus: "no-schedule" };
+  if (e.jobsCount === 0) return { label: "待创建任务", cls: "bg-muted text-muted-foreground", lastStatus: "no-schedule" };
+  if (e.enabledJobsCount === 0) return { label: "全部任务暂停", cls: "bg-warning/10 text-warning-foreground", lastStatus: "paused" };
   return { label: "运行健康", cls: "bg-primary/10 text-primary", lastStatus: "healthy" };
 }
 

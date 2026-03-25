@@ -10,19 +10,22 @@ export default defineEventHandler(async (event) => {
   const employees = await ctx.employeeRepo.list(listFilter);
   const enriched = await Promise.all(
     employees.map(async (employee) => {
-      const [skills, schedule, runs] = await Promise.all([
+      const [skills, schedule, runs, jobs] = await Promise.all([
         ctx.employeeSkillRepo.listByEmployeeId(employee.id),
         ctx.employeeScheduleRepo.getByEmployeeId(employee.id),
-        ctx.runRepo.listByEmployeeId(employee.id)
+        ctx.runRepo.listByEmployeeId(employee.id),
+        ctx.employeeScheduleJobRepo.listByEmployeeId(employee.id)
       ]);
       return {
         ...employee,
         skills,
         schedule,
         latestRun: runs[0] ?? null,
+        jobsCount: jobs.length,
+        enabledJobsCount: jobs.filter((j) => j.enabled).length,
         health: {
           hasSkills: skills.length > 0,
-          hasSchedule: Boolean(schedule),
+          hasSchedule: Boolean(schedule) || jobs.length > 0,
           lastStatus: runs[0]?.status ?? "idle"
         }
       };

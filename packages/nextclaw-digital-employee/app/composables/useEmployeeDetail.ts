@@ -1,5 +1,16 @@
 import type { ComputedRef, Ref } from "vue";
 
+export type AutomationSummaryView = {
+  totalJobs: number;
+  enabledJobs: number;
+  nextScheduledRunAt: string | null;
+  hasFailedRecently: boolean;
+  countLabel: string;
+  statusLabel: string;
+  tone: "teal" | "amber" | "slate" | "danger";
+  healthOk: boolean;
+};
+
 export type EmployeeDetailPayload = {
   ok: boolean;
   data: {
@@ -16,10 +27,13 @@ export type EmployeeDetailPayload = {
       everyMs?: number | null;
       nextRunAt?: string | null;
     } | null;
+    automationSummary: AutomationSummaryView;
     health: {
       hasPrompt: boolean;
       hasSkills: boolean;
       hasSchedule: boolean;
+      jobsCount: number;
+      enabledJobsCount: number;
     };
     recentRuns: Array<{ id: string; status: string; summary: string; startedAt: string; finishedAt?: string | null }>;
   };

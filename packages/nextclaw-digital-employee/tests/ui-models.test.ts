@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAutomationSummary,
   buildChatResultCards,
   buildDashboardSummary,
   buildIntegrationCards,
@@ -7,6 +8,97 @@ import {
   buildSkillCatalogEntries,
   formatScheduleSummary
 } from "../shared/ui-models";
+
+describe("automation summary (multi-job model)", () => {
+  it("returns 未配置 when no jobs exist", () => {
+    const summary = buildAutomationSummary([], []);
+    expect(summary.totalJobs).toBe(0);
+    expect(summary.enabledJobs).toBe(0);
+    expect(summary.countLabel).toBe("暂无任务");
+    expect(summary.statusLabel).toBe("未配置");
+    expect(summary.tone).toBe("slate");
+    expect(summary.healthOk).toBe(false);
+    expect(summary.nextScheduledRunAt).toBeNull();
+  });
+
+  it("returns 运行健康 when all jobs are enabled with no failures", () => {
+    const summary = buildAutomationSummary(
+      [
+        { enabled: true, nextRunAt: "2026-03-26T09:00:00.000Z" },
+        { enabled: true, nextRunAt: "2026-03-26T18:00:00.000Z" }
+      ],
+      [{ status: "completed" }, { status: "completed" }]
+    );
+    expect(summary.totalJobs).toBe(2);
+    expect(summary.enabledJobs).toBe(2);
+    expect(summary.countLabel).toBe("2 个任务");
+    expect(summary.statusLabel).toBe("运行健康");
+    expect(summary.tone).toBe("teal");
+    expect(summary.healthOk).toBe(true);
+    expect(summary.nextScheduledRunAt).toBe("2026-03-26T09:00:00.000Z");
+  });
+
+  it("returns 存在失败 when a recent scheduled run failed", () => {
+    const summary = buildAutomationSummary(
+      [{ enabled: true, nextRunAt: "2026-03-26T09:00:00.000Z" }],
+      [{ status: "failed" }, { status: "completed" }]
+    );
+    expect(summary.statusLabel).toBe("存在失败");
+    expect(summary.tone).toBe("danger");
+    expect(summary.healthOk).toBe(false);
+  });
+
+  it("returns 全部暂停 when jobs exist but all disabled", () => {
+    const summary = buildAutomationSummary(
+      [
+        { enabled: false, nextRunAt: null },
+        { enabled: false, nextRunAt: null }
+      ],
+      []
+    );
+    expect(summary.totalJobs).toBe(2);
+    expect(summary.enabledJobs).toBe(0);
+    expect(summary.statusLabel).toBe("全部暂停");
+    expect(summary.tone).toBe("amber");
+    expect(summary.healthOk).toBe(false);
+    expect(summary.nextScheduledRunAt).toBeNull();
+  });
+
+  it("returns N 个暂停 when some jobs are paused", () => {
+    const summary = buildAutomationSummary(
+      [
+        { enabled: true, nextRunAt: "2026-03-26T09:00:00.000Z" },
+        { enabled: false, nextRunAt: null },
+        { enabled: false, nextRunAt: null }
+      ],
+      [{ status: "completed" }]
+    );
+    expect(summary.statusLabel).toBe("2 个暂停");
+    expect(summary.tone).toBe("amber");
+    expect(summary.healthOk).toBe(false);
+  });
+
+  it("picks earliest nextRunAt among enabled jobs", () => {
+    const summary = buildAutomationSummary(
+      [
+        { enabled: true, nextRunAt: "2026-03-26T18:00:00.000Z" },
+        { enabled: true, nextRunAt: "2026-03-26T09:00:00.000Z" },
+        { enabled: false, nextRunAt: "2026-03-25T06:00:00.000Z" }
+      ],
+      []
+    );
+    // earliest among enabled jobs
+    expect(summary.nextScheduledRunAt).toBe("2026-03-26T09:00:00.000Z");
+  });
+
+  it("uses countLabel 1 个任务 for single job", () => {
+    const summary = buildAutomationSummary(
+      [{ enabled: true, nextRunAt: null }],
+      []
+    );
+    expect(summary.countLabel).toBe("1 个任务");
+  });
+});
 
 describe("dashboard and skills ui models", () => {
   it("builds dashboard summary from employees and runs", () => {

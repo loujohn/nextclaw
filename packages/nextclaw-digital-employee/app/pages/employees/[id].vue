@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatScheduleSummary, formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
+import { formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
 import { CircleCheck, CircleAlert, Clock } from "lucide-vue-next";
 
 const route = useRoute();
@@ -41,12 +41,20 @@ const tabs = computed(() => [
           <p class="text-sm font-semibold">{{ data.data.skills.length }}</p>
         </div>
         <div class="space-y-1">
-          <p class="text-[11px] uppercase tracking-wider text-muted-foreground">自动运行</p>
-          <p class="text-sm font-semibold">{{ formatScheduleSummary(data.data.schedule) }}</p>
+          <p class="text-[11px] uppercase tracking-wider text-muted-foreground">任务调度</p>
+          <p class="text-sm font-semibold">{{ data.data.automationSummary.countLabel }}</p>
         </div>
         <div class="space-y-1">
-          <p class="text-[11px] uppercase tracking-wider text-muted-foreground">最近状态</p>
-          <p class="text-sm font-semibold">{{ formatRunStatusLabel(data.data.recentRuns[0]?.status ?? "") || "空闲" }}</p>
+          <p class="text-[11px] uppercase tracking-wider text-muted-foreground">自动化状态</p>
+          <p
+            class="text-sm font-semibold"
+            :class="{
+              'text-primary': data.data.automationSummary.tone === 'teal',
+              'text-warning': data.data.automationSummary.tone === 'amber',
+              'text-destructive': data.data.automationSummary.tone === 'danger',
+              'text-muted-foreground': data.data.automationSummary.tone === 'slate'
+            }"
+          >{{ data.data.automationSummary.statusLabel }}</p>
         </div>
       </div>
     </header>
@@ -94,12 +102,21 @@ const tabs = computed(() => [
             </div>
             <div class="flex items-center gap-2">
               <component
-                :is="data.data.health.hasSchedule ? CircleCheck : CircleAlert"
+                :is="data.data.automationSummary.healthOk ? CircleCheck : CircleAlert"
                 class="h-4 w-4"
-                :class="data.data.health.hasSchedule ? 'text-primary' : 'text-warning'"
+                :class="{
+                  'text-primary': data.data.automationSummary.tone === 'teal',
+                  'text-warning': data.data.automationSummary.tone === 'amber',
+                  'text-destructive': data.data.automationSummary.tone === 'danger',
+                  'text-muted-foreground': data.data.automationSummary.tone === 'slate'
+                }"
                 :stroke-width="1.8"
               />
-              <span class="text-sm">自动任务 {{ data.data.health.hasSchedule ? "就绪" : "待配置" }}</span>
+              <span class="text-sm">
+                定时任务 ·
+                <span class="font-medium">{{ data.data.automationSummary.countLabel }}</span>
+                · {{ data.data.automationSummary.statusLabel }}
+              </span>
             </div>
           </div>
         </div>
