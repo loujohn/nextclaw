@@ -42,6 +42,26 @@ WORKDIR /app
 # Copy the self-contained Nitro output (includes bundled node_modules)
 COPY --from=builder /app/packages/nextclaw-digital-employee/dist ./
 
+# Skills layout — three access paths used by different runtime mechanisms:
+#
+# 1. /app/server/skills/  ← SkillsLoader.BUILTIN_SKILLS_DIR
+#      resolved from import.meta.url of index.mjs → <server-dir>/skills/
+#      used by listSkills() / loadSkill() for UI listing and agent execution
+#
+# 2. /app/dist/skills/    ← resolveBuiltinSkillsDir() candidate
+#      used by seedBuiltinSkills() on startup to seed workspace/skills/
+#
+# 3. /app/skills/         ← seed-skills Nitro plugin, process.cwd()/skills/
+#      used to seed employee-creator (and future skills) into workspace
+
+COPY --from=builder /app/packages/nextclaw-core/dist/skills           ./server/skills/
+COPY --from=builder /app/packages/nextclaw-digital-employee/skills     ./server/skills/
+
+COPY --from=builder /app/packages/nextclaw-core/dist/skills           ./dist/skills/
+COPY --from=builder /app/packages/nextclaw-digital-employee/skills     ./dist/skills/
+
+COPY --from=builder /app/packages/nextclaw-digital-employee/skills     ./skills/
+
 # Copy entrypoint (backs up SQLite before each start)
 COPY packages/nextclaw-digital-employee/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
