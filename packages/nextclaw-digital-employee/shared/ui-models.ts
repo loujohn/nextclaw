@@ -53,6 +53,13 @@ export type ChatResultCardView = {
   tone: "teal" | "amber" | "slate" | "rose";
 };
 
+export type RunResultSnapshot = {
+  id: string;
+  triggerType: string;
+  triggerSource: string;
+  result: Record<string, unknown>;
+};
+
 export type RunListInput = {
   employees: Array<{ id: string; name: string }>;
   jobs?: Array<{ id: string; name: string }>;
@@ -318,9 +325,54 @@ export function translateRunText(text: string): string {
     .replace(/\bFetch\s+failed\b/gi, "请求失败");
 }
 
+export function readRunResultCards(result: Record<string, unknown>): ChatResultCardView[] {
+  if (!Array.isArray(result.resultCards)) {
+    return [];
+  }
+  return result.resultCards.flatMap((card) => {
+    if (!card || typeof card !== "object") {
+      return [];
+    }
+    const kind = Reflect.get(card, "kind");
+    const title = Reflect.get(card, "title");
+    const content = Reflect.get(card, "content");
+    const tone = Reflect.get(card, "tone");
+    const items = Reflect.get(card, "items");
+    if (
+      typeof kind !== "string" ||
+      typeof title !== "string" ||
+      typeof content !== "string"
+    ) {
+      return [];
+    }
+    return [{
+      kind: kind as ChatResultCardKind,
+      title,
+      content,
+      items: Array.isArray(items) ? items.filter((item): item is string => typeof item === "string") : [content],
+      tone: typeof tone === "string" ? tone as ChatResultCardView["tone"] : "slate"
+    }];
+  });
+}
+
+export function pickLatestChatResultSnapshot(runs: RunResultSnapshot[]): { runId: string; resultCards: ChatResultCardView[] } | null {
+  for (const run of runs) {
+    if (run.triggerSource !== "chat" && run.triggerType !== "manual") {
+      continue;
+    }
+    const resultCards = readRunResultCards(run.result);
+    if (resultCards.length > 0) {
+      return {
+        runId: run.id,
+        resultCards
+      };
+    }
+  }
+  return null;
+}
+
 function readFirstCardContent(result: Record<string, unknown>): string {
-  const cards = Array.isArray(result.resultCards) ? result.resultCards : [];
-  const firstCard = cards[0];
+  const firstCard = readRunResultCards(result)[0];
   if (firstCard && typeof firstCard === "object" && firstCard !== null) {
     const maybeContent = Reflect.get(firstCard, "content");
     if (typeof maybeContent === "string" && maybeContent.trim()) {

@@ -6,7 +6,8 @@ import {
   buildIntegrationCards,
   buildRunListEntries,
   buildSkillCatalogEntries,
-  formatScheduleSummary
+  formatScheduleSummary,
+  pickLatestChatResultSnapshot
 } from "../shared/ui-models";
 
 describe("automation summary (multi-job model)", () => {
@@ -245,6 +246,32 @@ describe("chat and run ui models", () => {
       triggerLabel: "自动运行",
       statusLabel: "执行失败",
       tone: "danger"
+    });
+  });
+
+  it("restores the latest persisted chat result snapshot", () => {
+    const snapshot = pickLatestChatResultSnapshot([
+      {
+        id: "scheduled-1",
+        triggerType: "scheduled",
+        triggerSource: "cron",
+        result: {
+          resultCards: [{ kind: "summary", title: "管理摘要", content: "自动巡检摘要", items: [], tone: "teal" }]
+        }
+      },
+      {
+        id: "manual-1",
+        triggerType: "manual",
+        triggerSource: "chat",
+        result: {
+          resultCards: [{ kind: "summary", title: "管理摘要", content: "聊天结果摘要", items: [], tone: "teal" }]
+        }
+      }
+    ]);
+
+    expect(snapshot).toMatchObject({
+      runId: "manual-1",
+      resultCards: [expect.objectContaining({ content: "聊天结果摘要" })]
     });
   });
 

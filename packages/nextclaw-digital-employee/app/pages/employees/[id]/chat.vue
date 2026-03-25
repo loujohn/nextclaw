@@ -16,7 +16,14 @@ const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const copied = ref(false);
 const abortController = ref<AbortController | null>(null);
 const { data: employee, refresh: refreshEmployee } = await useEmployeeDetail(employeeId);
-const { data: history, refresh: refreshHistory } = await useFetch<{ ok: boolean; data: ChatMessageView[] }>(
+const { data: history, refresh: refreshHistory } = await useFetch<{
+  ok: boolean;
+  data: {
+    messages: ChatMessageView[];
+    lastRunId: string;
+    resultCards: ChatResultCardView[];
+  };
+}>(
   `/api/employees/${employeeId.value}/chat/history`,
   { key: computed(() => `employee-chat-history:${employeeId.value}`) }
 );
@@ -25,7 +32,16 @@ const { refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
 });
 
 watchEffect(() => {
-  messages.value = (history.value?.data ?? []).filter(m => m.content?.trim());
+  const historyData = history.value?.data;
+  const restoredRunId = historyData?.lastRunId ?? "";
+  const restoredResultCards = historyData?.resultCards ?? [];
+  messages.value = (historyData?.messages ?? []).filter(m => m.content?.trim());
+  if (!lastRunId.value && restoredRunId) {
+    lastRunId.value = restoredRunId;
+  }
+  if (resultCards.value.length === 0 && restoredResultCards.length > 0) {
+    resultCards.value = restoredResultCards;
+  }
 });
 
 function scrollToBottom() {
