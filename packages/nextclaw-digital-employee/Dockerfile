@@ -33,9 +33,11 @@ RUN pnpm --filter @nextclaw/digital-employee build
 # ────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
-# Python execution environment
-RUN apk add --no-cache python3 py3-pip py3-virtualenv && \
-    ln -sf python3 /usr/bin/python
+# Python execution environment + timezone data
+RUN apk add --no-cache python3 py3-pip py3-virtualenv tzdata && \
+    ln -sf python3 /usr/bin/python && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
 
 WORKDIR /app
 
@@ -70,6 +72,7 @@ RUN chmod +x /entrypoint.sh
 RUN mkdir -p /data
 
 ENV NODE_ENV=production
+ENV TZ=Asia/Shanghai
 # Data directory for SQLite and agent workspace
 ENV NEXTCLAW_DIGITAL_EMPLOYEE_HOME=/data
 # Listen on all interfaces inside the container
