@@ -33,6 +33,10 @@ RUN pnpm --filter @nextclaw/digital-employee build
 # ────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
+# Python execution environment
+RUN apk add --no-cache python3 py3-pip py3-virtualenv && \
+    ln -sf python3 /usr/bin/python
+
 WORKDIR /app
 
 # Copy the self-contained Nitro output (includes bundled node_modules)
