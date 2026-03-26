@@ -1,0 +1,659 @@
+<script setup lang="ts">
+import {
+  ShieldCheck,
+  Users,
+  Lock,
+  Key,
+  FileText,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Activity,
+  Database,
+  Download,
+  Plus,
+  Edit,
+  ChevronRight
+} from "lucide-vue-next";
+
+// ------------------- 类型定义 -------------------
+
+type RoleItem = {
+  id: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  memberCount: number;
+  isSystem: boolean;
+};
+
+type PermissionGroup = {
+  group: string;
+  items: Array<{ key: string; label: string; enabled: boolean }>;
+};
+
+type AuditLogItem = {
+  id: string;
+  action: string;
+  operator: string;
+  target: string;
+  ip: string;
+  time: string;
+  result: "success" | "failure" | "warning";
+};
+
+type DataPolicyItem = {
+  id: string;
+  category: string;
+  description: string;
+  level: "high" | "medium" | "low";
+  status: "active" | "inactive";
+};
+
+// ------------------- 静态 Mock 数据 -------------------
+
+const roles = ref<RoleItem[]>([
+  {
+    id: "r1",
+    name: "超级管理员",
+    description: "拥有所有系统权限，可管理所有模块和用户",
+    permissions: ["user:*", "employee:*", "skill:*", "integration:*", "security:*", "audit:*"],
+    memberCount: 1,
+    isSystem: true
+  },
+  {
+    id: "r2",
+    name: "部门管理员",
+    description: "管理本部门员工、技能和运行记录",
+    permissions: ["employee:read", "employee:write", "skill:read", "skill:write", "run:read"],
+    memberCount: 5,
+    isSystem: false
+  },
+  {
+    id: "r3",
+    name: "普通成员",
+    description: "仅可查看员工列表和运行记录，不可修改",
+    permissions: ["employee:read", "run:read", "skill:read"],
+    memberCount: 23,
+    isSystem: false
+  },
+  {
+    id: "r4",
+    name: "审计员",
+    description: "可查看所有操作日志和数据安全报告",
+    permissions: ["audit:read", "employee:read", "security:read"],
+    memberCount: 2,
+    isSystem: false
+  }
+]);
+
+const permissionGroups = ref<PermissionGroup[]>([
+  {
+    group: "员工管理",
+    items: [
+      { key: "employee:read", label: "查看员工", enabled: true },
+      { key: "employee:write", label: "编辑员工", enabled: true },
+      { key: "employee:delete", label: "删除员工", enabled: false }
+    ]
+  },
+  {
+    group: "技能管理",
+    items: [
+      { key: "skill:read", label: "查看技能", enabled: true },
+      { key: "skill:write", label: "安装/编辑技能", enabled: true },
+      { key: "skill:delete", label: "删除技能", enabled: false }
+    ]
+  },
+  {
+    group: "集成配置",
+    items: [
+      { key: "integration:read", label: "查看集成", enabled: true },
+      { key: "integration:write", label: "编辑集成配置", enabled: false }
+    ]
+  },
+  {
+    group: "安全与审计",
+    items: [
+      { key: "security:read", label: "查看安全策略", enabled: false },
+      { key: "security:write", label: "修改安全策略", enabled: false },
+      { key: "audit:read", label: "查看审计日志", enabled: false }
+    ]
+  }
+]);
+
+const auditLogs = ref<AuditLogItem[]>([
+  { id: "l1", action: "登录系统", operator: "admin@example.com", target: "系统", ip: "192.168.1.10", time: "2026-03-26 10:32:15", result: "success" },
+  { id: "l2", action: "修改员工配置", operator: "manager@example.com", target: "数字员工 #E007", ip: "192.168.1.22", time: "2026-03-26 10:18:44", result: "success" },
+  { id: "l3", action: "删除技能", operator: "user@example.com", target: "Skill: web-search", ip: "10.0.0.5", time: "2026-03-26 09:55:01", result: "failure" },
+  { id: "l4", action: "导出数据报告", operator: "auditor@example.com", target: "运行记录", ip: "192.168.2.8", time: "2026-03-26 09:40:30", result: "success" },
+  { id: "l5", action: "修改角色权限", operator: "admin@example.com", target: "角色: 普通成员", ip: "192.168.1.10", time: "2026-03-25 18:02:11", result: "warning" },
+  { id: "l6", action: "登录失败", operator: "unknown@evil.com", target: "系统", ip: "203.0.113.44", time: "2026-03-25 17:45:33", result: "failure" }
+]);
+
+const dataPolicies = ref<DataPolicyItem[]>([
+  { id: "p1", category: "访问控制", description: "强制多因素认证（MFA）登录", level: "high", status: "active" },
+  { id: "p2", category: "数据加密", description: "系统提示词及配置数据静态加密存储", level: "high", status: "active" },
+  { id: "p3", category: "数据传输", description: "API 通信强制使用 TLS 1.2+", level: "high", status: "active" },
+  { id: "p4", category: "日志留存", description: "操作日志至少保留 90 天", level: "medium", status: "active" },
+  { id: "p5", category: "数据脱敏", description: "日志中敏感字段（密钥、凭证）自动脱敏", level: "medium", status: "active" },
+  { id: "p6", category: "访问审计", description: "关键操作（删除/修改集成）二次确认", level: "medium", status: "inactive" },
+  { id: "p7", category: "数据导出", description: "数据导出需管理员审批", level: "low", status: "inactive" }
+]);
+
+// ------------------- 状态管理 -------------------
+
+const activeTab = ref<"permissions" | "audit" | "data-security">("permissions");
+const selectedRoleId = ref<string | null>("r3");
+const showAddRoleModal = ref(false);
+const newRoleName = ref("");
+const newRoleDesc = ref("");
+const auditFilter = ref<"all" | "success" | "failure" | "warning">("all");
+
+const tabs = [
+  { key: "permissions" as const, label: "权限管理", icon: Key },
+  { key: "audit" as const, label: "操作审计", icon: FileText },
+  { key: "data-security" as const, label: "数据安全", icon: Database }
+];
+
+const selectedRole = computed(() => roles.value.find((r) => r.id === selectedRoleId.value) ?? null);
+
+const filteredLogs = computed(() => {
+  if (auditFilter.value === "all") return auditLogs.value;
+  return auditLogs.value.filter((l) => l.result === auditFilter.value);
+});
+
+const securityStats = computed(() => ({
+  roles: roles.value.length,
+  activePolicies: dataPolicies.value.filter((p) => p.status === "active").length,
+  totalPolicies: dataPolicies.value.length,
+  recentEvents: auditLogs.value.length,
+  failedEvents: auditLogs.value.filter((l) => l.result === "failure").length
+}));
+
+function selectRole(id: string) {
+  selectedRoleId.value = id;
+}
+
+function togglePolicy(id: string) {
+  const p = dataPolicies.value.find((p) => p.id === id);
+  if (p && !isHighPolicy(p)) {
+    p.status = p.status === "active" ? "inactive" : "active";
+  }
+}
+
+function isHighPolicy(p: DataPolicyItem) {
+  return p.level === "high";
+}
+
+function addRole() {
+  if (!newRoleName.value.trim()) return;
+  roles.value.push({
+    id: `r${Date.now()}`,
+    name: newRoleName.value.trim(),
+    description: newRoleDesc.value.trim() || "自定义角色",
+    permissions: [],
+    memberCount: 0,
+    isSystem: false
+  });
+  newRoleName.value = "";
+  newRoleDesc.value = "";
+  showAddRoleModal.value = false;
+}
+
+function exportAuditLog() {
+  // 纯前端 CSV 导出示例
+  const header = "时间,操作者,操作,对象,IP,结果\n";
+  const rows = filteredLogs.value
+    .map((l) => `${l.time},${l.operator},${l.action},${l.target},${l.ip},${l.result}`)
+    .join("\n");
+  const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 结果标签样式
+const resultStyles: Record<string, { badge: string; icon: typeof CheckCircle2 }> = {
+  success: { badge: "bg-primary/10 text-primary", icon: CheckCircle2 },
+  failure: { badge: "bg-destructive/10 text-destructive", icon: XCircle },
+  warning: { badge: "bg-warning/10 text-warning-foreground", icon: AlertTriangle }
+};
+
+const levelStyles: Record<string, string> = {
+  high: "bg-destructive/10 text-destructive",
+  medium: "bg-warning/10 text-warning-foreground",
+  low: "bg-muted text-muted-foreground"
+};
+
+const levelLabels: Record<string, string> = {
+  high: "高",
+  medium: "中",
+  low: "低"
+};
+</script>
+
+<template>
+  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8">
+    <!-- Header -->
+    <header class="hero-section">
+      <div class="relative space-y-3">
+        <span class="section-label">安全中心</span>
+        <h1 class="font-display text-3xl font-bold tracking-tight lg:text-4xl">
+          权限管理与数据安全
+        </h1>
+        <p class="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          管理成员角色与访问权限，监控操作行为，保障平台数据合规与安全。
+        </p>
+      </div>
+    </header>
+
+    <!-- 安全概览指标 -->
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card-elevated flex flex-col gap-1.5 p-4">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <Users class="h-4 w-4 text-primary" :stroke-width="1.8" />
+          </span>
+          <span class="text-xs text-muted-foreground">角色数量</span>
+        </div>
+        <p class="text-2xl font-bold text-foreground">{{ securityStats.roles }}</p>
+      </div>
+      <div class="card-elevated flex flex-col gap-1.5 p-4">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <ShieldCheck class="h-4 w-4 text-primary" :stroke-width="1.8" />
+          </span>
+          <span class="text-xs text-muted-foreground">启用策略</span>
+        </div>
+        <p class="text-2xl font-bold text-foreground">
+          {{ securityStats.activePolicies }}
+          <span class="text-sm font-normal text-muted-foreground"> / {{ securityStats.totalPolicies }}</span>
+        </p>
+      </div>
+      <div class="card-elevated flex flex-col gap-1.5 p-4">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+            <Activity class="h-4 w-4 text-muted-foreground" :stroke-width="1.8" />
+          </span>
+          <span class="text-xs text-muted-foreground">近期操作</span>
+        </div>
+        <p class="text-2xl font-bold text-foreground">{{ securityStats.recentEvents }}</p>
+      </div>
+      <div class="card-elevated flex flex-col gap-1.5 p-4">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+            <AlertTriangle class="h-4 w-4 text-destructive" :stroke-width="1.8" />
+          </span>
+          <span class="text-xs text-muted-foreground">异常事件</span>
+        </div>
+        <p class="text-2xl font-bold text-destructive">{{ securityStats.failedEvents }}</p>
+      </div>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div class="flex gap-1 rounded-xl border border-border bg-muted/40 p-1">
+      <button
+        v-for="tab in tabs"
+        :key="tab.key"
+        class="flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150"
+        :class="activeTab === tab.key
+          ? 'bg-card shadow-sm text-foreground'
+          : 'text-muted-foreground hover:text-foreground'"
+        @click="activeTab = tab.key"
+      >
+        <component :is="tab.icon" class="h-4 w-4" :stroke-width="1.8" />
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <!-- ===== 权限管理 ===== -->
+    <div v-if="activeTab === 'permissions'" class="grid gap-5 lg:grid-cols-[280px_1fr]">
+      <!-- 角色列表 -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-foreground">角色列表</h2>
+          <button
+            class="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+            @click="showAddRoleModal = true"
+          >
+            <Plus class="h-3.5 w-3.5" />
+            新建角色
+          </button>
+        </div>
+
+        <div class="space-y-2">
+          <button
+            v-for="role in roles"
+            :key="role.id"
+            class="w-full rounded-xl border p-3 text-left transition-all duration-150"
+            :class="selectedRoleId === role.id
+              ? 'border-primary/30 bg-primary/5 shadow-sm'
+              : 'border-border bg-card hover:border-primary/20 hover:bg-muted/30'"
+            @click="selectRole(role.id)"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="truncate text-sm font-medium text-foreground">{{ role.name }}</span>
+                  <span v-if="role.isSystem" class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary">系统</span>
+                </div>
+                <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ role.description }}</p>
+              </div>
+              <ChevronRight class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <span class="flex items-center gap-1 text-xs text-muted-foreground">
+                <Users class="h-3 w-3" />
+                {{ role.memberCount }} 人
+              </span>
+              <span class="text-xs text-muted-foreground">·</span>
+              <span class="text-xs text-muted-foreground">{{ role.permissions.length }} 项权限</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 权限详情 -->
+      <div class="space-y-4">
+        <template v-if="selectedRole">
+          <div class="flex items-start justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-foreground">
+                {{ selectedRole.name }}
+                <span v-if="selectedRole.isSystem" class="ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary">系统角色</span>
+              </h2>
+              <p class="mt-0.5 text-sm text-muted-foreground">{{ selectedRole.description }}</p>
+            </div>
+            <button
+              v-if="!selectedRole.isSystem"
+              class="btn-ghost text-xs"
+            >
+              <Edit class="h-3.5 w-3.5" />
+              编辑角色
+            </button>
+          </div>
+
+          <div class="space-y-4">
+            <div
+              v-for="group in permissionGroups"
+              :key="group.group"
+              class="card-elevated rounded-xl p-4"
+            >
+              <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {{ group.group }}
+              </h3>
+              <div class="space-y-2">
+                <div
+                  v-for="perm in group.items"
+                  :key="perm.key"
+                  class="flex items-center justify-between rounded-lg px-3 py-2 transition-colors"
+                  :class="selectedRole.permissions.includes(perm.key) || selectedRole.permissions.includes(perm.key.split(':')[0] + ':*')
+                    ? 'bg-primary/5'
+                    : 'bg-muted/30'"
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="flex h-5 w-5 items-center justify-center rounded-full"
+                      :class="selectedRole.permissions.includes(perm.key) || selectedRole.permissions.includes(perm.key.split(':')[0] + ':*')
+                        ? 'bg-primary/10'
+                        : 'bg-border'"
+                    >
+                      <CheckCircle2
+                        v-if="selectedRole.permissions.includes(perm.key) || selectedRole.permissions.includes(perm.key.split(':')[0] + ':*')"
+                        class="h-3.5 w-3.5 text-primary"
+                        :stroke-width="2"
+                      />
+                      <XCircle v-else class="h-3.5 w-3.5 text-muted-foreground/50" :stroke-width="2" />
+                    </span>
+                    <span class="text-sm text-foreground">{{ perm.label }}</span>
+                  </div>
+                  <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{{ perm.key }}</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div v-else class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 py-16 text-center">
+          <Lock class="mb-3 h-8 w-8 text-muted-foreground/40" :stroke-width="1.5" />
+          <p class="text-sm text-muted-foreground">请从左侧选择一个角色查看权限</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 操作审计 ===== -->
+    <div v-if="activeTab === 'audit'" class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold text-foreground">操作日志</span>
+          <span class="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">{{ filteredLogs.length }} 条</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- 筛选 -->
+          <div class="flex gap-1 rounded-lg border border-border bg-card p-1">
+            <button
+              v-for="f in [
+                { key: 'all', label: '全部' },
+                { key: 'success', label: '成功' },
+                { key: 'failure', label: '失败' },
+                { key: 'warning', label: '警告' }
+              ]"
+              :key="f.key"
+              class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+              :class="auditFilter === f.key
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'"
+              @click="auditFilter = (f.key as any)"
+            >
+              {{ f.label }}
+            </button>
+          </div>
+          <button class="btn-ghost text-xs" @click="exportAuditLog">
+            <Download class="h-3.5 w-3.5" />
+            导出 CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- 日志表格 -->
+      <div class="card-elevated overflow-hidden rounded-xl">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border bg-muted/30">
+              <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">时间</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">操作者</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">操作</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">对象</th>
+              <th class="hidden px-4 py-3 text-left text-xs font-semibold text-muted-foreground sm:table-cell">IP</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="log in filteredLogs"
+              :key="log.id"
+              class="border-b border-border/50 transition-colors last:border-0 hover:bg-muted/20"
+            >
+              <td class="px-4 py-3">
+                <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock class="h-3.5 w-3.5 shrink-0" />
+                  {{ log.time }}
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <span class="text-sm font-medium text-foreground">{{ log.operator }}</span>
+              </td>
+              <td class="px-4 py-3">
+                <span class="text-sm text-foreground">{{ log.action }}</span>
+              </td>
+              <td class="px-4 py-3">
+                <span class="text-xs text-muted-foreground">{{ log.target }}</span>
+              </td>
+              <td class="hidden px-4 py-3 sm:table-cell">
+                <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{{ log.ip }}</code>
+              </td>
+              <td class="px-4 py-3">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                  :class="resultStyles[log.result]?.badge"
+                >
+                  <component :is="resultStyles[log.result]?.icon" class="h-3 w-3" :stroke-width="2" />
+                  {{ { success: '成功', failure: '失败', warning: '警告' }[log.result] }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="filteredLogs.length === 0" class="py-12 text-center text-sm text-muted-foreground">
+          暂无相关日志记录
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 数据安全 ===== -->
+    <div v-if="activeTab === 'data-security'" class="space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-foreground">安全策略</h2>
+          <p class="mt-0.5 text-xs text-muted-foreground">管理平台数据保护与访问控制策略</p>
+        </div>
+        <div class="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+            <ShieldCheck class="h-4 w-4 text-primary" :stroke-width="1.8" />
+          </span>
+          <div>
+            <p class="text-xs font-medium text-foreground">安全评分</p>
+            <p class="text-xs text-primary font-semibold">{{ Math.round((securityStats.activePolicies / securityStats.totalPolicies) * 100) }}%</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <div
+          v-for="policy in dataPolicies"
+          :key="policy.id"
+          class="card-elevated flex items-center gap-4 rounded-xl p-4 transition-all"
+          :class="policy.status === 'inactive' && 'opacity-60'"
+        >
+          <div
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+            :class="policy.status === 'active' ? 'bg-primary/10' : 'bg-muted'"
+          >
+            <ShieldCheck
+              class="h-5 w-5"
+              :class="policy.status === 'active' ? 'text-primary' : 'text-muted-foreground'"
+              :stroke-width="1.8"
+            />
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-foreground">{{ policy.description }}</span>
+              <span
+                class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                :class="levelStyles[policy.level]"
+              >
+                {{ levelLabels[policy.level] }}级
+              </span>
+            </div>
+            <p class="mt-0.5 text-xs text-muted-foreground">{{ policy.category }}</p>
+          </div>
+
+          <div class="flex items-center gap-3 shrink-0">
+            <span
+              class="text-xs font-medium"
+              :class="policy.status === 'active' ? 'text-primary' : 'text-muted-foreground'"
+            >
+              {{ policy.status === 'active' ? '已启用' : '已停用' }}
+            </span>
+            <!-- 高级策略不允许手动关闭 -->
+            <button
+              class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+              :class="[
+                policy.status === 'active' ? 'bg-primary' : 'bg-border',
+                isHighPolicy(policy) && 'cursor-not-allowed opacity-60'
+              ]"
+              :disabled="isHighPolicy(policy)"
+              :title="isHighPolicy(policy) ? '高级策略不允许停用' : ''"
+              @click="togglePolicy(policy.id)"
+            >
+              <span
+                class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200"
+                :class="policy.status === 'active' ? 'translate-x-[18px]' : 'translate-x-0.5'"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 安全提示 -->
+      <div class="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3">
+        <div class="flex items-start gap-2.5">
+          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-warning" :stroke-width="1.8" />
+          <div>
+            <p class="text-sm font-medium text-warning-foreground">注意</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              高级策略（MFA、加密、TLS）为平台基础安全保障，不建议停用。如需调整，请联系系统管理员。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新建角色弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showAddRoleModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          @click.self="showAddRoleModal = false"
+        >
+          <div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h2 class="mb-4 text-base font-semibold text-foreground">新建角色</h2>
+            <div class="space-y-3">
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">角色名称</label>
+                <input
+                  v-model="newRoleName"
+                  type="text"
+                  class="input-field"
+                  placeholder="如：内容审核员"
+                  maxlength="20"
+                />
+              </div>
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">角色描述</label>
+                <textarea
+                  v-model="newRoleDesc"
+                  class="input-field resize-none"
+                  rows="2"
+                  placeholder="简要说明该角色的职责范围"
+                  maxlength="100"
+                />
+              </div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+              <button class="btn-ghost text-sm" @click="showAddRoleModal = false">取消</button>
+              <button class="btn-primary text-sm" :disabled="!newRoleName.trim()" @click="addRole">创建角色</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

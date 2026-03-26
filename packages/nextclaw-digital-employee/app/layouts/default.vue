@@ -9,7 +9,7 @@ import {
   PanelLeftOpen,
   Zap,
   Settings,
-  HelpCircle
+  ShieldCheck
 } from "lucide-vue-next";
 
 const route = useRoute();
@@ -20,7 +20,8 @@ const navItems = [
   { label: "工作台", to: "/dashboard", icon: Home },
   { label: "技能中心", to: "/skills", icon: Blocks },
   { label: "运行中心", to: "/runs", icon: Clock },
-  { label: "集成中心", to: "/integrations", icon: Plug }
+  { label: "集成中心", to: "/integrations", icon: Plug },
+  { label: "安全中心", to: "/security", icon: ShieldCheck }
 ];
 
 function isActive(path: string): boolean {
