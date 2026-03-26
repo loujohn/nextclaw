@@ -618,6 +618,44 @@ function getDeptName(deptId: string | null): string | null {
   return departments.value.find(d => d.id === deptId)?.name ?? null;
 }
 
+// 活跃状态类型
+type ActivityStatus = {
+  text: string;
+  color: string; // CSS color value
+  dotColor: string;
+};
+
+function getActivityStatus(emp: EmployeeResponse): ActivityStatus {
+  const finishedAt = emp.latestRun?.finishedAt;
+  if (!finishedAt) {
+    return { text: "离线", color: "#94a3b8", dotColor: "#94a3b8" };
+  }
+
+  const finished = new Date(finishedAt);
+  const now = new Date();
+  const diffMs = now.getTime() - finished.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+
+  if (diffMins <= 5) {
+    return { text: "刚刚活跃", color: "#22c55e", dotColor: "#22c55e" };
+  }
+  if (diffMins < 60) {
+    return { text: `${diffMins}分钟前`, color: "#eab308", dotColor: "#eab308" };
+  }
+  if (diffHours < 24 && finished.getDate() === now.getDate()) {
+    const hours = finished.getHours().toString().padStart(2, "0");
+    const mins = finished.getMinutes().toString().padStart(2, "0");
+    return { text: `今天 ${hours}:${mins}`, color: "#94a3b8", dotColor: "#94a3b8" };
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (finished.getDate() === yesterday.getDate()) {
+    return { text: "昨天", color: "#94a3b8", dotColor: "#94a3b8" };
+  }
+  return { text: "离线", color: "#94a3b8", dotColor: "#94a3b8" };
+}
+
 // === 头像/卡片颜色生成（基于名称哈希，每位员工固定色系）===
 // 低饱和度柔和色系：bannerFrom/To 控制 Banner，px = 像素头像前景，bg = 像素头像背景
 // 部门卡片颜色（渐变色）
