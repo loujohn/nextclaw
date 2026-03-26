@@ -1746,121 +1746,68 @@ function getHalfBodySVGDataURL(name: string): string {
 
     <!-- Employee Grid -->
     <div class="employee-grid">
-      <!-- Profile Card - 真人风格团队成员卡片 -->
+      <!-- 温暖卡片列表 -->
       <div
         v-for="emp in filteredEmployees"
         :key="emp.id"
-        class="employee-card"
+        class="employee-list-card"
+        @click="navigateTo(`/employees/${emp.id}`)"
       >
-        <!-- 顶部状态条 -->
-        <div class="employee-card__status-bar" :class="{
-          'employee-card__status-bar--healthy': resolveHealth(emp).lastStatus === 'healthy',
-          'employee-card__status-bar--warning': resolveHealth(emp).lastStatus !== 'healthy' && resolveHealth(emp).lastStatus !== 'failed',
-          'employee-card__status-bar--error': resolveHealth(emp).lastStatus === 'failed'
-        }">
-          <span class="employee-card__status-indicator">
-            <span class="employee-card__status-dot"></span>
-            {{ resolveHealth(emp).label }}
-          </span>
-          <span v-if="emp.model" class="employee-card__model-badge">
-            {{ emp.model.includes("/") ? emp.model.split("/")[1] : emp.model }}
-          </span>
-        </div>
-
-        <!-- 头像区域 -->
-        <div class="employee-card__portrait-wrapper">
-          <img
-            class="employee-card__portrait"
-            :src="getPortraitSVGDataURL(emp.name)"
-            :alt="emp.name"
-            draggable="false"
-          />
-          <!-- 在线状态指示器 -->
+        <!-- 头像 -->
+        <div
+          class="employee-list-card__avatar"
+          :style="{ background: getAvatarGradient(emp.name) }"
+        >
+          <span class="employee-list-card__avatar-text">{{ emp.name.charAt(0) }}</span>
           <span
-            v-if="resolveHealth(emp).lastStatus === 'healthy'"
-            class="employee-card__online-badge"
-          >
-            <span class="employee-card__online-dot"></span>
-            在线
-          </span>
+            class="employee-list-card__avatar-dot"
+            :style="{ background: getActivityStatus(emp).dotColor }"
+          ></span>
         </div>
 
         <!-- 信息区域 -->
-        <div class="employee-card__info">
-          <div class="employee-card__header">
-            <h3 class="employee-card__name">{{ emp.name }}</h3>
-            <span class="employee-card__code">{{ emp.code }}</span>
-          </div>
-
-          <p class="employee-card__desc">
-            {{ emp.description || "这位团队成员正在等待分配任务" }}
-          </p>
-
-          <!-- 技能标签 -->
-          <div class="employee-card__skills">
+        <div class="employee-list-card__content">
+          <div class="employee-list-card__header">
+            <span class="employee-list-card__name">{{ emp.name }}</span>
             <span
-              v-for="skill in emp.skills.slice(0, 3)"
-              :key="skill.skillName"
-              class="employee-card__skill"
+              v-if="getDeptName(emp.departmentId)"
+              class="employee-list-card__dept"
+              :style="{
+                background: getDeptTagColor(getDeptName(emp.departmentId)!).bg,
+                color: getDeptTagColor(getDeptName(emp.departmentId)!).text
+              }"
             >
-              {{ skill.skillName }}
-            </span>
-            <span v-if="emp.skills.length > 3" class="employee-card__skill-more">
-              +{{ emp.skills.length - 3 }}
-            </span>
-            <span v-if="emp.skills.length === 0" class="employee-card__skill-empty">
-              待分配技能
+              {{ getDeptName(emp.departmentId) }}
             </span>
           </div>
 
-          <!-- 工作信息 -->
-          <div class="employee-card__work-info">
-            <div class="employee-card__stat">
-              <span class="employee-card__stat-value">{{ emp.enabledJobsCount }}</span>
-              <span class="employee-card__stat-label">活跃任务</span>
-            </div>
-            <div class="employee-card__stat-divider"></div>
-            <div class="employee-card__stat">
-              <span class="employee-card__stat-value">{{ emp.skills.length }}</span>
-              <span class="employee-card__stat-label">技能</span>
-            </div>
+          <div class="employee-list-card__status" :style="{ color: getActivityStatus(emp).color }">
+            <span
+              class="employee-list-card__status-dot"
+              :style="{ background: getActivityStatus(emp).dotColor }"
+            ></span>
+            {{ getActivityStatus(emp).text }}
           </div>
 
-          <!-- 操作栏 -->
-          <div class="employee-card__actions">
-            <NuxtLink
-              :to="`/employees/${emp.id}`"
-              class="employee-card__primary-btn"
-            >
-              <span>查看工作台</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
-            </NuxtLink>
-            <div class="employee-card__secondary-actions">
-              <button
-                class="employee-card__icon-btn"
-                title="查看详情"
-                @click.stop="openViewer(emp)"
-              >
-                <Eye class="h-4 w-4" :stroke-width="1.8" />
-              </button>
-              <button
-                class="employee-card__icon-btn"
-                title="编辑设置"
-                @click.stop="openEditor(emp)"
-              >
-                <Pencil class="h-4 w-4" :stroke-width="1.8" />
-              </button>
-              <button
-                class="employee-card__icon-btn employee-card__icon-btn--danger"
-                title="移除成员"
-                @click.stop="openDeleteConfirm(emp)"
-              >
-                <Trash2 class="h-4 w-4" :stroke-width="1.8" />
-              </button>
-            </div>
-          </div>
+          <p class="employee-list-card__desc">{{ getEmployeeDescription(emp) }}</p>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="employee-list-card__actions">
+          <button
+            class="employee-list-card__action-btn"
+            title="编辑"
+            @click.stop="openEditor(emp)"
+          >
+            <Pencil class="h-4 w-4" :stroke-width="1.8" />
+          </button>
+          <button
+            class="employee-list-card__action-btn employee-list-card__action-btn--danger"
+            title="删除"
+            @click.stop="openDeleteConfirm(emp)"
+          >
+            <Trash2 class="h-4 w-4" :stroke-width="1.8" />
+          </button>
         </div>
       </div>
 
