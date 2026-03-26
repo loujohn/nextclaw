@@ -2583,312 +2583,143 @@ function getHalfBodySVGDataURL(name: string): string {
 
 /* ===== Employee Grid ===== */
 .employee-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-}
-
-/* ===== Employee Card - 真人风格团队成员卡片 ===== */
-.employee-card {
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
+  gap: 10px;
+}
+
+/* ===== Employee List Card - 温暖卡片列表 ===== */
+.employee-list-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: white;
+  border-radius: 12px;
   border: 1px solid hsl(var(--border) / 0.5);
-  background: hsl(var(--card));
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.04);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.03);
 }
 
-.employee-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 28px -8px hsl(var(--foreground) / 0.12);
-  border-color: hsl(var(--primary) / 0.25);
+.employee-list-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.1);
+  border-color: hsl(var(--primary) / 0.2);
 }
 
-/* 状态条 */
-.employee-card__status-bar {
+/* 头像 */
+.employee-list-card__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.employee-list-card__avatar-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.employee-list-card__avatar-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* 内容区 */
+.employee-list-card__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.employee-list-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.employee-list-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.employee-list-card__dept {
   font-size: 10px;
   font-weight: 500;
-  background: hsl(var(--muted) / 0.3);
-  border-bottom: 1px solid hsl(var(--border) / 0.3);
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
-.employee-card__status-bar--healthy {
-  background: linear-gradient(90deg, hsl(142 76% 36% / 0.08) 0%, hsl(142 76% 36% / 0.02) 100%);
-}
-
-.employee-card__status-bar--warning {
-  background: linear-gradient(90deg, hsl(38 92% 50% / 0.08) 0%, hsl(38 92% 50% / 0.02) 100%);
-}
-
-.employee-card__status-bar--error {
-  background: linear-gradient(90deg, hsl(0 72% 51% / 0.08) 0%, hsl(0 72% 51% / 0.02) 100%);
-}
-
-.employee-card__status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: hsl(var(--muted-foreground));
-}
-
-.employee-card__status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: hsl(var(--muted-foreground) / 0.5);
-}
-
-.employee-card__status-bar--healthy .employee-card__status-dot {
-  background: hsl(142 76% 46%);
-  box-shadow: 0 0 6px hsl(142 76% 46% / 0.5);
-}
-
-.employee-card__status-bar--warning .employee-card__status-dot {
-  background: hsl(38 92% 50%);
-}
-
-.employee-card__status-bar--error .employee-card__status-dot {
-  background: hsl(0 72% 51%);
-}
-
-.employee-card__model-badge {
-  font-family: ui-monospace, monospace;
-  font-size: 9px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: hsl(var(--muted) / 0.5);
-  color: hsl(var(--muted-foreground));
-}
-
-/* 头像区域 */
-.employee-card__portrait-wrapper {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  padding: 16px 16px 8px;
-  background: linear-gradient(180deg, hsl(var(--muted) / 0.2) 0%, transparent 100%);
-}
-
-.employee-card__portrait {
-  width: 90px;
-  height: 120px;
-  border-radius: 12px;
-  object-fit: cover;
-  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.1);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.employee-card:hover .employee-card__portrait {
-  transform: scale(1.03);
-  box-shadow: 0 6px 16px hsl(var(--foreground) / 0.15);
-}
-
-.employee-card__online-badge {
-  position: absolute;
-  bottom: 12px;
-  right: calc(50% - 45px);
+.employee-list-card__status {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 8px;
-  border-radius: 12px;
-  background: hsl(142 76% 36% / 0.95);
-  color: white;
-  font-size: 9px;
-  font-weight: 600;
-  box-shadow: 0 2px 6px hsl(142 76% 36% / 0.3);
+  font-size: 12px;
+  margin-top: 4px;
 }
 
-.employee-card__online-dot {
-  width: 5px;
-  height: 5px;
+.employee-list-card__status-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: white;
-  animation: pulse 2s infinite;
+  flex-shrink: 0;
 }
 
-/* 信息区域 */
-.employee-card__info {
-  display: flex;
-  flex-direction: column;
-  padding: 0 16px 16px;
-  flex: 1;
-}
-
-.employee-card__header {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.employee-card__name {
-  font-size: 16px;
-  font-weight: 700;
-  color: hsl(var(--foreground));
-  letter-spacing: -0.01em;
-  margin: 0;
-}
-
-.employee-card:hover .employee-card__name {
-  color: hsl(var(--primary));
-}
-
-.employee-card__code {
-  font-size: 9px;
-  font-family: ui-monospace, monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: hsl(var(--muted-foreground) / 0.5);
-}
-
-.employee-card__desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: hsl(var(--muted-foreground));
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.employee-list-card__desc {
+  font-size: 13px;
+  color: #64748b;
+  margin: 6px 0 0;
+  white-space: nowrap;
   overflow: hidden;
-  margin: 0 0 10px;
+  text-overflow: ellipsis;
 }
 
-/* 技能标签 */
-.employee-card__skills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 12px;
-}
-
-.employee-card__skill {
-  font-size: 10px;
-  font-weight: 500;
-  color: hsl(var(--primary));
-  background: hsl(var(--primary) / 0.08);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-.employee-card__skill-more {
-  font-size: 10px;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.4);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-.employee-card__skill-empty {
-  font-size: 10px;
-  color: hsl(var(--muted-foreground) / 0.6);
-  background: hsl(var(--muted) / 0.2);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-/* 工作信息统计 */
-.employee-card__work-info {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 10px 0;
-  margin-bottom: 12px;
-  border-top: 1px solid hsl(var(--border) / 0.3);
-  border-bottom: 1px solid hsl(var(--border) / 0.3);
-}
-
-.employee-card__stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.employee-card__stat-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: hsl(var(--foreground));
-}
-
-.employee-card__stat-label {
-  font-size: 10px;
-  color: hsl(var(--muted-foreground));
-}
-
-.employee-card__stat-divider {
-  width: 1px;
-  height: 24px;
-  background: hsl(var(--border) / 0.5);
-}
-
-/* 操作栏 */
-.employee-card__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.employee-card__primary-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 9px 14px;
-  border-radius: 10px;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  transition: all 0.2s ease;
-}
-
-.employee-card__primary-btn:hover {
-  background: hsl(var(--primary) / 0.9);
-  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
-}
-
-.employee-card__secondary-actions {
+/* 操作按钮 */
+.employee-list-card__actions {
   display: flex;
   gap: 4px;
   opacity: 0;
   transition: opacity 0.2s ease;
+  flex-shrink: 0;
 }
 
-.employee-card:hover .employee-card__secondary-actions {
+.employee-list-card:hover .employee-list-card__actions {
   opacity: 1;
 }
 
-.employee-card__icon-btn {
-  width: 34px;
-  height: 34px;
+.employee-list-card__action-btn {
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
   border: 1px solid hsl(var(--border) / 0.5);
-  background: transparent;
+  background: white;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
-.employee-card__icon-btn:hover {
+.employee-list-card__action-btn:hover {
   background: hsl(var(--muted));
   color: hsl(var(--foreground));
-  border-color: hsl(var(--border));
 }
 
-.employee-card__icon-btn--danger:hover {
+.employee-list-card__action-btn--danger:hover {
   background: hsl(var(--destructive) / 0.1);
   color: hsl(var(--destructive));
   border-color: hsl(var(--destructive) / 0.3);
