@@ -1,303 +1,142 @@
 <script setup lang="ts">
-import { Search, FolderInput, GitBranch, Sparkles, Loader2, Plus, X, Download, Users, Zap, FolderOpen } from "lucide-vue-next";
+import { ClipboardList, TrendingUp, FlaskConical, Megaphone, Lightbulb, Zap, ChevronRight } from "lucide-vue-next";
 
-type SkillItem = {
-  name: string;
-  source: string;
-  sourceType: string;
-  sourceUri: string | null;
-  enabled: boolean;
-  usageCount: number;
-  usedBy: string[];
-  statusLabel: string;
-  purpose: string;
-  categoryLabel: string;
-};
+const SKILL_CATEGORIES = [
+  {
+    slug: "project-management",
+    label: "项目管理",
+    icon: ClipboardList,
+    desc: "项目计划、进度跟踪与协作管理",
+    gradient: "from-blue-500 to-indigo-500",
+    bgLight: "bg-blue-50 dark:bg-blue-950/30",
+    iconColor: "text-blue-500",
+  },
+  {
+    slug: "business-management",
+    label: "经营管理",
+    icon: TrendingUp,
+    desc: "经营分析、数据洞察与决策支持",
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50 dark:bg-violet-950/30",
+    iconColor: "text-violet-500",
+  },
+  {
+    slug: "product-rd",
+    label: "产品研发",
+    icon: FlaskConical,
+    desc: "产品设计、技术研发与质量保障",
+    gradient: "from-emerald-500 to-teal-500",
+    bgLight: "bg-emerald-50 dark:bg-emerald-950/30",
+    iconColor: "text-emerald-500",
+  },
+  {
+    slug: "marketing",
+    label: "市场营销",
+    icon: Megaphone,
+    desc: "品牌推广、内容营销与用户增长",
+    gradient: "from-orange-500 to-rose-500",
+    bgLight: "bg-orange-50 dark:bg-orange-950/30",
+    iconColor: "text-orange-500",
+  },
+  {
+    slug: "solutions",
+    label: "解决方案",
+    icon: Lightbulb,
+    desc: "行业方案、场景化能力与定制集成",
+    gradient: "from-amber-500 to-yellow-500",
+    bgLight: "bg-amber-50 dark:bg-amber-950/30",
+    iconColor: "text-amber-500",
+  },
+  {
+    slug: "general",
+    label: "通用能力",
+    icon: Zap,
+    desc: "跨场景通用能力，可被任意员工调用",
+    gradient: "from-primary to-emerald-500",
+    bgLight: "bg-primary/5",
+    iconColor: "text-primary",
+  },
+];
 
-type SkillListPayload = { ok: boolean; data: SkillItem[] };
+type SkillListPayload = { ok: boolean; data: Array<{ categoryLabel: string; enabled: boolean }> };
 
-const query = ref("");
-const showImporter = ref(false);
-const activeCategory = ref<string | null>(null);
-const form = reactive({ sourceType: "local", source: "" });
-const importing = ref(false);
-const importError = ref("");
-const togglingSkill = ref("");
-const uploadingDir = ref(false);
-const fileInputRef = ref<HTMLInputElement | null>(null);
-
-async function handleDirUpload(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const fileList = input.files;
-  if (!fileList || fileList.length === 0) return;
-
-  uploadingDir.value = true;
-  importError.value = "";
-  try {
-    const files = await Promise.all(
-      Array.from(fileList).map(async (f) => ({
-        path: f.webkitRelativePath || f.name,
-        content: await f.text()
-      }))
-    );
-    await $fetch("/api/skills/upload", { method: "POST", body: { files } });
-    showImporter.value = false;
-    await refresh();
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    uploadingDir.value = false;
-    // reset so same folder can be re-selected
-    input.value = "";
-  }
-}
-const { data, refresh } = await useFetch<SkillListPayload>("/api/skills");
-
+const { data } = await useFetch<SkillListPayload>("/api/skills");
 const allSkills = computed(() => data.value?.data ?? []);
-const categories = computed(() => {
-  const map = new Map<string, SkillItem[]>();
+
+const countByLabel = computed(() => {
+  const map = new Map<string, number>();
   for (const s of allSkills.value) {
-    const cat = s.categoryLabel || "其他";
-    if (!map.has(cat)) map.set(cat, []);
-    map.get(cat)!.push(s);
+    const cat = s.categoryLabel || "通用能力";
+    map.set(cat, (map.get(cat) ?? 0) + 1);
   }
-  return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
+  return map;
 });
 
-const filteredSkills = computed(() => {
-  let items = allSkills.value;
-  if (activeCategory.value) items = items.filter((s) => s.categoryLabel === activeCategory.value);
-  const kw = query.value.trim().toLowerCase();
-  if (kw) items = items.filter((s) => [s.name, s.purpose, s.categoryLabel].some((v) => v.toLowerCase().includes(kw)));
-  return items;
-});
-
-const stats = computed(() => ({
-  total: allSkills.value.length,
-  enabled: allSkills.value.filter((s) => s.enabled).length,
-  inUse: allSkills.value.filter((s) => s.usageCount > 0).length
-}));
-
-async function importSkill() {
-  importing.value = true;
-  importError.value = "";
-  try {
-    await $fetch("/api/skills/import", { method: "POST", body: form });
-    form.source = "";
-    showImporter.value = false;
-    await refresh();
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    importing.value = false;
-  }
-}
-
-async function toggleSkill(name: string, enabled: boolean) {
-  togglingSkill.value = name;
-  try {
-    await $fetch(`/api/skills/${name}/state`, { method: "PATCH", body: { enabled } });
-    await refresh();
-  } finally {
-    togglingSkill.value = "";
-  }
-}
+const totalSkills = computed(() => allSkills.value.length);
+const enabledSkills = computed(() => allSkills.value.filter((s) => s.enabled).length);
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8">
+  <div class="mx-auto max-w-6xl space-y-8 p-6 lg:p-8">
     <!-- Header -->
-    <div class="hero-section flex items-start justify-between gap-4">
-      <div class="relative space-y-1">
-        <span class="section-label">能力管理</span>
-        <h1 class="font-display text-3xl font-bold tracking-tight">技能中心</h1>
-        <p class="text-sm text-muted-foreground">查看、导入和管理你的技能能力库。</p>
-      </div>
-      <button class="btn-primary shrink-0" @click="showImporter = true; importError = ''">
-        <Download class="h-4 w-4" :stroke-width="2" />
-        导入技能
-      </button>
+    <div class="space-y-1">
+      <span class="section-label">能力管理</span>
+      <h1 class="font-display text-3xl font-bold tracking-tight">技能中心</h1>
+      <p class="text-sm text-muted-foreground">选择技能分类，查看和管理对应领域的能力库。</p>
     </div>
 
     <!-- Stats Strip -->
     <div class="flex gap-6 text-sm">
       <div class="flex items-center gap-2 text-muted-foreground">
         <Zap class="h-4 w-4 text-primary" :stroke-width="1.8" />
-        <span><strong class="text-foreground">{{ stats.total }}</strong> 个技能</span>
+        <span><strong class="text-foreground">{{ totalSkills }}</strong> 个技能</span>
       </div>
       <div class="flex items-center gap-2 text-muted-foreground">
-        <Sparkles class="h-4 w-4 text-primary" :stroke-width="1.8" />
-        <span><strong class="text-foreground">{{ stats.enabled }}</strong> 已启用</span>
-      </div>
-      <div class="flex items-center gap-2 text-muted-foreground">
-        <Users class="h-4 w-4 text-primary" :stroke-width="1.8" />
-        <span><strong class="text-foreground">{{ stats.inUse }}</strong> 被使用</span>
+        <ChevronRight class="h-4 w-4 text-primary" :stroke-width="1.8" />
+        <span><strong class="text-foreground">{{ enabledSkills }}</strong> 已启用</span>
       </div>
     </div>
 
-    <!-- Category Tabs + Search -->
-    <div class="flex flex-wrap items-center gap-3">
-      <button
-        class="rounded-full px-3 py-1.5 text-sm font-medium transition-all"
-        :class="activeCategory === null ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
-        @click="activeCategory = null"
+    <!-- Category Cards Grid -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <NuxtLink
+        v-for="cat in SKILL_CATEGORIES"
+        :key="cat.slug"
+        :to="`/skills/${cat.slug}`"
+        class="group relative overflow-hidden rounded-2xl border border-border bg-card p-6 transition-all duration-200 hover:border-primary/20 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 cursor-pointer"
       >
-        全部
-      </button>
-      <button
-        v-for="[cat, items] in categories"
-        :key="cat"
-        class="rounded-full px-3 py-1.5 text-sm font-medium transition-all"
-        :class="activeCategory === cat ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'"
-        @click="activeCategory = activeCategory === cat ? null : cat"
-      >
-        {{ cat }} <span class="ml-1 opacity-60">{{ items.length }}</span>
-      </button>
-      <div class="ml-auto">
-        <label class="flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 transition-all duration-150 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
-          <Search class="h-4 w-4 text-muted-foreground" :stroke-width="1.8" />
-          <input
-            v-model="query"
-            placeholder="搜索技能…"
-            class="w-32 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground lg:w-48"
-          />
-        </label>
-      </div>
-    </div>
-
-    <!-- Skill List -->
-    <div class="stagger-in space-y-2">
-      <article
-        v-for="skill in filteredSkills"
-        :key="skill.name"
-        class="flex items-center gap-4 rounded-xl border bg-card px-5 py-4 transition-all duration-150"
-        :class="skill.enabled ? 'border-border hover:border-primary/20 hover:shadow-sm' : 'border-border/50 opacity-60 hover:opacity-80'"
-      >
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="skill.enabled ? 'bg-primary/10' : 'bg-muted'">
-          <Zap class="h-5 w-5" :class="skill.enabled ? 'text-primary' : 'text-muted-foreground'" :stroke-width="1.8" />
-        </div>
-
-        <div class="min-w-0 flex-1">
-          <div class="flex min-w-0 items-center gap-2">
-            <h3 class="min-w-0 truncate text-sm font-semibold">{{ skill.name }}</h3>
-            <span class="shrink-0 whitespace-nowrap rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">{{ skill.categoryLabel }}</span>
-            <span v-if="skill.source !== 'builtin'" class="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{{ skill.sourceType }}</span>
+        <!-- Icon & Count Row -->
+        <div class="mb-4 flex items-start justify-between">
+          <div :class="[cat.bgLight, 'flex h-12 w-12 items-center justify-center rounded-xl']">
+            <component :is="cat.icon" :class="[cat.iconColor, 'h-6 w-6']" :stroke-width="1.8" />
           </div>
-          <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{{ skill.purpose }}</p>
-        </div>
-
-        <div class="flex shrink-0 items-center gap-3">
-          <span v-if="skill.usageCount > 0" class="text-xs text-muted-foreground">{{ skill.usageCount }} 名员工</span>
           <span
-            class="w-20 shrink-0 whitespace-nowrap text-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
-            :class="skill.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
+            v-if="countByLabel.get(cat.label)"
+            class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary"
           >
-            {{ skill.statusLabel }}
+            {{ countByLabel.get(cat.label) }} 个
           </span>
-          <button
-            v-if="skill.source !== 'builtin' || skill.sourceUri"
-            class="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
-            :disabled="togglingSkill === skill.name"
-            @click="toggleSkill(skill.name, !skill.enabled)"
+          <span
+            v-else
+            class="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
           >
-            <Loader2 v-if="togglingSkill === skill.name" class="inline h-3 w-3 animate-spin" />
-            {{ skill.enabled ? "停用" : "启用" }}
-          </button>
+            暂无
+          </span>
         </div>
-      </article>
 
-      <div
-        v-if="filteredSkills.length === 0"
-        class="flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/10 px-6 py-12 text-center"
-      >
-        <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/5">
-          <Sparkles class="h-7 w-7 text-primary/30" :stroke-width="1.5" />
+        <!-- Content -->
+        <h3 class="text-lg font-semibold tracking-tight">{{ cat.label }}</h3>
+        <p class="mt-1 text-sm text-muted-foreground leading-relaxed">{{ cat.desc }}</p>
+
+        <!-- Enter CTA -->
+        <div class="mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
+          <span>查看技能</span>
+          <ChevronRight class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" :stroke-width="2" />
         </div>
-        <p class="font-medium">没有符合条件的技能</p>
-        <p class="mt-1 max-w-xs text-sm text-muted-foreground">修改搜索条件，或导入新技能。</p>
-      </div>
+
+        <!-- Bottom gradient accent -->
+        <div :class="['absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r opacity-0 transition-opacity group-hover:opacity-100', cat.gradient]" />
+      </NuxtLink>
     </div>
-
-    <!-- Import Slide-over -->
-    <Teleport to="body">
-      <Transition name="slide-over">
-        <div v-if="showImporter" class="fixed inset-0 z-50 flex justify-end">
-          <div class="absolute inset-0 bg-foreground/20 backdrop-blur-sm" @click="showImporter = false" />
-          <div class="slide-over-panel relative w-full max-w-md overflow-y-auto bg-card shadow-2xl">
-            <div class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 px-6 py-4 backdrop-blur-sm">
-              <div>
-                <span class="section-label">导入</span>
-                <h2 class="mt-0.5 text-lg font-semibold">导入新技能</h2>
-              </div>
-              <button class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" @click="showImporter = false">
-                <X class="h-5 w-5" :stroke-width="1.8" />
-              </button>
-            </div>
-
-            <div class="p-6">
-              <form class="space-y-4" @submit.prevent="importSkill">
-                <label class="block space-y-1.5">
-                  <span class="text-sm font-medium">来源类型</span>
-                  <select v-model="form.sourceType" class="input-field">
-                    <option value="local">本地目录</option>
-                    <option value="git">Git 仓库</option>
-                  </select>
-                </label>
-                <label class="block space-y-1.5">
-                  <span class="text-sm font-medium">来源地址</span>
-                  <div class="flex gap-2">
-                    <div class="flex flex-1 items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5">
-                      <FolderInput v-if="form.sourceType === 'local'" class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
-                      <GitBranch v-else class="h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
-                      <input
-                        v-model="form.source"
-                        :placeholder="form.sourceType === 'local' ? '选择或输入本地目录路径' : 'Git 仓库地址'"
-                        class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                      />
-                    </div>
-                    <template v-if="form.sourceType === 'local'">
-                      <input
-                        ref="fileInputRef"
-                        type="file"
-                        webkitdirectory
-                        class="sr-only"
-                        @change="handleDirUpload"
-                      />
-                      <button
-                        type="button"
-                        class="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-                        :disabled="uploadingDir"
-                        @click="fileInputRef?.click()"
-                      >
-                        <Loader2 v-if="uploadingDir" class="h-4 w-4 animate-spin" />
-                        <FolderOpen v-else class="h-4 w-4" :stroke-width="1.8" />
-                        {{ uploadingDir ? '上传中...' : '浏览上传' }}
-                      </button>
-                    </template>
-                  </div>
-                </label>
-                <button
-                  class="btn-primary w-full justify-center"
-                  :disabled="importing || !form.source.trim()"
-                >
-                  <Loader2 v-if="importing" class="mr-1.5 inline h-3.5 w-3.5 animate-spin" />
-                  {{ importing ? "导入中..." : "导入技能" }}
-                </button>
-                <p v-if="importError" class="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{{ importError }}</p>
-              </form>
-
-              <div class="mt-8 rounded-lg bg-muted/30 p-4">
-                <p class="text-sm font-medium">导入说明</p>
-                <ul class="mt-2 space-y-1.5 text-xs text-muted-foreground">
-                  <li>• <strong>本地目录</strong>：点击「浏览上传」从本机选取技能目录自动上传，或直接粘贴服务端绝对路径后点「导入技能」</li>
-                  <li>• <strong>Git 仓库</strong>：支持 HTTPS 或 SSH 格式的仓库地址</li>
-                  <li>• 导入后技能默认处于停用状态，需手动启用</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>

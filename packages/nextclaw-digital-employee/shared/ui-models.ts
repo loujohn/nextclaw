@@ -182,17 +182,7 @@ function inferSkillPurpose(name: string): string {
   return "用于扩展员工的任务执行能力。";
 }
 
-function inferSkillCategory(name: string): string {
-  const normalized = name.toLowerCase();
-  if (normalized.includes("summar")) {
-    return "内容生成";
-  }
-  if (normalized.includes("github") || normalized.includes("weather")) {
-    return "外部数据";
-  }
-  if (normalized.includes("skill")) {
-    return "平台扩展";
-  }
+function inferSkillCategory(_name: string): string {
   return "通用能力";
 }
 

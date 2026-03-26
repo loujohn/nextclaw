@@ -20,6 +20,12 @@ export default defineEventHandler(async () => {
       },
       integrations: [
         {
+          type: "zentao",
+          enabled: true,
+          name: "禅道生产环境",
+          lastCheckedAt: "2026-03-26T08:00:00.000Z"
+        },
+        {
           type: "dingtalk",
           enabled: dingtalk.enabled,
           name:

@@ -71,7 +71,11 @@ const { data: employeeData } = await useFetch<EmployeeListPayload>("/api/employe
 
 const integrations = computed(() => data.value?.data ?? []);
 const employees = computed(() => employeeData.value?.data ?? []);
-const configuredCount = computed(() => integrations.value.filter((i) => i.tone === "teal").length);
+// 加 2：政务公司知识库、代码仓库两张静态卡片（演示状态均为已接入）
+const staticCardTotal = 2;
+const staticCardConfigured = 2;
+const totalCardCount = computed(() => integrations.value.length + staticCardTotal);
+const configuredCount = computed(() => integrations.value.filter((i) => i.tone === "teal").length + staticCardConfigured);
 const showDingTalkEditor = ref(false);
 const editorLoading = ref(false);
 const editorSaving = ref(false);
@@ -326,11 +330,11 @@ function onCardAction(card: IntegrationItem) {
       <div class="h-2 flex-1 overflow-hidden rounded-full bg-muted">
         <div
           class="h-full rounded-full bg-primary transition-all duration-500"
-          :style="{ width: integrations.length ? (configuredCount / integrations.length * 100) + '%' : '0%' }"
+          :style="{ width: totalCardCount ? (configuredCount / totalCardCount * 100) + '%' : '0%' }"
         />
       </div>
       <span class="shrink-0 text-sm text-muted-foreground">
-        <strong class="text-foreground">{{ configuredCount }}</strong> / {{ integrations.length }} 已配置
+        <strong class="text-foreground">{{ configuredCount }}</strong> / {{ totalCardCount }} 已配置
       </span>
     </div>
 
@@ -363,52 +367,52 @@ function onCardAction(card: IntegrationItem) {
         </button>
       </article>
 
-      <!-- 政务公司知识库（静态展示卡片，暂无功能） -->
+      <!-- 政务公司知识库（演示：已接入状态） -->
       <article
-        class="group rounded-xl border bg-card p-5 transition-all duration-200"
-        :class="toneClasses['slate']?.border"
+        class="group rounded-xl border bg-card p-5 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+        :class="toneClasses['teal']?.border"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-3">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="toneClasses['slate']?.iconBg">
-              <BookOpen class="h-5 w-5 text-muted-foreground" :stroke-width="1.8" />
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="toneClasses['teal']?.iconBg">
+              <BookOpen class="h-5 w-5 text-primary" :stroke-width="1.8" />
             </div>
             <div>
               <h2 class="text-base font-semibold">政务公司知识库</h2>
             </div>
           </div>
-          <span class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="toneClasses['slate']?.badge">
-            <AlertCircle class="h-3 w-3" :stroke-width="2" />
-            暂未接入
+          <span class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="toneClasses['teal']?.badge">
+            <CheckCircle2 class="h-3 w-3" :stroke-width="2" />
+            已接入
           </span>
         </div>
-        <p class="mt-3 text-sm text-muted-foreground">接入政务公司内部知识库，让员工可检索政策文件、业务规范和企业文档，提升问答与决策质量。</p>
-        <p class="mt-2 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono">即将支持 · 敬请期待</p>
-        <button class="btn-ghost mt-3 w-full justify-center" disabled>即将上线</button>
+        <p class="mt-3 text-sm text-muted-foreground">政务公司知识库已可用于员工检索政策文件、业务规范和企业文档，提升问答与决策质量。</p>
+        <p class="mt-2 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono">政务知识库 v2 · 最近同步 2026-03-26 08:00</p>
+        <button class="btn-ghost mt-3 w-full justify-center" disabled>查看配置</button>
       </article>
 
-      <!-- 代码仓库（静态展示卡片，暂无功能） -->
+      <!-- 代码仓库（演示：已接入状态） -->
       <article
-        class="group rounded-xl border bg-card p-5 transition-all duration-200"
-        :class="toneClasses['slate']?.border"
+        class="group rounded-xl border bg-card p-5 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+        :class="toneClasses['teal']?.border"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-3">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="toneClasses['slate']?.iconBg">
-              <GitBranch class="h-5 w-5 text-muted-foreground" :stroke-width="1.8" />
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="toneClasses['teal']?.iconBg">
+              <GitBranch class="h-5 w-5 text-primary" :stroke-width="1.8" />
             </div>
             <div>
               <h2 class="text-base font-semibold">代码仓库</h2>
             </div>
           </div>
-          <span class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="toneClasses['slate']?.badge">
-            <AlertCircle class="h-3 w-3" :stroke-width="2" />
-            暂未接入
+          <span class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="toneClasses['teal']?.badge">
+            <CheckCircle2 class="h-3 w-3" :stroke-width="2" />
+            已接入
           </span>
         </div>
-        <p class="mt-3 text-sm text-muted-foreground">连接 Git 代码仓库，让员工能读取代码上下文、触发 CI/CD 流程或协助完成代码评审工作。</p>
-        <p class="mt-2 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono">即将支持 · 敬请期待</p>
-        <button class="btn-ghost mt-3 w-full justify-center" disabled>即将上线</button>
+        <p class="mt-3 text-sm text-muted-foreground">代码仓库已接入，员工可读取代码上下文、触发 CI/CD 流程并协助完成代码评审工作。</p>
+        <p class="mt-2 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono">GitLab · main 分支 · 最近检查 2026-03-26 08:00</p>
+        <button class="btn-ghost mt-3 w-full justify-center" disabled>查看配置</button>
       </article>
     </div>
 
