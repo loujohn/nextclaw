@@ -145,7 +145,7 @@ const deleteConfirmOpen = ref(false);
 const deleting = ref(false);
 const deleteError = ref("");
 const deletingEmployee = ref<EmployeeResponse | null>(null);
-const touched = reactive({ name: false });
+const touched = reactive({ name: false, departmentId: false });
 const editForm = reactive({
   id: "",
   name: "",
@@ -372,6 +372,8 @@ const steps = [
 ];
 
 async function createEmployee() {
+  touched.departmentId = true;
+  if (!form.departmentId) return;
   creating.value = true;
   createError.value = "";
   try {
@@ -459,6 +461,10 @@ async function openEditor(employee: EmployeeResponse) {
 
 async function saveEmployeeEdit() {
   if (!editForm.id) return;
+  if (!editForm.departmentId) {
+    editError.value = "请选择所属部门";
+    return;
+  }
   editSaving.value = true;
   editError.value = "";
   try {
@@ -563,6 +569,7 @@ function previousStep() { step.value = Math.max(step.value - 1, 0); }
 function resetForm() {
   step.value = 0;
   touched.name = false;
+  touched.departmentId = false;
   showAdvanced.value = false;
   Object.assign(form, { name: "", code: "", description: "", systemPrompt: "", model: "", departmentId: selectedDeptId.value, heartbeatContent: "", userContent: "", bootContent: "", agentsContent: "", skillNames: [], scheduleKind: "cron", cronExpr: "0 18 * * *", everyMs: 1800000 });
 }
@@ -1429,12 +1436,13 @@ function generatePixelAvatar(name: string): string {
                     <p class="text-[11px] text-muted-foreground">给这位员工起一个容易识别的名字</p>
                   </label>
                   <label class="block space-y-1.5">
-                    <span class="text-sm font-medium">所属部门</span>
-                    <select v-model="form.departmentId" class="input-field">
-                      <option :value="null">— 不设置部门 —</option>
+                    <span class="text-sm font-medium">所属部门 <span class="text-destructive">*</span></span>
+                    <select v-model="form.departmentId" class="input-field" :class="touched.departmentId && !form.departmentId && 'border-destructive/50 focus:border-destructive focus:ring-destructive/10'" @change="touched.departmentId = true">
+                      <option :value="null">— 请选择部门 —</option>
                       <option v-for="opt in deptTreeOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
                     </select>
-                    <p class="text-[11px] text-muted-foreground">将员工归入某个组织部门</p>
+                    <p v-if="touched.departmentId && !form.departmentId" class="text-xs text-destructive">请选择所属部门</p>
+                    <p v-else class="text-[11px] text-muted-foreground">将员工归入某个组织部门</p>
                   </label>
                   <label class="block space-y-1.5">
                     <span class="text-sm font-medium">编码<span class="ml-1 text-xs text-muted-foreground">可选</span></span>
@@ -1629,9 +1637,9 @@ function generatePixelAvatar(name: string): string {
                       <input v-model="editForm.name" required class="input-field" placeholder="例如：项目管理助手" />
                     </label>
                     <label class="block space-y-1.5">
-                      <span class="text-sm font-medium">所属部门</span>
+                      <span class="text-sm font-medium">所属部门 <span class="text-destructive">*</span></span>
                       <select v-model="editForm.departmentId" class="input-field">
-                        <option :value="null">— 不设置部门 —</option>
+                        <option :value="null">— 请选择部门 —</option>
                         <option v-for="opt in deptTreeOptions" :key="`edit-dept-${opt.id}`" :value="opt.id">{{ opt.label }}</option>
                       </select>
                       <p class="text-[11px] text-muted-foreground">将员工归入某个组织部门</p>

@@ -180,61 +180,64 @@ const badgeClass: Record<string, string> = {
       <p class="mt-3 text-sm text-muted-foreground">加载中...</p>
     </div>
 
-    <!-- Card Grid -->
-    <div v-else-if="runs.length > 0" class="grid gap-4 sm:grid-cols-2">
-      <div
-        v-for="run in runs"
-        :key="run.id"
-        class="group flex flex-col rounded-xl border bg-card p-4 shadow-sm transition-all duration-150 hover:shadow-md"
-        :class="[toneConfig[run.tone]?.border ?? 'border-border', selectedRunId === run.id ? 'ring-2 ring-primary/30' : '']"
-      >
-        <!-- Card Header -->
-        <div class="flex items-start justify-between gap-2">
-          <div class="flex items-center gap-2 min-w-0">
-            <span
-              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted/40"
-              :class="run.tone === 'amber' ? 'animate-pulse' : ''"
-            >
-              <span class="h-2.5 w-2.5 rounded-full" :class="toneConfig[run.tone]?.dot ?? 'bg-muted-foreground'" />
-            </span>
-            <span class="truncate text-sm font-semibold">{{ run.employeeName }}</span>
-          </div>
-          <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="badgeClass[run.tone]">
-            {{ run.statusLabel }}
-          </span>
-        </div>
-
-        <!-- Meta -->
-        <p class="mt-2 text-xs text-muted-foreground">
-          {{ run.triggerLabel }}<span v-if="run.scheduleJobName" class="text-primary"> · {{ run.scheduleJobName }}</span> · {{ run.startedAtLabel }}
-        </p>
-
-        <!-- Highlight -->
-        <div
-          v-if="run.highlight"
-          class="run-detail-md mt-2.5 line-clamp-2 max-h-12 overflow-hidden text-sm font-medium text-foreground/80"
-          v-html="renderMarkdown(run.highlight)"
-        />
-
-        <!-- Summary -->
-        <div
-          v-if="run.summary"
-          class="run-detail-md mt-1 line-clamp-2 max-h-9 overflow-hidden text-xs text-muted-foreground"
-          v-html="renderMarkdown(run.summary)"
-        />
-
-        <!-- Detail Button -->
-        <div class="mt-auto pt-3 border-t border-border/50 flex justify-end">
-          <button
-            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 bg-muted/60 text-muted-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="selectedRunId === run.id && loadingDetail"
-            @click="openDetail(run.id)"
+    <!-- Table List -->
+    <div v-else-if="runs.length > 0" class="overflow-x-auto rounded-xl border border-border">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+            <th class="px-4 py-3 text-left font-medium">员工</th>
+            <th class="px-4 py-3 text-left font-medium">状态</th>
+            <th class="px-4 py-3 text-left font-medium">触发方式</th>
+            <th class="px-4 py-3 text-left font-medium">摘要</th>
+            <th class="px-4 py-3 text-left font-medium whitespace-nowrap">开始时间</th>
+            <th class="px-4 py-3 text-left font-medium"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          <tr
+            v-for="run in runs"
+            :key="run.id"
+            class="transition-colors hover:bg-muted/30"
+            :class="selectedRunId === run.id ? 'bg-primary/5' : ''"
           >
-            <component :is="toneConfig[run.tone]?.icon ?? Clock" class="h-3 w-3" :stroke-width="2" />
-            详情
-          </button>
-        </div>
-      </div>
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted/40"
+                  :class="run.tone === 'amber' ? 'animate-pulse' : ''"
+                >
+                  <span class="h-2 w-2 rounded-full" :class="toneConfig[run.tone]?.dot ?? 'bg-muted-foreground'" />
+                </span>
+                <span class="font-medium">{{ run.employeeName }}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="badgeClass[run.tone]">
+                {{ run.statusLabel }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+              {{ run.triggerLabel }}<span v-if="run.scheduleJobName" class="text-primary"> · {{ run.scheduleJobName }}</span>
+            </td>
+            <td class="max-w-xs px-4 py-3">
+              <p v-if="run.highlight" class="truncate text-sm font-medium text-foreground/80">{{ run.highlight }}</p>
+              <p v-else-if="run.summary" class="truncate text-xs text-muted-foreground">{{ run.summary }}</p>
+              <span v-else class="text-xs text-muted-foreground/40">—</span>
+            </td>
+            <td class="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{{ run.startedAtLabel }}</td>
+            <td class="px-4 py-3">
+              <button
+                class="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 bg-muted/60 text-muted-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="selectedRunId === run.id && loadingDetail"
+                @click="openDetail(run.id)"
+              >
+                <component :is="toneConfig[run.tone]?.icon ?? Clock" class="h-3 w-3" :stroke-width="2" />
+                详情
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- Empty State -->

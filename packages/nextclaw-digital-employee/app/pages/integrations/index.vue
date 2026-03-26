@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkles, CheckCircle2, AlertCircle, Brain, MessageSquare, ListChecks, X, Plus, Trash2 } from "lucide-vue-next";
+import { Sparkles, CheckCircle2, AlertCircle, Brain, MessageSquare, ListChecks, X, Plus, Trash2, BookOpen, GitBranch } from "lucide-vue-next";
 import {
   applyDingTalkAccountRenames,
   buildDingTalkAccountGroupOverrides,
@@ -361,6 +361,54 @@ function onCardAction(card: IntegrationItem) {
         <button class="btn-ghost mt-3 w-full justify-center" :disabled="card.id !== 'dingtalk'" @click="onCardAction(card)">
           {{ card.actionLabel }}
         </button>
+      </article>
+
+      <!-- 政务公司知识库（静态展示卡片，暂无功能） -->
+      <article
+        class="group rounded-xl border bg-card p-5 transition-all duration-200"
+        :class="toneClasses['slate']?.border"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="toneClasses['slate']?.iconBg">
+              <BookOpen class="h-5 w-5 text-muted-foreground" :stroke-width="1.8" />
+            </div>
+            <div>
+              <h2 class="text-base font-semibold">政务公司知识库</h2>
+            </div>
+          </div>
+          <span class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="toneClasses['slate']?.badge">
+            <AlertCircle class="h-3 w-3" :stroke-width="2" />
+            暂未接入
+          </span>
+        </div>
+        <p class="mt-3 text-sm text-muted-foreground">接入政务公司内部知识库，让员工可检索政策文件、业务规范和企业文档，提升问答与决策质量。</p>
+        <p class="mt-2 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono">即将支持 · 敬请期待</p>
+        <button class="btn-ghost mt-3 w-full justify-center" disabled>即将上线</button>
+      </article>
+
+      <!-- 代码仓库（静态展示卡片，暂无功能） -->
+      <article
+        class="group rounded-xl border bg-card p-5 transition-all duration-200"
+        :class="toneClasses['slate']?.border"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="toneClasses['slate']?.iconBg">
+              <GitBranch class="h-5 w-5 text-muted-foreground" :stroke-width="1.8" />
+            </div>
+            <div>
+              <h2 class="text-base font-semibold">代码仓库</h2>
+            </div>
+          </div>
+          <span class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" :class="toneClasses['slate']?.badge">
+            <AlertCircle class="h-3 w-3" :stroke-width="2" />
+            暂未接入
+          </span>
+        </div>
+        <p class="mt-3 text-sm text-muted-foreground">连接 Git 代码仓库，让员工能读取代码上下文、触发 CI/CD 流程或协助完成代码评审工作。</p>
+        <p class="mt-2 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono">即将支持 · 敬请期待</p>
+        <button class="btn-ghost mt-3 w-full justify-center" disabled>即将上线</button>
       </article>
     </div>
 

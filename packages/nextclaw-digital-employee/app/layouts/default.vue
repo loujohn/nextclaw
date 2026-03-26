@@ -16,8 +16,8 @@ const route = useRoute();
 const collapsed = ref(false);
 
 const navItems = [
-  { label: "工作台", to: "/", icon: Home },
   { label: "员工中心", to: "/employees", icon: Users },
+  { label: "工作台", to: "/dashboard", icon: Home },
   { label: "技能中心", to: "/skills", icon: Blocks },
   { label: "运行中心", to: "/runs", icon: Clock },
   { label: "集成中心", to: "/integrations", icon: Plug }

@@ -120,7 +120,7 @@ async function runSync() {
     </button>
 
     <!-- 全部 -->
-    <button
+    <!-- <button
       class="mx-2 mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
       :class="selectedId === null ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
       @click="emit('select', null)"
@@ -128,7 +128,7 @@ async function runSync() {
       <Building2 class="h-4 w-4 shrink-0" :stroke-width="1.8" />
       <span class="flex-1 text-left">全部员工</span>
       <span class="text-[10px] font-mono">{{ totalCount }}</span>
-    </button>
+    </button> -->
 
     <!-- 树形列表 -->
     <div class="flex-1 overflow-y-auto py-1">
