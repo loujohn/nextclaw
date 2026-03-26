@@ -1,10 +1,6 @@
-import { spawn } from "node:child_process";
-import { resolve } from "node:path";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type OrgSyncConfigRecord } from "../db/schema";
-
-// process.cwd() 在 Nitro dev/prod 模式下均指向包根目录，比 __dirname 更稳定
-const SCRIPT_PATH = resolve(process.cwd(), "scripts/dingtalk-org-sync.py");
+import { DingTalkOrgClient } from "../integrations/dingtalk-org-client";
 
 const CONFIG_ID = "default";
 
@@ -102,23 +98,15 @@ export async function runOrgSync(
   }
   const appSecret = await getRawAppSecret(db);
 
-  // 执行 Python 脚本，捕获 stdout（JSON）
-  let orgJson: string;
-  try {
-    orgJson = await runPythonScript(cfg.app_key, appSecret);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await writeRunResult(db, "failure", `脚本执行失败: ${msg}`);
-    return { ok: false, summary: `脚本执行失败: ${msg}` };
-  }
-
-  // 解析 JSON
+  // 使用 TS 客户端拉取钉钉组织数据
   let orgData: unknown;
   try {
-    orgData = JSON.parse(orgJson);
-  } catch {
-    await writeRunResult(db, "failure", "脚本输出无法解析为 JSON");
-    return { ok: false, summary: "脚本输出无法解析为 JSON" };
+    const client = await DingTalkOrgClient.create(cfg.app_key, appSecret);
+    orgData = await client.fetchAllOrgData();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await writeRunResult(db, "failure", `拉取钉钉组织数据失败: ${msg}`);
+    return { ok: false, summary: `拉取钉钉组织数据失败: ${msg}` };
   }
 
   // 调用同步 API
@@ -155,23 +143,4 @@ async function writeRunResult(db: Knex, status: "success" | "failure", summary: 
   });
 }
 
-function runPythonScript(appKey: string, appSecret: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("python3", [SCRIPT_PATH, "--app-key", appKey, "--app-secret", appSecret], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    child.stdout.on("data", (d: Buffer) => stdoutChunks.push(d));
-    child.stderr.on("data", (d: Buffer) => stderrChunks.push(d));
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve(Buffer.concat(stdoutChunks).toString("utf-8").trim());
-      } else {
-        const errMsg = Buffer.concat(stderrChunks).toString("utf-8").trim();
-        reject(new Error(`python3 exited with code ${code}: ${errMsg.slice(0, 500)}`));
-      }
-    });
-    child.on("error", reject);
-  });
-}
+
