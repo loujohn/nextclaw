@@ -2,7 +2,7 @@ import { createError, readBody } from "h3";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { ensureEmployeeWorkspace, syncEmployeeSkills, resolveEmployeeWorkspace } from "../../engine/employee-workspace";
+import { ensureEmployeeWorkspace, resolveEmployeeWorkspace } from "../../engine/employee-workspace";
 
 type CreateEmployeeBody = {
   name?: string;
@@ -64,9 +64,6 @@ export default defineEventHandler(async (event) => {
 
   const skillNames = body?.skillNames ?? [];
   const skills = await ctx.employeeSkillRepo.replaceForEmployee(employee.id, skillNames);
-  if (skillNames.length > 0) {
-    syncEmployeeSkills(ctx.gateway.homeDir, employee.code, skillNames, ctx.gateway.workspaceDir);
-  }
 
   const hasSchedule = body?.scheduleKind && (body.scheduleKind === "cron" ? body.cronExpr : body.everyMs);
   const schedule = hasSchedule

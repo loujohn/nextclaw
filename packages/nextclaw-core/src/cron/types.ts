@@ -28,6 +28,7 @@ export type CronJob = {
   createdAtMs: number;
   updatedAtMs: number;
   deleteAfterRun: boolean;
+  agentId?: string;
 };
 
 export type CronStore = {

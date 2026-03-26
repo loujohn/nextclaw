@@ -51,21 +51,36 @@ export class AutomationService {
       }
       // Legacy format: employee:{employeeId}
       const employeeId = job.name.startsWith("employee:") ? job.name.slice("employee:".length) : "";
-      if (!employeeId) {
-        return null;
+      if (employeeId) {
+        const employee = await this.employeeRepo.getById(employeeId);
+        if (!employee) return null;
+        const message = job.payload.message || `${employee.systemPrompt}\n\n请执行一次定时任务并输出最新摘要。`;
+        const result = await this.runService.runEmployeeTurn({
+          employeeId,
+          message,
+          triggerType: "scheduled",
+          triggerSource: "cron"
+        });
+        return result.reply;
       }
-      const employee = await this.employeeRepo.getById(employeeId);
-      if (!employee) {
-        return null;
+      // 通过对话创建的定时任务：携带 agentId，通过员工 code 查找并执行
+      if (job.agentId) {
+        const employee = await this.employeeRepo.getByCode(job.agentId);
+        if (!employee) {
+          console.warn(`[AutomationService] 对话创建的任务 "${job.name}" (${job.id}) 关联的 agent "${job.agentId}" 不存在`);
+          return null;
+        }
+        const message = job.payload.message || "执行定时任务";
+        const result = await this.runService.runEmployeeTurn({
+          employeeId: employee.id,
+          message,
+          triggerType: "scheduled",
+          triggerSource: job.id
+        });
+        return result.reply;
       }
-      const message = job.payload.message || `${employee.systemPrompt}\n\n请执行一次定时任务并输出最新摘要。`;
-      const result = await this.runService.runEmployeeTurn({
-        employeeId,
-        message,
-        triggerType: "scheduled",
-        triggerSource: "cron"
-      });
-      return result.reply;
+      console.warn(`[AutomationService] 无法识别的任务格式: "${job.name}" (${job.id}), 无 agentId 且无已知前缀`);
+      return null;
     };
 
     // After each automatic execution batch, sync updated nextRunAtMs back to DB.

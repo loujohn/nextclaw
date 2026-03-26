@@ -15,6 +15,7 @@ import {
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
+import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { prepareEmployeeRuntime } from "../services/employee-runtime-preparation";
 
 export type DigitalEmployeeChannelRuntimeState = {
@@ -41,6 +42,7 @@ export class DigitalEmployeeChannelRuntime {
       gateway: NextclawEngineGateway;
       employeeRepo: EmployeeRepository;
       employeeSkillRepo: EmployeeSkillRepository;
+      skillInstallationRepo?: SkillInstallationRepository;
       loadState: RuntimeStateLoader;
     }
   ) {
@@ -158,6 +160,7 @@ export class DigitalEmployeeChannelRuntime {
     const { workspace } = await prepareEmployeeRuntime({
       employee,
       employeeSkillRepo: this.options.employeeSkillRepo,
+      skillInstallationRepo: this.options.skillInstallationRepo,
       homeDir: this.gateway.homeDir,
       workspaceDir: this.gateway.workspaceDir
     });

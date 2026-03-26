@@ -55,6 +55,7 @@ export type AgentEngineFactoryContext = {
   config: Config;
   extensionRegistry?: ExtensionRegistry;
   resolveMessageToolHints?: AgentEngineMessageToolHintsResolver;
+  additionalSkillsDirs?: string[];
 };
 
 export type AgentEngineFactory = (context: AgentEngineFactoryContext) => AgentEngine;

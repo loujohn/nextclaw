@@ -33,7 +33,7 @@ type RunDetailPayload = {
     scheduleJobName: string | null;
     summary: string;
     result: Record<string, unknown>;
-    events: Array<{ id: string; seq: number; eventType: string }>;
+    events: Array<{ id: string; seq: number; eventType: string; payload: Record<string, unknown>; createdAt: string }>;
   };
 };
 
@@ -347,10 +347,16 @@ const badgeClass: Record<string, string> = {
                   <div
                     v-for="event in selectedRun.data.events"
                     :key="event.id"
-                    class="flex items-center gap-3 rounded-lg bg-muted/30 px-3 py-2.5"
+                    class="rounded-lg bg-muted/30 px-3 py-2.5"
                   >
-                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{{ event.seq }}</span>
-                    <span class="text-sm">{{ event.eventType }}</span>
+                    <div class="flex items-center gap-3">
+                      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{{ event.seq }}</span>
+                      <span class="text-sm font-medium">{{ event.eventType }}</span>
+                      <span v-if="event.createdAt" class="ml-auto text-[11px] text-muted-foreground">{{ event.createdAt.replace('T', ' ').slice(0, 19) }}</span>
+                    </div>
+                    <div v-if="event.payload && Object.keys(event.payload).length > 0" class="mt-1.5 ml-9">
+                      <pre class="max-h-32 overflow-auto rounded bg-background/50 p-2 text-[11px] leading-relaxed text-muted-foreground">{{ JSON.stringify(event.payload, null, 2) }}</pre>
+                    </div>
                   </div>
                   <p v-if="selectedRun.data.events.length === 0" class="text-sm text-muted-foreground">暂无事件记录。</p>
                 </div>

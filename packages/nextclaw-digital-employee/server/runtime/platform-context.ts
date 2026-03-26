@@ -108,11 +108,13 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       });
       const bus = new MessageBus();
       const sessionManager = new SessionManager(workspaceDir);
+      const cronService = new CronService(join(homeDir, "cron", "jobs.json"));
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
         bus,
         sessionManager,
+        cronService,
         config: initialRuntimeState.config,
         extensionRegistry: initialRuntimeState.extensionRegistry,
         defaultConfig: buildPlatformGatewayConfig()
@@ -126,11 +128,12 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const runRepo = new RunRecordRepository(db);
       const skillInstallationRepo = new SkillInstallationRepository(db);
       const skillInstallService = new SkillInstallService(skillInstallationRepo, gateway);
-      const employeeRunService = new EmployeeRunService(employeeRepo, employeeSkillRepo, runRepo, gateway);
+      const employeeRunService = new EmployeeRunService(employeeRepo, employeeSkillRepo, runRepo, gateway, skillInstallationRepo);
       const channelRuntime = new DigitalEmployeeChannelRuntime({
         gateway,
         employeeRepo,
         employeeSkillRepo,
+        skillInstallationRepo,
         loadState: async () =>
           loadPlatformRuntimeState({
             workspaceDir,
@@ -143,9 +146,44 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeScheduleJobRepo,
         employeeRepo,
         employeeRunService,
-        new CronService(join(homeDir, "cron", "jobs.json")),
+        cronService,
         gateway
       );
+      // 当 Agent 通过对话创建定时任务时，同步写入数据库以便 UI 显示。
+      // SQLite 在并发异步操作时可能出现 SQLITE_BUSY，因此保留单次重试作为防御。
+      cronService.onJobAdded = (job) => {
+        if (!job.agentId) return;
+        const agentCode = job.agentId;
+        const syncToDb = async (isRetry = false): Promise<void> => {
+          try {
+            const employee = await employeeRepo.getByCode(agentCode);
+            if (!employee) return;
+            const schedule = job.schedule;
+            const scheduleKind = schedule.kind === "every" ? "every" as const : "cron" as const;
+            const cronExpr = schedule.kind === "cron" ? (schedule.expr ?? null) : null;
+            const everyMs = schedule.kind === "every" ? (schedule.everyMs ?? null) : null;
+            await employeeScheduleJobRepo.create({
+              employeeId: employee.id,
+              name: job.name,
+              description: `通过对话创建 (${job.id})`,
+              scheduleKind,
+              cronExpr,
+              everyMs,
+              taskPrompt: job.payload.message,
+              enabled: job.enabled,
+              runtimeJobId: job.id
+            });
+          } catch (err) {
+            if (!isRetry) {
+              console.warn(`[platform-context] 定时任务 "${job.name}" (${job.id}) 同步失败，500ms 后重试`);
+              await new Promise((r) => setTimeout(r, 500));
+              return syncToDb(true);
+            }
+            console.error(`[platform-context] 定时任务 "${job.name}" (${job.id}) 同步数据库失败:`, err);
+          }
+        };
+        void syncToDb();
+      };
       await channelRuntime.start();
       await automationService.start();
       return {

@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
+  CronService,
   LLMProvider,
   MessageBus,
   NativeAgentEngine,
@@ -24,6 +25,7 @@ export type NextclawEngineGatewayOptions = {
   workspaceDir?: string;
   bus?: MessageBus;
   sessionManager?: SessionManager;
+  cronService?: CronService | null;
   config?: Config;
   extensionRegistry?: ExtensionRegistry;
   defaultConfig?: Record<string, unknown>;
@@ -61,10 +63,22 @@ export type RunEmployeeTurnResult = {
   events: SessionEvent[];
 };
 
+// 工具调用的简化视图（供前端展示）
+export type ToolCallView = {
+  id: string;
+  name: string;
+  arguments: string;
+};
+
+// 会话消息视图，包含可选的工具调用和推理过程
 export type SessionHistoryMessage = {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp?: string;
+  toolCalls?: ToolCallView[];
+  reasoning?: string;
+  toolCallId?: string;
+  toolName?: string;
 };
 
 function parseSkillName(skillFilePath: string): string {
@@ -173,6 +187,7 @@ export class NextclawEngineGateway {
   private readonly sessionManager: SessionManager;
   private readonly providerManager: ProviderManager;
   private extensionRegistry: ExtensionRegistry;
+  private readonly cronService: CronService | null;
   private readonly engines: Map<string, AgentEngine> = new Map();
   private fallbackEngine: AgentEngine;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
@@ -186,6 +201,7 @@ export class NextclawEngineGateway {
     seedBuiltinSkills(this.workspaceDir);
     this.bus = options.bus ?? new MessageBus();
     this.sessionManager = options.sessionManager ?? new SessionManager(this.workspaceDir);
+    this.cronService = options.cronService ?? null;
     this.config =
       options.config ??
       buildPlatformRuntimeConfig({
@@ -201,6 +217,7 @@ export class NextclawEngineGateway {
   }
 
   private createEngineForWorkspace(agentId: string, workspace: string, model?: string): AgentEngine {
+    const globalSkillsDir = join(this.workspaceDir, "skills");
     const engineContext: AgentEngineFactoryContext = {
       agentId,
       workspace,
@@ -211,13 +228,14 @@ export class NextclawEngineGateway {
       bus: this.bus,
       providerManager: this.providerManager,
       sessionManager: this.sessionManager,
-      cronService: null,
+      cronService: this.cronService,
       restrictToWorkspace: this.config.tools.restrictToWorkspace,
       searchConfig: this.config.search,
       execConfig: this.config.tools.exec,
       contextConfig: this.config.agents.context,
       config: this.config,
-      extensionRegistry: this.extensionRegistry
+      extensionRegistry: this.extensionRegistry,
+      additionalSkillsDirs: workspace !== this.workspaceDir ? [globalSkillsDir] : undefined
     };
     return this.createEngine(engineContext);
   }
@@ -405,6 +423,7 @@ export class NextclawEngineGateway {
     };
   }
 
+  // 获取会话历史，包含工具调用和推理过程等元数据
   getSessionHistory(sessionKey: string): SessionHistoryMessage[] {
     const session = this.sessionManager.getIfExists(sessionKey);
     if (!session) {
@@ -416,12 +435,45 @@ export class NextclawEngineGateway {
       : session.messages;
     return recent
       .map((message) => {
-        const role = message.role;
-        const content = message.content;
+        const role = String(message.role ?? "");
+        const content = typeof message.content === "string" ? message.content : "";
         const timestamp = typeof message.timestamp === "string" ? message.timestamp : undefined;
-        if ((role === "user" || role === "assistant" || role === "system") && typeof content === "string") {
+
+        if (role === "user" || role === "system") {
           return { role, content, timestamp } satisfies SessionHistoryMessage;
         }
+
+        if (role === "assistant") {
+          const result: SessionHistoryMessage = { role, content, timestamp };
+          const rawToolCalls = message.tool_calls;
+          if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
+            result.toolCalls = rawToolCalls
+              .filter((tc): tc is Record<string, unknown> => tc && typeof tc === "object")
+              .map((tc) => ({
+                id: String(tc.id ?? ""),
+                name: String((tc.function as Record<string, unknown>)?.name ?? tc.name ?? ""),
+                arguments: typeof (tc.function as Record<string, unknown>)?.arguments === "string"
+                  ? String((tc.function as Record<string, unknown>).arguments)
+                  : JSON.stringify(tc.arguments ?? {})
+              }));
+          }
+          const reasoning = message.reasoning_content;
+          if (typeof reasoning === "string" && reasoning.trim()) {
+            result.reasoning = reasoning;
+          }
+          return result;
+        }
+
+        if (role === "tool") {
+          return {
+            role: "tool" as const,
+            content,
+            timestamp,
+            toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
+            toolName: typeof message.name === "string" ? message.name : undefined
+          } satisfies SessionHistoryMessage;
+        }
+
         return null;
       })
       .filter((message): message is SessionHistoryMessage => Boolean(message));

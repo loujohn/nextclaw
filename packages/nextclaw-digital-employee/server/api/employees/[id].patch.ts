@@ -2,7 +2,7 @@ import { createError, getRouterParam, readBody } from "h3";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { ensureEmployeeWorkspace, resolveEmployeeWorkspace, syncEmployeeSkills } from "../../engine/employee-workspace";
+import { ensureEmployeeWorkspace, resolveEmployeeWorkspace } from "../../engine/employee-workspace";
 
 type UpdateEmployeeBody = {
   name?: string;
@@ -79,9 +79,6 @@ export default defineEventHandler(async (event) => {
   let skills = await ctx.employeeSkillRepo.listByEmployeeId(id);
   if (Array.isArray(body?.skillNames)) {
     skills = await ctx.employeeSkillRepo.replaceForEmployee(id, body.skillNames);
-    if (body.skillNames.length > 0) {
-      syncEmployeeSkills(ctx.gateway.homeDir, updated.code, body.skillNames, ctx.gateway.workspaceDir);
-    }
   }
 
   let schedule = await ctx.employeeScheduleRepo.getByEmployeeId(id);

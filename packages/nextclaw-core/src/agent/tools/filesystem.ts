@@ -1,12 +1,14 @@
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from "node:fs";
+import { resolve, dirname, isAbsolute, sep } from "node:path";
 import { Tool } from "./base.js";
 
 function resolvePath(path: string, allowedDir?: string): string {
-  const resolved = resolve(path);
+  const resolved = allowedDir && !isAbsolute(path)
+    ? resolve(allowedDir, path)
+    : resolve(path);
   if (allowedDir) {
     const allowed = resolve(allowedDir);
-    if (!resolved.startsWith(allowed)) {
+    if (resolved !== allowed && !resolved.startsWith(allowed + sep)) {
       throw new Error("Access denied: path outside allowed directory");
     }
   }
@@ -74,7 +76,7 @@ export class WriteFileTool extends Tool {
     const content = String(params.content ?? "");
     const dir = dirname(path);
     if (!existsSync(dir)) {
-      throw new Error("Directory does not exist");
+      mkdirSync(dir, { recursive: true });
     }
     writeFileSync(path, content, "utf-8");
     return `Wrote ${content.length} bytes to ${path}`;

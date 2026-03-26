@@ -11,53 +11,61 @@ export type SkillInfo = {
   source: "workspace" | "builtin";
 };
 
+// 技能加载器：从工作区、附加目录和内置目录发现并加载技能。
+// 加载优先级：工作区 > 附加目录 > 内置（同名技能以先发现者为准）。
 export class SkillsLoader {
   private workspaceSkills: string;
   private builtinSkills: string;
+  private additionalSkillsDirs: string[];
 
-  constructor(private workspace: string, builtinSkillsDir?: string) {
+  constructor(private workspace: string, builtinSkillsDir?: string, additionalSkillsDirs?: string[]) {
     this.workspaceSkills = join(workspace, "skills");
     this.builtinSkills = builtinSkillsDir ?? BUILTIN_SKILLS_DIR;
+    this.additionalSkillsDirs = additionalSkillsDirs ?? [];
   }
 
   listSkills(filterUnavailable = true): SkillInfo[] {
     const skills: SkillInfo[] = [];
-
-    if (existsSync(this.workspaceSkills)) {
-      for (const entry of readdirSync(this.workspaceSkills, { withFileTypes: true })) {
-        if (!entry.isDirectory()) {
-          continue;
-        }
-        const skillFile = join(this.workspaceSkills, entry.name, "SKILL.md");
-        if (existsSync(skillFile)) {
-          skills.push({ name: entry.name, path: skillFile, source: "workspace" });
-        }
-      }
+    // 工作区技能优先级最高
+    this.collectSkillsFromDir(this.workspaceSkills, "workspace", skills);
+    // 附加目录（如全局技能目录）次之
+    for (const dir of this.additionalSkillsDirs) {
+      this.collectSkillsFromDir(dir, "workspace", skills);
     }
-
-    if (existsSync(this.builtinSkills)) {
-      for (const entry of readdirSync(this.builtinSkills, { withFileTypes: true })) {
-        if (!entry.isDirectory()) {
-          continue;
-        }
-        const skillFile = join(this.builtinSkills, entry.name, "SKILL.md");
-        if (existsSync(skillFile) && !skills.some((s) => s.name === entry.name)) {
-          skills.push({ name: entry.name, path: skillFile, source: "builtin" });
-        }
-      }
-    }
-
+    // 内置技能优先级最低
+    this.collectSkillsFromDir(this.builtinSkills, "builtin", skills);
     if (filterUnavailable) {
       return skills.filter((skill) => this.checkRequirements(this.getSkillMeta(skill.name)));
     }
-
     return skills;
+  }
+
+  // 从指定目录收集技能，同名技能不重复添加（`!skills.some` 保证先发现者优先）
+  private collectSkillsFromDir(dir: string, source: SkillInfo["source"], skills: SkillInfo[]): void {
+    try {
+      if (!existsSync(dir)) return;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const skillFile = join(dir, entry.name, "SKILL.md");
+        if (existsSync(skillFile) && !skills.some((s) => s.name === entry.name)) {
+          skills.push({ name: entry.name, path: skillFile, source });
+        }
+      }
+    } catch (err) {
+      console.warn(`[SkillsLoader] 读取技能目录失败: ${dir}`, err);
+    }
   }
 
   loadSkill(name: string): string | null {
     const workspaceSkill = join(this.workspaceSkills, name, "SKILL.md");
     if (existsSync(workspaceSkill)) {
       return readFileSync(workspaceSkill, "utf-8");
+    }
+    for (const dir of this.additionalSkillsDirs) {
+      const candidate = join(dir, name, "SKILL.md");
+      if (existsSync(candidate)) {
+        return readFileSync(candidate, "utf-8");
+      }
     }
     const builtinSkill = join(this.builtinSkills, name, "SKILL.md");
     if (existsSync(builtinSkill)) {

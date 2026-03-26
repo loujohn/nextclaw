@@ -1,5 +1,6 @@
 import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
+import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { buildChatResultCards, type ChatMessageView, type ChatResultCardView } from "../../shared/ui-models";
@@ -19,7 +20,8 @@ export class EmployeeRunService {
     private readonly employeeRepo: EmployeeRepository,
     private readonly employeeSkillRepo: EmployeeSkillRepository,
     private readonly runRepo: RunRecordRepository,
-    private readonly gateway: NextclawEngineGateway
+    private readonly gateway: NextclawEngineGateway,
+    private readonly skillInstallationRepo?: SkillInstallationRepository
   ) {}
 
   async runEmployeeTurn(params: {
@@ -36,6 +38,7 @@ export class EmployeeRunService {
     const { workspace, skillNames } = await prepareEmployeeRuntime({
       employee,
       employeeSkillRepo: this.employeeSkillRepo,
+      skillInstallationRepo: this.skillInstallationRepo,
       homeDir: this.gateway.homeDir,
       workspaceDir: this.gateway.workspaceDir
     });

@@ -39,10 +39,14 @@ export class CronService {
   private store: CronStore | null = null;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  // 任务到期时的执行回调
   onJob?: (job: CronJob) => Promise<string | null>;
-  /** Called after a batch of due jobs have executed and the store has been saved.
-   *  Receives the executed jobs with their UPDATED state (including new nextRunAtMs). */
+  // 一批到期任务执行完成后的回调（含更新后的 nextRunAtMs）
   onBatchComplete?: (executedJobs: CronJob[]) => void;
+  // 新增任务后的回调（用于同步到数据库供 UI 显示）
+  onJobAdded?: (job: CronJob) => void;
+  // 删除任务后的回调
+  onJobRemoved?: (jobId: string) => void;
 
   constructor(private storePath: string, onJob?: (job: CronJob) => Promise<string | null>) {
     this.onJob = onJob;
@@ -64,7 +68,8 @@ export class CronService {
           state: (job.state ?? {}) as CronJobState,
           createdAtMs: Number(job.createdAtMs ?? 0),
           updatedAtMs: Number(job.updatedAtMs ?? 0),
-          deleteAfterRun: Boolean(job.deleteAfterRun ?? false)
+          deleteAfterRun: Boolean(job.deleteAfterRun ?? false),
+          agentId: typeof job.agentId === "string" ? job.agentId : undefined
         }));
         this.store = { version: data.version ?? 1, jobs };
       } catch {
@@ -205,6 +210,7 @@ export class CronService {
     channel?: string;
     to?: string;
     deleteAfterRun?: boolean;
+    agentId?: string;
   }): CronJob {
     const store = this.loadStore();
     const now = nowMs();
@@ -225,11 +231,13 @@ export class CronService {
       },
       createdAtMs: now,
       updatedAtMs: now,
-      deleteAfterRun: params.deleteAfterRun ?? false
+      deleteAfterRun: params.deleteAfterRun ?? false,
+      agentId: params.agentId
     };
     store.jobs.push(job);
     this.saveStore();
     this.armTimer();
+    try { this.onJobAdded?.(job); } catch { /* non-fatal */ }
     return job;
   }
 
@@ -241,6 +249,7 @@ export class CronService {
     if (removed) {
       this.saveStore();
       this.armTimer();
+      try { this.onJobRemoved?.(jobId); } catch { /* non-fatal */ }
     }
     return removed;
   }

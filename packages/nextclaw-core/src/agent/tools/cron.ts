@@ -5,6 +5,7 @@ import type { CronSchedule } from "../../cron/types.js";
 export class CronTool extends Tool {
   private channel = "cli";
   private chatId = "direct";
+  private agentId?: string;
 
   constructor(private cronService: CronService) {
     super();
@@ -33,9 +34,10 @@ export class CronTool extends Tool {
     };
   }
 
-  setContext(channel: string, chatId: string): void {
+  setContext(channel: string, chatId: string, agentId?: string): void {
     this.channel = channel;
     this.chatId = chatId;
+    if (agentId) this.agentId = agentId;
   }
 
   async execute(params: Record<string, unknown>): Promise<string> {
@@ -66,7 +68,8 @@ export class CronTool extends Tool {
       message,
       deliver,
       channel: this.channel,
-      to: this.chatId
+      to: this.chatId,
+      agentId: this.agentId
     });
 
     return `Scheduled job '${job.name}' (${job.id})`;

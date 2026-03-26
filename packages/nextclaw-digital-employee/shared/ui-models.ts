@@ -38,10 +38,20 @@ export type SkillCatalogEntryView = {
   categoryLabel: string;
 };
 
+export type ChatToolCallView = {
+  id: string;
+  name: string;
+  arguments: string;
+};
+
 export type ChatMessageView = {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp?: string;
+  toolCalls?: ChatToolCallView[];
+  reasoning?: string;
+  toolCallId?: string;
+  toolName?: string;
 };
 
 export type ChatResultCardKind = "summary" | "projects" | "owners" | "actions" | "details" | "error";

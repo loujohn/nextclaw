@@ -26,6 +26,7 @@ type EmployeeResponse = {
 
 type SkillOption = {
   name: string;
+  nameZh?: string;
   statusLabel: string;
   usageCount: number;
   enabled: boolean;
@@ -194,7 +195,7 @@ const filteredSkillsForCreate = computed(() => {
   let items = skills.value;
   if (skillCategoryFilter.value) items = items.filter((s) => s.categoryLabel === skillCategoryFilter.value);
   const kw = skillSearchQuery.value.trim().toLowerCase();
-  if (kw) items = items.filter((s) => s.name.toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw));
+  if (kw) items = items.filter((s) => s.name.toLowerCase().includes(kw) || (s.nameZh ?? "").toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw));
   return items;
 });
 
@@ -205,7 +206,7 @@ const filteredSkillsForEdit = computed(() => {
   let items = skills.value;
   if (editSkillCategoryFilter.value) items = items.filter((s) => s.categoryLabel === editSkillCategoryFilter.value);
   const kw = editSkillSearchQuery.value.trim().toLowerCase();
-  if (kw) items = items.filter((s) => s.name.toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw));
+  if (kw) items = items.filter((s) => s.name.toLowerCase().includes(kw) || (s.nameZh ?? "").toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw));
   return items;
 });
 
@@ -1400,7 +1401,7 @@ function getAvatarStyle(name: string): Record<string, string> {
                     <input v-model="form.skillNames" type="checkbox" :value="skill.name" class="mt-0.5 h-4 w-4 accent-primary" />
                     <div class="min-w-0">
                       <div class="flex items-center gap-2">
-                        <p class="text-sm font-medium">{{ skill.name }}</p>
+                        <p class="text-sm font-medium">{{ skill.nameZh || skill.name }}</p>
                         <span class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{{ skill.categoryLabel }}</span>
                       </div>
                       <p class="mt-0.5 text-xs text-muted-foreground">{{ skill.purpose }}</p>
@@ -1603,7 +1604,7 @@ function getAvatarStyle(name: string): Record<string, string> {
                       <input v-model="editForm.skillNames" type="checkbox" :value="skill.name" class="mt-0.5 h-4 w-4 accent-primary" />
                       <div class="min-w-0">
                         <div class="flex items-center gap-2">
-                          <p class="text-sm font-medium">{{ skill.name }}</p>
+                          <p class="text-sm font-medium">{{ skill.nameZh || skill.name }}</p>
                           <span class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{{ skill.categoryLabel }}</span>
                         </div>
                         <p class="mt-0.5 text-xs text-muted-foreground">{{ skill.purpose }}</p>
@@ -1754,7 +1755,7 @@ function getAvatarStyle(name: string): Record<string, string> {
                     >
                       <div class="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary/50" />
                       <div class="min-w-0">
-                        <p class="text-sm font-medium">{{ skillName }}</p>
+                        <p class="text-sm font-medium">{{ skills.find(s => s.name === skillName)?.nameZh || skillName }}</p>
                         <p class="mt-0.5 text-xs text-muted-foreground">{{ skills.find(s => s.name === skillName)?.purpose || '' }}</p>
                       </div>
                     </div>

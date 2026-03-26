@@ -1,7 +1,35 @@
 <script setup lang="ts">
 import type { ChatMessageView, ChatResultCardView } from "~~/shared/ui-models";
 import { renderMarkdown, formatTime } from "~/lib/utils";
-import { Send, Copy, ExternalLink, Settings, Sparkles, User, Bot, AlertCircle, MessageCircle, StopCircle } from "lucide-vue-next";
+import { Send, Copy, ExternalLink, Settings, Sparkles, User, Bot, AlertCircle, MessageCircle, StopCircle, Wrench, Brain, ChevronDown, ChevronRight, Terminal } from "lucide-vue-next";
+
+const expandedToolCalls = ref<Set<number>>(new Set());
+const expandedReasoning = ref<Set<number>>(new Set());
+const expandedToolResults = ref<Set<number>>(new Set());
+
+function toggleToolCalls(index: number) {
+  const s = new Set(expandedToolCalls.value);
+  s.has(index) ? s.delete(index) : s.add(index);
+  expandedToolCalls.value = s;
+}
+function toggleReasoning(index: number) {
+  const s = new Set(expandedReasoning.value);
+  s.has(index) ? s.delete(index) : s.add(index);
+  expandedReasoning.value = s;
+}
+function toggleToolResult(index: number) {
+  const s = new Set(expandedToolResults.value);
+  s.has(index) ? s.delete(index) : s.add(index);
+  expandedToolResults.value = s;
+}
+function tryParseJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch { return raw; }
+}
+function truncateStr(s: string, max = 200): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
@@ -35,7 +63,7 @@ watchEffect(() => {
   const historyData = history.value?.data;
   const restoredRunId = historyData?.lastRunId ?? "";
   const restoredResultCards = historyData?.resultCards ?? [];
-  messages.value = (historyData?.messages ?? []).filter(m => m.content?.trim());
+  messages.value = (historyData?.messages ?? []).filter(m => m.content?.trim() || m.toolCalls?.length || m.role === "tool");
   if (!lastRunId.value && restoredRunId) {
     lastRunId.value = restoredRunId;
   }
@@ -87,7 +115,7 @@ async function sendMessage(input = draft.value) {
     });
     resultCards.value = result.data.resultCards;
     lastRunId.value = result.data.runId;
-    messages.value = result.data.messages.filter(m => m.content?.trim());
+    messages.value = result.data.messages.filter(m => m.content?.trim() || m.toolCalls?.length || m.role === "tool");
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
     const e = error as Error & { cause?: Error };
@@ -178,8 +206,60 @@ async function copyToClipboard(text: string) {
                 <span class="text-xs font-semibold text-foreground">{{ employee?.data?.name }}</span>
                 <span class="text-[11px] text-muted-foreground">{{ formatTime(msg.timestamp) }}</span>
               </div>
-              <div class="chat-bubble-assistant rounded-2xl rounded-tl-md border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm overflow-hidden">
+
+              <!-- 推理过程（可折叠） -->
+              <div v-if="msg.reasoning" class="rounded-xl border border-violet-200/50 bg-violet-50/30 dark:border-violet-800/30 dark:bg-violet-950/20">
+                <button
+                  class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-50/50 dark:hover:bg-violet-950/30 transition-colors rounded-xl"
+                  @click="toggleReasoning(i)"
+                >
+                  <Brain class="h-3 w-3" :stroke-width="2" />
+                  <span>思考过程</span>
+                  <component :is="expandedReasoning.has(i) ? ChevronDown : ChevronRight" class="ml-auto h-3 w-3" />
+                </button>
+                <div v-if="expandedReasoning.has(i)" class="px-3 pb-2 text-xs text-violet-700/80 dark:text-violet-300/70 leading-relaxed whitespace-pre-wrap break-words">{{ msg.reasoning }}</div>
+              </div>
+
+              <!-- 工具调用（可折叠） -->
+              <div v-if="msg.toolCalls?.length" class="rounded-xl border border-amber-200/50 bg-amber-50/30 dark:border-amber-800/30 dark:bg-amber-950/20">
+                <button
+                  class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-950/30 transition-colors rounded-xl"
+                  @click="toggleToolCalls(i)"
+                >
+                  <Wrench class="h-3 w-3" :stroke-width="2" />
+                  <span>调用了 {{ msg.toolCalls.length }} 个工具</span>
+                  <component :is="expandedToolCalls.has(i) ? ChevronDown : ChevronRight" class="ml-auto h-3 w-3" />
+                </button>
+                <div v-if="expandedToolCalls.has(i)" class="px-3 pb-2 space-y-1.5">
+                  <div v-for="tc in msg.toolCalls" :key="tc.id" class="rounded-lg bg-amber-100/40 dark:bg-amber-900/20 px-2.5 py-1.5">
+                    <div class="text-[11px] font-mono font-semibold text-amber-800 dark:text-amber-300">{{ tc.name }}</div>
+                    <pre class="mt-0.5 text-[10px] text-amber-700/70 dark:text-amber-400/60 overflow-x-auto whitespace-pre-wrap break-all leading-snug">{{ truncateStr(tryParseJson(tc.arguments), 500) }}</pre>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 正文 -->
+              <div v-if="msg.content?.trim()" class="chat-bubble-assistant rounded-2xl rounded-tl-md border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm overflow-hidden">
                 <div v-html="renderMarkdown(msg.content)" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Tool Result Message -->
+          <div v-else-if="msg.role === 'tool'" class="flex items-start gap-3 animate-fade-in pl-11">
+            <div class="max-w-[80%] min-w-0">
+              <div class="rounded-xl border border-slate-200/50 bg-slate-50/50 dark:border-slate-700/30 dark:bg-slate-900/30">
+                <button
+                  class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors rounded-xl"
+                  @click="toggleToolResult(i)"
+                >
+                  <Terminal class="h-3 w-3" :stroke-width="2" />
+                  <span>{{ msg.toolName || '工具结果' }}</span>
+                  <component :is="expandedToolResults.has(i) ? ChevronDown : ChevronRight" class="ml-auto h-3 w-3" />
+                </button>
+                <div v-if="expandedToolResults.has(i)" class="px-3 pb-2">
+                  <pre class="text-[10px] text-slate-600 dark:text-slate-400 overflow-x-auto whitespace-pre-wrap break-all leading-snug max-h-48 overflow-y-auto">{{ truncateStr(msg.content, 2000) }}</pre>
+                </div>
               </div>
             </div>
           </div>

@@ -15,12 +15,22 @@ export default defineEventHandler(async (event) => {
     });
   }
   const ctx = await getPlatformContext();
-  const updated = await ctx.skillInstallationRepo.setEnabled(name, body.enabled);
+  let updated = await ctx.skillInstallationRepo.setEnabled(name, body.enabled);
   if (!updated) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: `skill installation not found: ${name}`
-    });
+    try {
+      updated = await ctx.skillInstallationRepo.upsert({
+        skillName: name,
+        sourceType: "discovered",
+        sourceUri: "local",
+        installPath: "skills/" + name,
+        enabled: body.enabled
+      });
+    } catch (err) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: `Failed to update skill state: ${err instanceof Error ? err.message : String(err)}`
+      });
+    }
   }
   return { ok: true, data: updated };
 });

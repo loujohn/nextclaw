@@ -44,9 +44,11 @@ function toIsoString(value: unknown, fallback: string): string {
 export class SessionManager {
   private sessionsDir: string;
   private cache: Map<string, Session> = new Map();
+  readonly idleTimeoutMs: number;
 
-  constructor(private workspace: string) {
+  constructor(private workspace: string, options?: { idleTimeoutMs?: number }) {
     this.sessionsDir = getSessionsPath();
+    this.idleTimeoutMs = options?.idleTimeoutMs ?? 4 * 60 * 60 * 1000;
   }
 
   private getSessionPath(key: string): string {
@@ -57,6 +59,9 @@ export class SessionManager {
   getOrCreate(key: string): Session {
     const cached = this.cache.get(key);
     if (cached) {
+      if (this.shouldReset(cached)) {
+        this.archiveAndReset(cached);
+      }
       return cached;
     }
     const loaded = this.load(key);
@@ -69,8 +74,50 @@ export class SessionManager {
       updatedAt: new Date(),
       metadata: {}
     };
+    if (loaded && this.shouldReset(session)) {
+      this.archiveAndReset(session);
+    }
     this.cache.set(key, session);
     return session;
+  }
+
+  private shouldReset(session: Session): boolean {
+    if (session.messages.length === 0) return false;
+    const lastActivity = session.updatedAt.getTime();
+    const now = Date.now();
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    if (lastActivity < dayStart.getTime()) return true;
+    const idleTimeoutMs = this.idleTimeoutMs;
+    if (idleTimeoutMs > 0 && (now - lastActivity) > idleTimeoutMs) return true;
+    return false;
+  }
+
+  private archiveAndReset(session: Session): void {
+    if (session.events.length > 0) {
+      const dateStr = session.updatedAt.toISOString().slice(0, 10);
+      const archivePath = this.getSessionPath(`${session.key}__archive__${dateStr}__${Date.now()}`);
+      try {
+        const metadataLine = {
+          _type: "metadata",
+          created_at: session.createdAt.toISOString(),
+          updated_at: session.updatedAt.toISOString(),
+          metadata: { ...session.metadata, archived: true, originalKey: session.key }
+        };
+        const eventLines = session.events.map((event) =>
+          JSON.stringify({ _type: "event", seq: event.seq, type: event.type, timestamp: event.timestamp, data: event.data })
+        );
+        writeFileSync(archivePath, [JSON.stringify(metadataLine), ...eventLines].join("\n") + "\n");
+      } catch (err) {
+        console.error(`[SessionManager] Failed to archive session "${session.key}":`, err);
+      }
+    }
+    session.messages = [];
+    session.events = [];
+    session.nextSeq = 1;
+    session.createdAt = new Date();
+    session.updatedAt = new Date();
+    this.save(session);
   }
 
   getIfExists(key: string): Session | null {

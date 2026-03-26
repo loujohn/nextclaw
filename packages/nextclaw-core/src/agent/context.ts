@@ -43,9 +43,9 @@ export class ContextBuilder {
   private skills: SkillsLoader;
   private contextConfig: ContextConfig;
 
-  constructor(private workspace: string, contextConfig?: ContextConfig) {
+  constructor(private workspace: string, contextConfig?: ContextConfig, additionalSkillsDirs?: string[]) {
     this.memory = new MemoryStore(workspace);
-    this.skills = new SkillsLoader(workspace);
+    this.skills = new SkillsLoader(workspace, undefined, additionalSkillsDirs);
     this.contextConfig = mergeContextConfig(contextConfig);
   }
 

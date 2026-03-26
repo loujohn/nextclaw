@@ -61,6 +61,7 @@ export class AgentLoop {
       searchConfig?: SearchConfig;
       execConfig?: { timeout: number };
       cronService?: CronService | null;
+      additionalSkillsDirs?: string[];
       restrictToWorkspace?: boolean;
       sessionManager?: SessionManager;
       contextConfig?: Config["agents"]["context"];
@@ -71,7 +72,7 @@ export class AgentLoop {
       agentId?: string;
     }
   ) {
-    this.context = new ContextBuilder(options.workspace, options.contextConfig);
+    this.context = new ContextBuilder(options.workspace, options.contextConfig, options.additionalSkillsDirs);
     this.sessions = options.sessionManager ?? new SessionManager(options.workspace);
     this.tools = new ToolRegistry();
     this.subagents = new SubagentManager({
@@ -555,6 +556,15 @@ export class AgentLoop {
       contextTokens: this.options.contextTokens
     });
     messages.splice(0, messages.length, ...result.messages);
+    if (result.nearBudgetThreshold && !result.compactionSummary) {
+      const MEMORY_FLUSH_HINT = "[System hint: Context window is approaching capacity. " +
+        "Please proactively write important context, decisions, and learnings to " +
+        "memory/YYYY-MM-DD.md or MEMORY.md using write_file before they are lost.]";
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.role === "user" && typeof lastMsg.content === "string" && !lastMsg.content.includes(MEMORY_FLUSH_HINT)) {
+        lastMsg.content += "\n\n" + MEMORY_FLUSH_HINT;
+      }
+    }
   }
 
   private recordSessionMessage(params: {
@@ -638,7 +648,7 @@ export class AgentLoop {
     }
     const cronTool = this.tools.get("cron");
     if (cronTool instanceof CronTool) {
-      cronTool.setContext(msg.channel, msg.chatId);
+      cronTool.setContext(msg.channel, msg.chatId, this.agentId);
     }
     const gatewayTool = this.tools.get("gateway");
     if (gatewayTool instanceof GatewayTool) {
@@ -823,7 +833,7 @@ export class AgentLoop {
     }
     const cronTool = this.tools.get("cron");
     if (cronTool instanceof CronTool) {
-      cronTool.setContext(originChannel, originChatId);
+      cronTool.setContext(originChannel, originChatId, this.agentId);
     }
     const gatewayTool = this.tools.get("gateway");
     if (gatewayTool instanceof GatewayTool) {
