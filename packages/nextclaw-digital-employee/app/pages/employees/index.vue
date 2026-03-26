@@ -185,6 +185,30 @@ const employees = computed(() => employeePayload.value?.data ?? []);
 const skills = computed(() => skillPayload.value?.data.filter((s) => s.enabled || s.statusLabel !== "已停用") ?? []);
 const departments = computed(() => departmentPayload.value?.data ?? []);
 
+const SKILL_CATEGORY_OPTIONS = ["项目管理类", "经营管理类", "产品研发类", "市场营销类", "解决方案类", "通用能力类"];
+
+// 创建弹窗技能筛选
+const skillSearchQuery = ref("");
+const skillCategoryFilter = ref<string | null>(null);
+const filteredSkillsForCreate = computed(() => {
+  let items = skills.value;
+  if (skillCategoryFilter.value) items = items.filter((s) => s.categoryLabel === skillCategoryFilter.value);
+  const kw = skillSearchQuery.value.trim().toLowerCase();
+  if (kw) items = items.filter((s) => s.name.toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw));
+  return items;
+});
+
+// 编辑弹窗技能筛选
+const editSkillSearchQuery = ref("");
+const editSkillCategoryFilter = ref<string | null>(null);
+const filteredSkillsForEdit = computed(() => {
+  let items = skills.value;
+  if (editSkillCategoryFilter.value) items = items.filter((s) => s.categoryLabel === editSkillCategoryFilter.value);
+  const kw = editSkillSearchQuery.value.trim().toLowerCase();
+  if (kw) items = items.filter((s) => s.name.toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw));
+  return items;
+});
+
 // 每个部门的数字员工数量
 const deptEmployeeCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
@@ -1344,8 +1368,31 @@ function getAvatarStyle(name: string): Record<string, string> {
                     <Sparkles class="mt-0.5 h-4 w-4 shrink-0" :stroke-width="1.8" />
                     <p>优先选择已启用且职责明确的技能。</p>
                   </div>
+                  <!-- 筛选栏 -->
+                  <div class="space-y-2">
+                    <label class="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+                      <Search class="h-3.5 w-3.5 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+                      <input v-model="skillSearchQuery" placeholder="按名称搜索技能…" class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+                    </label>
+                    <div class="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        class="rounded-full px-2.5 py-1 text-xs font-medium transition-all"
+                        :class="skillCategoryFilter === null ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted'"
+                        @click="skillCategoryFilter = null"
+                      >全部</button>
+                      <button
+                        v-for="cat in SKILL_CATEGORY_OPTIONS"
+                        :key="cat"
+                        type="button"
+                        class="rounded-full px-2.5 py-1 text-xs font-medium transition-all"
+                        :class="skillCategoryFilter === cat ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted'"
+                        @click="skillCategoryFilter = skillCategoryFilter === cat ? null : cat"
+                      >{{ cat }}</button>
+                    </div>
+                  </div>
                   <label
-                    v-for="skill in skills"
+                    v-for="skill in filteredSkillsForCreate"
                     :key="skill.name"
                     class="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-all hover:bg-muted/30"
                     :class="form.skillNames.includes(skill.name) && 'border-primary/30 bg-primary/5'"
@@ -1524,8 +1571,31 @@ function getAvatarStyle(name: string): Record<string, string> {
                       <Sparkles class="mt-0.5 h-4 w-4 shrink-0" :stroke-width="1.8" />
                       <p>优先选择已启用且职责明确的技能。</p>
                     </div>
+                    <!-- 筛选栏 -->
+                    <div class="space-y-2">
+                      <label class="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+                        <Search class="h-3.5 w-3.5 shrink-0 text-muted-foreground" :stroke-width="1.8" />
+                        <input v-model="editSkillSearchQuery" placeholder="按名称搜索技能…" class="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+                      </label>
+                      <div class="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          class="rounded-full px-2.5 py-1 text-xs font-medium transition-all"
+                          :class="editSkillCategoryFilter === null ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted'"
+                          @click="editSkillCategoryFilter = null"
+                        >全部</button>
+                        <button
+                          v-for="cat in SKILL_CATEGORY_OPTIONS"
+                          :key="cat"
+                          type="button"
+                          class="rounded-full px-2.5 py-1 text-xs font-medium transition-all"
+                          :class="editSkillCategoryFilter === cat ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted'"
+                          @click="editSkillCategoryFilter = editSkillCategoryFilter === cat ? null : cat"
+                        >{{ cat }}</button>
+                      </div>
+                    </div>
                     <label
-                      v-for="skill in skills"
+                      v-for="skill in filteredSkillsForEdit"
                       :key="`edit-${skill.name}`"
                       class="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-all hover:bg-muted/30"
                       :class="editForm.skillNames.includes(skill.name) && 'border-primary/30 bg-primary/5'"

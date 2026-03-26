@@ -4,7 +4,7 @@ import { ClipboardList, TrendingUp, FlaskConical, Megaphone, Lightbulb, Zap, Che
 const SKILL_CATEGORIES = [
   {
     slug: "project-management",
-    label: "项目管理",
+    label: "项目管理类",
     icon: ClipboardList,
     desc: "项目计划、进度跟踪与协作管理",
     gradient: "from-blue-500 to-indigo-500",
@@ -13,7 +13,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "business-management",
-    label: "经营管理",
+    label: "经营管理类",
     icon: TrendingUp,
     desc: "经营分析、数据洞察与决策支持",
     gradient: "from-violet-500 to-purple-600",
@@ -22,7 +22,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "product-rd",
-    label: "产品研发",
+    label: "产品研发类",
     icon: FlaskConical,
     desc: "产品设计、技术研发与质量保障",
     gradient: "from-emerald-500 to-teal-500",
@@ -31,7 +31,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "marketing",
-    label: "市场营销",
+    label: "市场营销类",
     icon: Megaphone,
     desc: "品牌推广、内容营销与用户增长",
     gradient: "from-orange-500 to-rose-500",
@@ -40,7 +40,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "solutions",
-    label: "解决方案",
+    label: "解决方案类",
     icon: Lightbulb,
     desc: "行业方案、场景化能力与定制集成",
     gradient: "from-amber-500 to-yellow-500",
@@ -49,7 +49,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "general",
-    label: "通用能力",
+    label: "通用能力类",
     icon: Zap,
     desc: "跨场景通用能力，可被任意员工调用",
     gradient: "from-primary to-emerald-500",

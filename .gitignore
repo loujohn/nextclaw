@@ -29,3 +29,5 @@ packages/nextclaw/*.tgz
 apps/docs/.vitepress/.temp/
 .worktrees/
 .superpowers/
+
+.github/

@@ -21,7 +21,7 @@ import {
 const SKILL_CATEGORIES = [
   {
     slug: "project-management",
-    label: "项目管理",
+    label: "项目管理类",
     icon: ClipboardList,
     desc: "项目计划、进度跟踪与协作管理",
     bgLight: "bg-blue-50 dark:bg-blue-950/30",
@@ -29,7 +29,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "business-management",
-    label: "经营管理",
+    label: "经营管理类",
     icon: TrendingUp,
     desc: "经营分析、数据洞察与决策支持",
     bgLight: "bg-violet-50 dark:bg-violet-950/30",
@@ -37,7 +37,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "product-rd",
-    label: "产品研发",
+    label: "产品研发类",
     icon: FlaskConical,
     desc: "产品设计、技术研发与质量保障",
     bgLight: "bg-emerald-50 dark:bg-emerald-950/30",
@@ -45,7 +45,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "marketing",
-    label: "市场营销",
+    label: "市场营销类",
     icon: Megaphone,
     desc: "品牌推广、内容营销与用户增长",
     bgLight: "bg-orange-50 dark:bg-orange-950/30",
@@ -53,7 +53,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "solutions",
-    label: "解决方案",
+    label: "解决方案类",
     icon: Lightbulb,
     desc: "行业方案、场景化能力与定制集成",
     bgLight: "bg-amber-50 dark:bg-amber-950/30",
@@ -61,7 +61,7 @@ const SKILL_CATEGORIES = [
   },
   {
     slug: "general",
-    label: "通用能力",
+    label: "通用能力类",
     icon: Zap,
     desc: "跨场景通用能力，可被任意员工调用",
     bgLight: "bg-primary/5",
@@ -71,6 +71,7 @@ const SKILL_CATEGORIES = [
 
 type SkillItem = {
   name: string;
+  nameZh?: string;
   source: string;
   sourceType: string;
   sourceUri: string | null;
@@ -116,7 +117,7 @@ const filteredSkills = computed(() => {
   const kw = query.value.trim().toLowerCase();
   if (kw) {
     items = items.filter((s) =>
-      [s.name, s.purpose].some((v) => v.toLowerCase().includes(kw))
+      [s.name, s.nameZh, s.purpose].some((v) => v?.toLowerCase().includes(kw))
     );
   }
   return items;
@@ -283,9 +284,15 @@ async function toggleSkill(name: string, enabled: boolean) {
 
         <!-- Name + Source -->
         <div class="mb-1 flex min-w-0 items-center gap-2">
-          <h3 class="min-w-0 truncate text-sm font-semibold">{{ skill.name }}</h3>
+          <h3 class="min-w-0 truncate text-sm font-semibold">{{ skill.nameZh || skill.name }}</h3>
           <span
-            v-if="skill.source !== 'builtin'"
+            v-if="skill.nameZh"
+            class="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+          >
+            {{ skill.name }}
+          </span>
+          <span
+            v-else-if="skill.source !== 'builtin'"
             class="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"
           >
             {{ skill.sourceType }}

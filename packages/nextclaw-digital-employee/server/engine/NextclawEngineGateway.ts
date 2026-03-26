@@ -31,9 +31,11 @@ export type NextclawEngineGatewayOptions = {
 
 export type AvailableSkillView = {
   name: string;
+  nameZh?: string;
   path: string;
   source: SkillInfo["source"];
   description?: string;
+  category?: string;
 };
 
 export type ImportedSkillView = {
@@ -317,11 +319,24 @@ export class NextclawEngineGateway {
       const description = typeof metadata?.description === "string" && metadata.description.trim()
         ? metadata.description.trim()
         : undefined;
+      const nameZh =
+        (typeof metadata?.name_zh === "string" && metadata.name_zh.trim()
+          ? metadata.name_zh.trim()
+          : undefined) ??
+        (typeof metadata?.nameZh === "string" && metadata.nameZh.trim()
+          ? metadata.nameZh.trim()
+          : undefined);
+      const category =
+        typeof metadata?.category === "string" && metadata.category.trim()
+          ? metadata.category.trim()
+          : undefined;
       return {
         name: skill.name,
         path: skill.path,
         source: skill.source,
-        ...(description ? { description } : {})
+        ...(description ? { description } : {}),
+        ...(nameZh ? { nameZh } : {}),
+        ...(category ? { category } : {})
       };
     });
   }
