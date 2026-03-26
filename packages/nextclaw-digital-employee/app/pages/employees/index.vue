@@ -14,7 +14,7 @@ type EmployeeResponse = {
   departmentId: string | null;
   skills: Array<{ skillName: string }>;
   schedule?: { scheduleKind: string; nextRunAt?: string | null } | null;
-  latestRun?: { status: string; summary: string } | null;
+  latestRun?: { status: string; summary: string; finishedAt: string | null } | null;
   jobsCount: number;
   enabledJobsCount: number;
   health: {
@@ -724,12 +724,13 @@ function getCharacterStyle(name: string): CharacterStyle {
   // 计算并缓存
   const h = _nameHash(name);
   const hairStyleIndex = (h * 7) % 5;  // 5种发型
+  const hairStyles = ['short', 'medium', 'long', 'ponytail', 'curly'] as const;
   const style: CharacterStyle = {
     skinColor: SKIN_COLORS[h % SKIN_COLORS.length]!,
     hairColor: HAIR_COLORS[(h >> 3) % HAIR_COLORS.length]!,
     shirtColor: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.main,
     shirtColorLight: SHIRT_COLORS[(h >> 6) % SHIRT_COLORS.length]!.light,
-    hairStyle: (['short', 'medium', 'long', 'ponytail', 'curly'] as const)[hairStyleIndex],
+    hairStyle: hairStyles[hairStyleIndex]!,
   };
 
   // 限制缓存大小，删除最旧的条目
@@ -786,6 +787,301 @@ type HalfBodyChar = {
   bgDecorKind: number;  // 0-3: 决定背景装饰图案
 };
 
+// ======== 真人风格证件照头像 SVG 生成系统 ========
+// 性别类型（用于决定发型和面部特征）
+type GenderType = 'male' | 'female';
+// 发型类型
+type PortraitHairStyle = 'short' | 'side_part' | 'swept_back' | 'center_part' | 'bald' | 'ponytail' | 'wavy' | 'bob';
+// 眼镜类型
+type GlassesType = 'none' | 'rectangle' | 'round' | 'aviator';
+// 表情类型
+type ExpressionType = 'neutral' | 'smile' | 'confident';
+
+type PortraitChar = {
+  skinColor: string;
+  skinShadow: string;
+  skinHighlight: string;
+  hairColor: string;
+  shirtColor: string;
+  shirtGradient: string;
+  bgColor: string;
+  bgGradient: string;
+  gender: GenderType;
+  hairStyle: PortraitHairStyle;
+  glasses: GlassesType;
+  expression: ExpressionType;
+  hasTie: boolean;
+  tieColor: string;
+};
+
+// 中国人肤色选项（更自然的亚洲肤色）
+const SKIN_TONES = [
+  { main: "#fde8d7", shadow: "#f5d4c0", highlight: "#fff5ed" },  // 白皙
+  { main: "#fcd9b6", shadow: "#f0c8a0", highlight: "#fff0e5" },  // 较白
+  { main: "#f5c9a6", shadow: "#e8b590", highlight: "#ffecd8" },  // 中等偏白
+  { main: "#e8b896", shadow: "#d9a580", highlight: "#f8e0c8" },  // 中等
+  { main: "#d4a574", shadow: "#c49260", highlight: "#f0d4b0" },  // 健康色
+  { main: "#c99a5c", shadow: "#b88748", highlight: "#e8c898" },  // 小麦色
+];
+
+// 自然发色（以黑棕为主，符合中国人特点）
+const HAIR_TONES = [
+  "#0d0d0d",  // 纯黑
+  "#1a1a1a",  // 深黑
+  "#1f1a15",  // 自然黑
+  "#2a2018",  // 深棕黑
+  "#3d2b1f",  // 棕黑
+  "#4a3728",  // 深棕
+];
+
+// 职场衬衫颜色（专业但温和）
+const SHIRT_TONES = [
+  { main: "#f8fafc", gradient: "#e2e8f0", name: "白" },
+  { main: "#eff6ff", gradient: "#dbeafe", name: "浅蓝" },
+  { main: "#ecfdf5", gradient: "#d1fae5", name: "浅绿" },
+  { main: "#fef3c7", gradient: "#fde68a", name: "浅黄" },
+  { main: "#fce7f3", gradient: "#fbcfe8", name: "浅粉" },
+  { main: "#1e3a5f", gradient: "#2d4a6f", name: "深蓝" },
+  { main: "#1f2937", gradient: "#374151", name: "深灰" },
+  { main: "#0f4c3a", gradient: "#1a5c48", name: "墨绿" },
+];
+
+// 背景色（温暖柔和）
+const BG_TONES = [
+  { main: "#f8fafc", gradient: "#f1f5f9" },
+  { main: "#fffbeb", gradient: "#fef3c7" },
+  { main: "#f0fdf4", gradient: "#dcfce7" },
+  { main: "#fef2f2", gradient: "#fee2e2" },
+  { main: "#eff6ff", gradient: "#dbeafe" },
+  { main: "#fdf4ff", gradient: "#f5d0fe" },
+];
+
+// 领带颜色
+const TIE_COLORS = ["#1e40af", "#7c3aed", "#059669", "#dc2626", "#0f766e", "#4338ca"];
+
+function _getPortraitChar(name: string): PortraitChar {
+  const h = _nameHash(name);
+  const hairStyles: PortraitHairStyle[] = ['short', 'side_part', 'swept_back', 'center_part', 'bald', 'ponytail', 'wavy', 'bob'];
+  const glassesTypes: GlassesType[] = ['none', 'none', 'rectangle', 'none', 'round', 'none', 'aviator', 'none'];
+  const expressions: ExpressionType[] = ['neutral', 'smile', 'confident'];
+
+  const skinTone = SKIN_TONES[h % SKIN_TONES.length]!;
+  const hairTone = HAIR_TONES[(h >> 3) % HAIR_TONES.length]!;
+  const shirtTone = SHIRT_TONES[(h >> 6) % SHIRT_TONES.length]!;
+  const bgTone = BG_TONES[(h >> 9) % BG_TONES.length]!;
+  const gender: GenderType = ((h >> 5) & 1) === 0 ? 'male' : 'female';
+
+  return {
+    skinColor: skinTone.main,
+    skinShadow: skinTone.shadow,
+    skinHighlight: skinTone.highlight,
+    hairColor: hairTone,
+    shirtColor: shirtTone.main,
+    shirtGradient: shirtTone.gradient,
+    bgColor: bgTone.main,
+    bgGradient: bgTone.gradient,
+    gender,
+    hairStyle: hairStyles[((h * 13) >>> 2) % hairStyles.length]!,
+    glasses: glassesTypes[((h * 17) >>> 4) % glassesTypes.length]!,
+    expression: expressions[((h * 23) >>> 6) % expressions.length]!,
+    hasTie: ((h >> 8) & 1) === 1 && shirtTone.name !== "白" && shirtTone.name !== "浅蓝" && shirtTone.name !== "浅绿" && shirtTone.name !== "浅黄" && shirtTone.name !== "浅粉",
+    tieColor: TIE_COLORS[h % TIE_COLORS.length]!,
+  };
+}
+
+/** 生成真人风格证件照 SVG */
+function generatePortraitSVG(name: string): string {
+  const c = _getPortraitChar(name);
+  const W = 120, H = 160;
+  const cx = W / 2;
+
+  // 头部位置计算
+  const headCenterY = 52;
+  const headWidth = 38;
+  const headHeight = 48;
+  const faceY = headCenterY - headHeight / 2 + 8;
+
+  // ---- 发型 SVG ----
+  const hairStyles: Record<PortraitHairStyle, string> = {
+    short: `
+      <ellipse cx="${cx}" cy="${faceY - 2}" rx="${headWidth / 2 + 4}" ry="18" fill="${c.hairColor}"/>
+      <ellipse cx="${cx}" cy="${faceY + 8}" rx="${headWidth / 2 + 2}" ry="10" fill="${c.hairColor}"/>
+    `,
+    side_part: `
+      <ellipse cx="${cx - 2}" cy="${faceY - 3}" rx="${headWidth / 2 + 5}" ry="20" fill="${c.hairColor}"/>
+      <path d="M ${cx - 20} ${faceY - 15} Q ${cx - 25} ${faceY - 5} ${cx - 22} ${faceY + 5}" fill="${c.hairColor}"/>
+    `,
+    swept_back: `
+      <ellipse cx="${cx}" cy="${faceY - 5}" rx="${headWidth / 2 + 3}" ry="16" fill="${c.hairColor}"/>
+      <path d="M ${cx - 18} ${faceY - 18} Q ${cx} ${faceY - 25} ${cx + 18} ${faceY - 18}" fill="${c.hairColor}"/>
+    `,
+    center_part: `
+      <path d="M ${cx - 20} ${faceY - 15} Q ${cx - 22} ${faceY} ${cx - 18} ${faceY + 12} L ${cx - 18} ${faceY - 5} Z" fill="${c.hairColor}"/>
+      <path d="M ${cx + 20} ${faceY - 15} Q ${cx + 22} ${faceY} ${cx + 18} ${faceY + 12} L ${cx + 18} ${faceY - 5} Z" fill="${c.hairColor}"/>
+      <ellipse cx="${cx}" cy="${faceY - 3}" rx="${headWidth / 2 + 3}" ry="14" fill="${c.hairColor}"/>
+    `,
+    bald: '',
+    ponytail: `
+      <ellipse cx="${cx}" cy="${faceY - 2}" rx="${headWidth / 2 + 2}" ry="15" fill="${c.hairColor}"/>
+      <ellipse cx="${cx}" cy="${faceY + 5}" rx="${headWidth / 2}" ry="8" fill="${c.hairColor}"/>
+      <ellipse cx="${cx + 2}" cy="${faceY - 22}" rx="8" ry="6" fill="${c.hairColor}"/>
+    `,
+    wavy: `
+      <ellipse cx="${cx}" cy="${faceY - 3}" rx="${headWidth / 2 + 6}" ry="18" fill="${c.hairColor}"/>
+      <ellipse cx="${cx - 16}" cy="${faceY + 5}" rx="8" ry="12" fill="${c.hairColor}"/>
+      <ellipse cx="${cx + 16}" cy="${faceY + 5}" rx="8" ry="12" fill="${c.hairColor}"/>
+    `,
+    bob: `
+      <ellipse cx="${cx}" cy="${faceY}" rx="${headWidth / 2 + 5}" ry="22" fill="${c.hairColor}"/>
+      <rect x="${cx - 22}" y="${faceY - 8}" width="44" height="30" rx="8" fill="${c.hairColor}"/>
+    `,
+  };
+
+  // ---- 眼镜 SVG ----
+  const glassesStyles: Record<GlassesType, string> = {
+    none: '',
+    rectangle: `
+      <rect x="${cx - 16}" y="${faceY + 18}" width="14" height="10" rx="2" fill="none" stroke="#374151" stroke-width="1.5"/>
+      <rect x="${cx + 2}" y="${faceY + 18}" width="14" height="10" rx="2" fill="none" stroke="#374151" stroke-width="1.5"/>
+      <line x1="${cx - 2}" y1="${faceY + 23}" x2="${cx + 2}" y2="${faceY + 23}" stroke="#374151" stroke-width="1.5"/>
+      <line x1="${cx - 16}" y1="${faceY + 23}" x2="${cx - 22}" y2="${faceY + 20}" stroke="#374151" stroke-width="1.5"/>
+      <line x1="${cx + 16}" y1="${faceY + 23}" x2="${cx + 22}" y2="${faceY + 20}" stroke="#374151" stroke-width="1.5"/>
+    `,
+    round: `
+      <circle cx="${cx - 9}" cy="${faceY + 22}" r="7" fill="none" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="${cx + 9}" cy="${faceY + 22}" r="7" fill="none" stroke="#374151" stroke-width="1.5"/>
+      <line x1="${cx - 2}" y1="${faceY + 22}" x2="${cx + 2}" y2="${faceY + 22}" stroke="#374151" stroke-width="1.5"/>
+    `,
+    aviator: `
+      <path d="M ${cx - 18} ${faceY + 20} Q ${cx - 10} ${faceY + 15} ${cx - 2} ${faceY + 22}" fill="none" stroke="#374151" stroke-width="1.5"/>
+      <path d="M ${cx + 18} ${faceY + 20} Q ${cx + 10} ${faceY + 15} ${cx + 2} ${faceY + 22}" fill="none" stroke="#374151" stroke-width="1.5"/>
+      <line x1="${cx - 2}" y1="${faceY + 22}" x2="${cx + 2}" y2="${faceY + 22}" stroke="#374151" stroke-width="1.5"/>
+    `,
+  };
+
+  // ---- 表情（眉毛和嘴巴）----
+  const eyeY = faceY + 18;
+  const expressions: Record<ExpressionType, { brows: string; mouth: string }> = {
+    neutral: {
+      brows: `
+        <path d="M ${cx - 12} ${eyeY - 5} Q ${cx - 8} ${eyeY - 7} ${cx - 4} ${eyeY - 5}" fill="none" stroke="${c.hairColor}" stroke-width="1.2" stroke-linecap="round"/>
+        <path d="M ${cx + 4} ${eyeY - 5} Q ${cx + 8} ${eyeY - 7} ${cx + 12} ${eyeY - 5}" fill="none" stroke="${c.hairColor}" stroke-width="1.2" stroke-linecap="round"/>
+      `,
+      mouth: `<line x1="${cx - 6}" y1="${faceY + 35}" x2="${cx + 6}" y2="${faceY + 35}" stroke="#b08968" stroke-width="1.5" stroke-linecap="round"/>`,
+    },
+    smile: {
+      brows: `
+        <path d="M ${cx - 12} ${eyeY - 4} Q ${cx - 8} ${eyeY - 6} ${cx - 4} ${eyeY - 5}" fill="none" stroke="${c.hairColor}" stroke-width="1.2" stroke-linecap="round"/>
+        <path d="M ${cx + 4} ${eyeY - 5} Q ${cx + 8} ${eyeY - 6} ${cx + 12} ${eyeY - 4}" fill="none" stroke="${c.hairColor}" stroke-width="1.2" stroke-linecap="round"/>
+      `,
+      mouth: `<path d="M ${cx - 8} ${faceY + 33} Q ${cx} ${faceY + 40} ${cx + 8} ${faceY + 33}" fill="none" stroke="#c97b6a" stroke-width="1.8" stroke-linecap="round"/>`,
+    },
+    confident: {
+      brows: `
+        <path d="M ${cx - 12} ${eyeY - 3} Q ${cx - 8} ${eyeY - 8} ${cx - 4} ${eyeY - 6}" fill="none" stroke="${c.hairColor}" stroke-width="1.3" stroke-linecap="round"/>
+        <path d="M ${cx + 4} ${eyeY - 6} Q ${cx + 8} ${eyeY - 8} ${cx + 12} ${eyeY - 3}" fill="none" stroke="${c.hairColor}" stroke-width="1.3" stroke-linecap="round"/>
+      `,
+      mouth: `<path d="M ${cx - 6} ${faceY + 34} Q ${cx} ${faceY + 38} ${cx + 6} ${faceY + 34}" fill="none" stroke="#b08968" stroke-width="1.6" stroke-linecap="round"/>`,
+    },
+  };
+
+  // 耳朵
+  const ears = `
+    <ellipse cx="${cx - headWidth / 2 - 3}" cy="${eyeY + 2}" rx="4" ry="7" fill="${c.skinColor}"/>
+    <ellipse cx="${cx + headWidth / 2 + 3}" cy="${eyeY + 2}" rx="4" ry="7" fill="${c.skinColor}"/>
+  `;
+
+  // 脖子
+  const neck = `
+    <rect x="${cx - 12}" y="${headCenterY + headHeight / 2 - 8}" width="24" height="20" fill="${c.skinColor}"/>
+    <rect x="${cx - 10}" y="${headCenterY + headHeight / 2 - 5}" width="20" height="15" fill="${c.skinShadow}" opacity="0.3"/>
+  `;
+
+  // 衣服（肩部）
+  const shoulderY = headCenterY + headHeight / 2 + 8;
+  const clothes = c.hasTie ? `
+    <!-- 衬衫 -->
+    <path d="M ${cx - 35} ${H} Q ${cx - 40} ${shoulderY + 30} ${cx - 22} ${shoulderY} L ${cx - 12} ${shoulderY - 5} L ${cx} ${shoulderY + 5} L ${cx + 12} ${shoulderY - 5} L ${cx + 22} ${shoulderY} Q ${cx + 40} ${shoulderY + 30} ${cx + 35} ${H} Z" fill="${c.shirtColor}"/>
+    <!-- 衣领 -->
+    <path d="M ${cx - 12} ${shoulderY - 5} L ${cx - 5} ${shoulderY + 15} L ${cx} ${shoulderY + 5} L ${cx + 5} ${shoulderY + 15} L ${cx + 12} ${shoulderY - 5}" fill="white" stroke="${c.shirtGradient}" stroke-width="0.5"/>
+    <!-- 领带 -->
+    <polygon points="${cx},${shoulderY + 8} ${cx - 4},${shoulderY + 18} ${cx},${shoulderY + 45} ${cx + 4},${shoulderY + 18}" fill="${c.tieColor}"/>
+    <rect x="${cx - 5}" y="${shoulderY + 5}" width="10" height="8" rx="1" fill="${c.tieColor}"/>
+  ` : `
+    <!-- 无领带衬衫 -->
+    <path d="M ${cx - 35} ${H} Q ${cx - 40} ${shoulderY + 30} ${cx - 22} ${shoulderY} L ${cx - 10} ${shoulderY - 5} L ${cx} ${shoulderY + 8} L ${cx + 10} ${shoulderY - 5} L ${cx + 22} ${shoulderY} Q ${cx + 40} ${shoulderY + 30} ${cx + 35} ${H} Z" fill="${c.shirtColor}"/>
+    <!-- 圆领 -->
+    <path d="M ${cx - 10} ${shoulderY - 3} Q ${cx} ${shoulderY + 12} ${cx + 10} ${shoulderY - 3}" fill="none" stroke="${c.shirtGradient}" stroke-width="2"/>
+  `;
+
+  // 阴影（颈部下方）
+  const shadow = `
+    <ellipse cx="${cx}" cy="${shoulderY + 5}" rx="18" ry="4" fill="${c.skinShadow}" opacity="0.15"/>
+  `;
+
+  // 组合 SVG
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <defs>
+      <linearGradient id="bg_${encodeURIComponent(name)}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="${c.bgColor}"/>
+        <stop offset="100%" stop-color="${c.bgGradient}"/>
+      </linearGradient>
+      <linearGradient id="skin_${encodeURIComponent(name)}" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="${c.skinHighlight}"/>
+        <stop offset="100%" stop-color="${c.skinShadow}"/>
+      </linearGradient>
+    </defs>
+    <!-- 背景 -->
+    <rect width="${W}" height="${H}" fill="url(#bg_${encodeURIComponent(name)})"/>
+    <!-- 衣服（底层） -->
+    ${clothes}
+    <!-- 脖子 -->
+    ${neck}
+    <!-- 阴影 -->
+    ${shadow}
+    <!-- 耳朵 -->
+    ${ears}
+    <!-- 头部（椭圆形脸） -->
+    <ellipse cx="${cx}" cy="${headCenterY}" rx="${headWidth / 2}" ry="${headHeight / 2}" fill="${c.skinColor}"/>
+    <!-- 脸部高光 -->
+    <ellipse cx="${cx}" cy="${headCenterY - 5}" rx="${headWidth / 2 - 4}" ry="${headHeight / 2 - 6}" fill="${c.skinHighlight}" opacity="0.15"/>
+    <!-- 发型 -->
+    ${hairStyles[c.hairStyle]}
+    <!-- 眼睛 -->
+    <ellipse cx="${cx - 8}" cy="${eyeY}" rx="3" ry="3.5" fill="#1a1a1a"/>
+    <ellipse cx="${cx + 8}" cy="${eyeY}" rx="3" ry="3.5" fill="#1a1a1a"/>
+    <!-- 眼白高光 -->
+    <circle cx="${cx - 7}" cy="${eyeY - 1}" r="1" fill="white"/>
+    <circle cx="${cx + 9}" cy="${eyeY - 1}" r="1" fill="white"/>
+    <!-- 眉毛 -->
+    ${expressions[c.expression].brows}
+    <!-- 鼻子（简化的） -->
+    <line x1="${cx}" y1="${eyeY + 4}" x2="${cx}" y2="${faceY + 26}" stroke="${c.skinShadow}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+    <!-- 嘴巴 -->
+    ${expressions[c.expression].mouth}
+    <!-- 眼镜 -->
+    ${glassesStyles[c.glasses]}
+  </svg>`;
+
+  return svg;
+}
+
+// 证件照 SVG 缓存
+const _portraitSVGCache = new Map<string, string>();
+function getPortraitSVGDataURL(name: string): string {
+  const cached = _portraitSVGCache.get(name);
+  if (cached) return cached;
+  const svg = generatePortraitSVG(name);
+  const dataURL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  if (_portraitSVGCache.size >= 500) {
+    const firstKey = _portraitSVGCache.keys().next().value;
+    if (firstKey) _portraitSVGCache.delete(firstKey);
+  }
+  _portraitSVGCache.set(name, dataURL);
+  return dataURL;
+}
+
+// 保留旧的半身立像函数（用于其他地方可能的使用）
 function _getHalfBodyChar(name: string): HalfBodyChar {
   const h = _nameHash(name);
   const hairStyles: HalfBodyHairStyle[] = ['short', 'medium', 'long', 'ponytail', 'curly', 'bun'];
@@ -1353,116 +1649,120 @@ function getHalfBodySVGDataURL(name: string): string {
 
     <!-- Employee Grid -->
     <div class="employee-grid">
-      <!-- Profile Card -->
+      <!-- Profile Card - 真人风格团队成员卡片 -->
       <div
         v-for="emp in filteredEmployees"
         :key="emp.id"
         class="employee-card"
       >
-        <!-- ① 半身立像场景 -->
-        <div class="employee-card__scene">
-          <!-- 半身立像 SVG -->
-          <img
-            class="employee-card__halfbody"
-            :src="getHalfBodySVGDataURL(emp.name)"
-            :alt="emp.name"
-            draggable="false"
-          />
-
-          <!-- 健康状态徽章 -->
-          <span class="employee-card__status">
-            <span
-              class="employee-card__status-dot"
-              :class="resolveHealth(emp).lastStatus === 'failed' ? 'employee-card__status-dot--error' : resolveHealth(emp).lastStatus === 'healthy' ? 'employee-card__status-dot--success' : 'employee-card__status-dot--warning'"
-            />
+        <!-- 顶部状态条 -->
+        <div class="employee-card__status-bar" :class="{
+          'employee-card__status-bar--healthy': resolveHealth(emp).lastStatus === 'healthy',
+          'employee-card__status-bar--warning': resolveHealth(emp).lastStatus !== 'healthy' && resolveHealth(emp).lastStatus !== 'failed',
+          'employee-card__status-bar--error': resolveHealth(emp).lastStatus === 'failed'
+        }">
+          <span class="employee-card__status-indicator">
+            <span class="employee-card__status-dot"></span>
             {{ resolveHealth(emp).label }}
           </span>
-        </div>
-
-        <!-- ② 头像（从 banner 露出） + 模型标签 -->
-        <div class="employee-card__header">
-          <!-- 头像：渐变色圆形 + 首字 -->
-          <div
-            class="employee-card__avatar"
-            :style="getAvatarStyle(emp.name)"
-          >
-            <span class="employee-card__avatar-text">{{ emp.name.charAt(0) }}</span>
-            <!-- 在线指示器 -->
-            <span
-              v-if="resolveHealth(emp).lastStatus === 'healthy'"
-              class="employee-card__avatar-badge"
-            />
-          </div>
-          <!-- 模型小标签 -->
-          <span v-if="emp.model" class="employee-card__model">
+          <span v-if="emp.model" class="employee-card__model-badge">
             {{ emp.model.includes("/") ? emp.model.split("/")[1] : emp.model }}
           </span>
         </div>
 
-        <!-- ③ 卡片主体 -->
-        <div class="employee-card__body">
-          <!-- 名称 + 编码 -->
-          <h3 class="employee-card__name">
-            {{ emp.name }}
-          </h3>
-          <p class="employee-card__code">{{ emp.code }}</p>
+        <!-- 头像区域 -->
+        <div class="employee-card__portrait-wrapper">
+          <img
+            class="employee-card__portrait"
+            :src="getPortraitSVGDataURL(emp.name)"
+            :alt="emp.name"
+            draggable="false"
+          />
+          <!-- 在线状态指示器 -->
+          <span
+            v-if="resolveHealth(emp).lastStatus === 'healthy'"
+            class="employee-card__online-badge"
+          >
+            <span class="employee-card__online-dot"></span>
+            在线
+          </span>
+        </div>
 
-          <!-- 职责描述 -->
+        <!-- 信息区域 -->
+        <div class="employee-card__info">
+          <div class="employee-card__header">
+            <h3 class="employee-card__name">{{ emp.name }}</h3>
+            <span class="employee-card__code">{{ emp.code }}</span>
+          </div>
+
           <p class="employee-card__desc">
-            {{ emp.description || "暂无职责说明" }}
+            {{ emp.description || "这位团队成员正在等待分配任务" }}
           </p>
 
-          <!-- 技能 pills -->
+          <!-- 技能标签 -->
           <div class="employee-card__skills">
             <span
               v-for="skill in emp.skills.slice(0, 3)"
               :key="skill.skillName"
               class="employee-card__skill"
             >
-              <Zap class="h-2.5 w-2.5" :stroke-width="2" />
               {{ skill.skillName }}
             </span>
             <span v-if="emp.skills.length > 3" class="employee-card__skill-more">
               +{{ emp.skills.length - 3 }}
             </span>
             <span v-if="emp.skills.length === 0" class="employee-card__skill-empty">
-              <Wrench class="h-2.5 w-2.5" :stroke-width="1.8" />
               待分配技能
             </span>
           </div>
 
+          <!-- 工作信息 -->
+          <div class="employee-card__work-info">
+            <div class="employee-card__stat">
+              <span class="employee-card__stat-value">{{ emp.enabledJobsCount }}</span>
+              <span class="employee-card__stat-label">活跃任务</span>
+            </div>
+            <div class="employee-card__stat-divider"></div>
+            <div class="employee-card__stat">
+              <span class="employee-card__stat-value">{{ emp.skills.length }}</span>
+              <span class="employee-card__stat-label">技能</span>
+            </div>
+          </div>
+
           <!-- 操作栏 -->
           <div class="employee-card__actions">
-            <div class="employee-card__actions-left">
-              <button
-                class="employee-card__action-btn"
-                title="查看"
-                @click.stop="openViewer(emp)"
-              >
-                <Eye class="h-3.5 w-3.5" :stroke-width="1.8" />
-              </button>
-              <button
-                class="employee-card__action-btn"
-                title="编辑"
-                @click.stop="openEditor(emp)"
-              >
-                <Pencil class="h-3.5 w-3.5" :stroke-width="1.8" />
-              </button>
-              <button
-                class="employee-card__action-btn employee-card__action-btn--danger"
-                title="删除"
-                @click.stop="openDeleteConfirm(emp)"
-              >
-                <Trash2 class="h-3.5 w-3.5" :stroke-width="1.8" />
-              </button>
-            </div>
             <NuxtLink
               :to="`/employees/${emp.id}`"
-              class="employee-card__enter-btn"
+              class="employee-card__primary-btn"
             >
-              进入工作台
-              <ExternalLink class="h-3 w-3" :stroke-width="2" />
+              <span>查看工作台</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
             </NuxtLink>
+            <div class="employee-card__secondary-actions">
+              <button
+                class="employee-card__icon-btn"
+                title="查看详情"
+                @click.stop="openViewer(emp)"
+              >
+                <Eye class="h-4 w-4" :stroke-width="1.8" />
+              </button>
+              <button
+                class="employee-card__icon-btn"
+                title="编辑设置"
+                @click.stop="openEditor(emp)"
+              >
+                <Pencil class="h-4 w-4" :stroke-width="1.8" />
+              </button>
+              <button
+                class="employee-card__icon-btn employee-card__icon-btn--danger"
+                title="移除成员"
+                @click.stop="openDeleteConfirm(emp)"
+              >
+                <Trash2 class="h-4 w-4" :stroke-width="1.8" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2241,266 +2541,313 @@ function getHalfBodySVGDataURL(name: string): string {
 .employee-grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
 
-/* ===== Employee Card ===== */
+/* ===== Employee Card - 真人风格团队成员卡片 ===== */
 .employee-card {
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
-  border: 1px solid hsl(var(--border) / 0.6);
+  border-radius: 16px;
+  border: 1px solid hsl(var(--border) / 0.5);
   background: hsl(var(--card));
   overflow: hidden;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.03);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.04);
 }
+
 .employee-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 16px 40px -8px hsl(var(--foreground) / 0.12);
-  border-color: hsl(var(--primary) / 0.3);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px -8px hsl(var(--foreground) / 0.12);
+  border-color: hsl(var(--primary) / 0.25);
 }
 
-.employee-card__scene {
-  position: relative;
-  height: 120px;
-  overflow: hidden;
-  background: hsl(210 30% 95%);
-}
-
-.employee-card__halfbody {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: left center;
-  display: block;
-  user-select: none;
-  pointer-events: none;
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.employee-card:hover .employee-card__halfbody {
-  transform: scale(1.04) translateY(-2px);
-}
-
-.employee-card__status {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+/* 状态条 */
+.employee-card__status-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  background: hsl(0 0% 100% / 0.9);
-  backdrop-filter: blur(4px);
+  justify-content: space-between;
+  padding: 6px 12px;
   font-size: 10px;
   font-weight: 500;
-  color: hsl(var(--foreground) / 0.7);
-  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.08);
+  background: hsl(var(--muted) / 0.3);
+  border-bottom: 1px solid hsl(var(--border) / 0.3);
 }
+
+.employee-card__status-bar--healthy {
+  background: linear-gradient(90deg, hsl(142 76% 36% / 0.08) 0%, hsl(142 76% 36% / 0.02) 100%);
+}
+
+.employee-card__status-bar--warning {
+  background: linear-gradient(90deg, hsl(38 92% 50% / 0.08) 0%, hsl(38 92% 50% / 0.02) 100%);
+}
+
+.employee-card__status-bar--error {
+  background: linear-gradient(90deg, hsl(0 72% 51% / 0.08) 0%, hsl(0 72% 51% / 0.02) 100%);
+}
+
+.employee-card__status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: hsl(var(--muted-foreground));
+}
+
 .employee-card__status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
-.employee-card__status-dot--success {
+
+.employee-card__status-bar--healthy .employee-card__status-dot {
   background: hsl(142 76% 46%);
   box-shadow: 0 0 6px hsl(142 76% 46% / 0.5);
 }
-.employee-card__status-dot--warning {
+
+.employee-card__status-bar--warning .employee-card__status-dot {
   background: hsl(38 92% 50%);
 }
-.employee-card__status-dot--error {
-  background: hsl(4 70% 55%);
+
+.employee-card__status-bar--error .employee-card__status-dot {
+  background: hsl(0 72% 51%);
+}
+
+.employee-card__model-badge {
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: hsl(var(--muted) / 0.5);
+  color: hsl(var(--muted-foreground));
+}
+
+/* 头像区域 */
+.employee-card__portrait-wrapper {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding: 16px 16px 8px;
+  background: linear-gradient(180deg, hsl(var(--muted) / 0.2) 0%, transparent 100%);
+}
+
+.employee-card__portrait {
+  width: 90px;
+  height: 120px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.employee-card:hover .employee-card__portrait {
+  transform: scale(1.03);
+  box-shadow: 0 6px 16px hsl(var(--foreground) / 0.15);
+}
+
+.employee-card__online-badge {
+  position: absolute;
+  bottom: 12px;
+  right: calc(50% - 45px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: hsl(142 76% 36% / 0.95);
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px hsl(142 76% 36% / 0.3);
+}
+
+.employee-card__online-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: white;
+  animation: pulse 2s infinite;
+}
+
+/* 信息区域 */
+.employee-card__info {
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px 16px;
+  flex: 1;
 }
 
 .employee-card__header {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  padding: 0 16px;
-  margin-top: -22px;
-  position: relative;
-  z-index: 1;
-}
-.employee-card__avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 3px solid hsl(var(--card));
-  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s ease;
-}
-.employee-card:hover .employee-card__avatar {
-  transform: scale(1.08);
-}
-.employee-card__avatar-text {
-  font-size: 18px;
-  font-weight: 700;
-  color: white;
-  text-shadow: 0 1px 2px hsl(var(--foreground) / 0.2);
-}
-.employee-card__avatar-badge {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid hsl(var(--card));
-  background: hsl(142 76% 46%);
-  animation: pulse 2s infinite;
-}
-.employee-card__model {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  font-family: ui-monospace, monospace;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.6);
-  padding: 4px 10px;
-  border-radius: 8px;
-  margin-bottom: 4px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-.employee-card__body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  padding: 12px 16px 16px;
-}
 .employee-card__name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: hsl(var(--foreground));
-  transition: color 0.2s;
+  letter-spacing: -0.01em;
+  margin: 0;
 }
+
 .employee-card:hover .employee-card__name {
   color: hsl(var(--primary));
 }
+
 .employee-card__code {
   font-size: 9px;
   font-family: ui-monospace, monospace;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: hsl(var(--muted-foreground) / 0.5);
-  margin-top: 2px;
 }
+
 .employee-card__desc {
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.5;
   color: hsl(var(--muted-foreground));
-  margin-top: 10px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  flex: 1;
+  margin: 0 0 10px;
 }
+
+/* 技能标签 */
 .employee-card__skills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
+  gap: 5px;
+  margin-bottom: 12px;
 }
+
 .employee-card__skill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   font-size: 10px;
   font-weight: 500;
   color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.08);
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
 }
+
 .employee-card__skill-more {
   font-size: 10px;
   color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.5);
-  padding: 4px 8px;
-  border-radius: 8px;
+  background: hsl(var(--muted) / 0.4);
+  padding: 3px 8px;
+  border-radius: 6px;
 }
+
 .employee-card__skill-empty {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   font-size: 10px;
   color: hsl(var(--muted-foreground) / 0.6);
-  background: hsl(var(--muted) / 0.3);
-  padding: 4px 8px;
-  border-radius: 8px;
+  background: hsl(var(--muted) / 0.2);
+  padding: 3px 8px;
+  border-radius: 6px;
 }
-.employee-card__schedule {
+
+/* 工作信息统计 */
+.employee-card__work-info {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: hsl(var(--muted-foreground) / 0.7);
-  margin-top: 10px;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 0;
+  margin-bottom: 12px;
+  border-top: 1px solid hsl(var(--border) / 0.3);
+  border-bottom: 1px solid hsl(var(--border) / 0.3);
 }
+
+.employee-card__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.employee-card__stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.employee-card__stat-label {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+
+.employee-card__stat-divider {
+  width: 1px;
+  height: 24px;
+  background: hsl(var(--border) / 0.5);
+}
+
+/* 操作栏 */
 .employee-card__actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid hsl(var(--border) / 0.4);
+  gap: 8px;
+  margin-top: auto;
 }
-.employee-card__actions-left {
+
+.employee-card__primary-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.employee-card__primary-btn:hover {
+  background: hsl(var(--primary) / 0.9);
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+}
+
+.employee-card__secondary-actions {
   display: flex;
   gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
-.employee-card__action-btn {
-  width: 32px;
-  height: 32px;
+
+.employee-card:hover .employee-card__secondary-actions {
+  opacity: 1;
+}
+
+.employee-card__icon-btn {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  border: none;
+  border: 1px solid hsl(var(--border) / 0.5);
   background: transparent;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
-.employee-card:hover .employee-card__action-btn {
-  opacity: 1;
-}
-.employee-card__action-btn:hover {
+
+.employee-card__icon-btn:hover {
   background: hsl(var(--muted));
   color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
 }
-.employee-card__action-btn--danger:hover {
+
+.employee-card__icon-btn--danger:hover {
   background: hsl(var(--destructive) / 0.1);
   color: hsl(var(--destructive));
-}
-.employee-card__enter-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary));
-  padding: 8px 14px;
-  border-radius: 10px;
-  text-decoration: none;
-  transition: all 0.2s;
-}
-.employee-card__enter-btn:hover {
-  background: hsl(var(--primary) / 0.9);
-  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+  border-color: hsl(var(--destructive) / 0.3);
 }
 
 /* ===== Empty State ===== */
