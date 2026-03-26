@@ -586,6 +586,38 @@ function resolveHealth(e: EmployeeResponse): { label: string; cls: string; lastS
   return { label: "运行健康", cls: "bg-primary/10 text-primary", lastStatus: "healthy" };
 }
 
+// 部门标签颜色映射
+const DEPT_TAG_COLORS: Record<string, { bg: string; text: string }> = {
+  "产品部": { bg: "#eef2ff", text: "#6366f1" },
+  "运营部": { bg: "#fff7ed", text: "#ea580c" },
+  "技术部": { bg: "#f0fdfa", text: "#0d9488" },
+  "市场部": { bg: "#fdf2f8", text: "#db2777" },
+};
+
+const DEPT_TAG_COLOR_POOL = [
+  { bg: "#eef2ff", text: "#6366f1" },
+  { bg: "#fff7ed", text: "#ea580c" },
+  { bg: "#f0fdfa", text: "#0d9488" },
+  { bg: "#fdf2f8", text: "#db2777" },
+  { bg: "#fef3c7", text: "#d97706" },
+  { bg: "#ecfdf5", text: "#059669" },
+];
+
+function getDeptTagColor(deptName: string): { bg: string; text: string } {
+  if (DEPT_TAG_COLORS[deptName]) return DEPT_TAG_COLORS[deptName];
+  // 哈希取色
+  let hash = 0;
+  for (let i = 0; i < deptName.length; i++) {
+    hash = (hash + deptName.charCodeAt(i)) % DEPT_TAG_COLOR_POOL.length;
+  }
+  return DEPT_TAG_COLOR_POOL[hash]!;
+}
+
+function getDeptName(deptId: string | null): string | null {
+  if (!deptId) return null;
+  return departments.value.find(d => d.id === deptId)?.name ?? null;
+}
+
 // === 头像/卡片颜色生成（基于名称哈希，每位员工固定色系）===
 // 低饱和度柔和色系：bannerFrom/To 控制 Banner，px = 像素头像前景，bg = 像素头像背景
 // 部门卡片颜色（渐变色）
