@@ -1,7 +1,7 @@
 ---
 name: qq-url-guard
 name_zh: QQ 链接屏蔽防护
-description: Use when sending replies to QQ where URL-like text (for example xx.xx, USER.md, markdown links, or http URLs) may trigger code 40034028 and get blocked.
+description: 用于 QQ 回复场景，当内容含类 URL 文本（如 xx.xx、USER.md、Markdown 链接或 http URL）可能触发 40034028 拦截时使用。
 ---
 
 # QQ URL Guard

@@ -1,7 +1,7 @@
 ---
 name: skill-creator
 name_zh: 技能创建向导
-description: Create or update AgentSkills. Use when designing, structuring, or packaging skills with scripts, references, and assets.
+description: 创建或更新 AgentSkill，用于设计、组织、打包技能（含脚本、参考资料及附件）。
 ---
 
 # Skill Creator

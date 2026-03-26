@@ -1,7 +1,7 @@
 ---
 name: tmux
 name_zh: 终端会话控制
-description: Remote-control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.
+description: 通过发送按键并抓取面板输出，远程控制 tmux 会话中的交互式命令行。
 metadata: {"nextclaw":{"emoji":"🧵","os":["darwin","linux"],"requires":{"bins":["tmux"]}}}
 ---
 

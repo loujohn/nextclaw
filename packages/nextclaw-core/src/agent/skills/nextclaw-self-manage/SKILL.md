@@ -1,7 +1,7 @@
 ---
 name: nextclaw-self-manage
 name_zh: 自身管理
-description: Self-manage NextClaw runtime via CLI guide. For install/start/status/doctor/channels/config/cron operations.
+description: 通过 CLI 自管理 NextClaw 运行时，涵盖安装、启动、状态检查、诊断、渠道、配置及定时任务操作。
 metadata: {"nextclaw":{"always":true,"emoji":"🛠️"}}
 ---
 
