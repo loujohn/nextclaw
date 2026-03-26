@@ -1,10 +1,10 @@
-import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { getPlatformContext } from "../runtime/platform-context";
 
 /**
  * 服务启动时自动将 skills/ 目录下的自定义技能安装到工作区。
- * 开发模式：直接从源码目录 cpSync。
+ * 开发模式：自动扫描源码 skills/ 目录，无需手动维护列表。
  * 生产模式：从 Nitro serverAssets (useStorage('assets:skills')) 读取并写入磁盘。
  * 已存在则跳过，避免覆盖用户修改。
  */
@@ -12,7 +12,15 @@ export default defineNitroPlugin(async () => {
   const ctx = await getPlatformContext();
   const workspaceSkillsDir = join(ctx.workspaceDir, "skills");
 
-  const skillNames = ["employee-creator"];
+  // 开发模式：自动扫描 skills/ 目录下的所有子目录
+  const skillsSrcDir = resolve(process.cwd(), "skills");
+  const skillNames = existsSync(skillsSrcDir)
+    ? readdirSync(skillsSrcDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && existsSync(join(skillsSrcDir, e.name, "SKILL.md")))
+        .map((e) => e.name)
+    : (await useStorage("assets:skills").getKeys())
+        .map((k) => k.split(":")[0])
+        .filter((v, i, arr) => arr.indexOf(v) === i);
 
   for (const skillName of skillNames) {
     const installPath = join(workspaceSkillsDir, skillName);

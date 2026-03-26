@@ -10,7 +10,7 @@ export type DashboardSummaryInput = {
 };
 
 export type SkillCatalogInput = {
-  availableSkills: Array<{ name: string; nameZh?: string; path: string; source: string; description?: string }>;
+  availableSkills: Array<{ name: string; nameZh?: string; path: string; source: string; description?: string; category?: string }>;
   installations: Array<{ skillName: string; sourceType: string; sourceUri: string; enabled: boolean }>;
   skillBindings: Array<{ employeeId: string; employeeName: string; skillName: string }>;
 };
@@ -183,7 +183,19 @@ function inferSkillPurpose(name: string): string {
   return "用于扩展员工的任务执行能力。";
 }
 
-function inferSkillCategory(_name: string): string {
+const SKILL_CATEGORY_SLUG_TO_LABEL: Record<string, string> = {
+  "project-management": "项目管理类",
+  "business-management": "经营管理类",
+  "product-rd": "产品研发类",
+  "marketing": "市场营销类",
+  "solutions": "解决方案类",
+  "general": "通用能力类",
+};
+
+function inferSkillCategory(category?: string): string {
+  if (category && SKILL_CATEGORY_SLUG_TO_LABEL[category]) {
+    return SKILL_CATEGORY_SLUG_TO_LABEL[category];
+  }
   return "通用能力类";
 }
 
@@ -215,7 +227,7 @@ export function buildSkillCatalogEntries(input: SkillCatalogInput): SkillCatalog
         usedBy,
         statusLabel: installation ? (enabled ? "已启用" : "已停用") : skill.source === "builtin" ? "内置可用" : "已发现未登记",
         purpose: skill.description?.trim() || inferSkillPurpose(skill.name),
-        categoryLabel: inferSkillCategory(skill.name)
+        categoryLabel: inferSkillCategory(skill.category)
       };
     });
 }
