@@ -183,7 +183,7 @@ function inferSkillPurpose(name: string): string {
 }
 
 function inferSkillCategory(_name: string): string {
-  return "通用能力";
+  return "通用能力类";
 }
 
 export function buildSkillCatalogEntries(input: SkillCatalogInput): SkillCatalogEntryView[] {
