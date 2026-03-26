@@ -766,6 +766,238 @@ function generatePixelAvatar(name: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}"><rect width="${total}" height="${total}" fill="${pal.bg}"/><g fill="${pal.px}">${rects.join("")}</g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
+
+// ======== 半身立像 SVG 生成系统 ========
+// 配饰类型
+type AccessoryKind = 'none' | 'headphone' | 'glasses' | 'cap' | 'scarf' | 'tie' | 'earring';
+// 发型类型（扩展为6种）
+type HalfBodyHairStyle = 'short' | 'medium' | 'long' | 'ponytail' | 'curly' | 'bun';
+// 姿势类型
+type PoseKind = 'both_wave' | 'arms_crossed' | 'hands_on_hips' | 'thinking';
+
+type HalfBodyChar = {
+  skinColor: string;
+  hairColor: string;
+  shirtColor: string;
+  shirtColorLight: string;
+  hairStyle: HalfBodyHairStyle;
+  accessory: AccessoryKind;
+  pose: PoseKind;
+  bgDecorKind: number;  // 0-3: 决定背景装饰图案
+};
+
+function _getHalfBodyChar(name: string): HalfBodyChar {
+  const h = _nameHash(name);
+  const hairStyles: HalfBodyHairStyle[] = ['short', 'medium', 'long', 'ponytail', 'curly', 'bun'];
+  const accessories: AccessoryKind[] = ['none', 'headphone', 'glasses', 'cap', 'scarf', 'tie', 'earring', 'none'];
+  const poses: PoseKind[] = ['both_wave', 'arms_crossed', 'hands_on_hips', 'thinking'];
+  const skinColors = SKIN_COLORS;
+  const hairColors = HAIR_COLORS;
+  const shirtIdx = (h >> 6) % SHIRT_COLORS.length;
+  return {
+    skinColor: skinColors[h % skinColors.length]!,
+    hairColor: hairColors[(h >> 3) % hairColors.length]!,
+    shirtColor: SHIRT_COLORS[shirtIdx]!.main,
+    shirtColorLight: SHIRT_COLORS[shirtIdx]!.light,
+    hairStyle: hairStyles[((h * 31) >>> 2) % hairStyles.length]!,
+    accessory: accessories[((h * 17) >>> 5) % accessories.length]!,
+    pose: poses[((h * 13) >>> 8) % poses.length]!,
+    bgDecorKind: (h >> 10) % 4,
+  };
+}
+
+/** 生成半身立像 SVG（平面卡通风，纯 SVG，无外部请求）*/
+function generateHalfBodySVG(name: string): string {
+  const pal = _getEmpPalette(name);
+  const c = _getHalfBodyChar(name);
+  const W = 280, H = 120;
+  // 人物中心坐标（偏左，留右侧装饰空间）
+  const cx = 110, bottomY = H;
+
+  // 颜色变体
+  const skin = c.skinColor;
+  const hair = c.hairColor;
+  const shirt = c.shirtColor;
+  const shirtLight = c.shirtColorLight;
+  // 背景色（从调色板）
+  const bgFrom = pal.bannerFrom;
+  const bgTo = pal.bannerTo;
+  const accentColor = pal.px;
+
+  // ---- 背景装饰 SVG 片段 ----
+  const bgDecorations = [
+    // 0: 圆圈气泡
+    `<circle cx="220" cy="25" r="28" fill="${accentColor}" fill-opacity="0.12"/>
+     <circle cx="255" cy="65" r="16" fill="${accentColor}" fill-opacity="0.08"/>
+     <circle cx="195" cy="70" r="10" fill="${accentColor}" fill-opacity="0.10"/>
+     <circle cx="248" cy="18" r="7" fill="${accentColor}" fill-opacity="0.15"/>`,
+    // 1: 星形+菱形
+    `<polygon points="218,14 221,22 229,22 223,27 225,35 218,30 211,35 213,27 207,22 215,22" fill="${accentColor}" fill-opacity="0.18"/>
+     <rect x="240" y="50" width="14" height="14" rx="2" transform="rotate(45,247,57)" fill="${accentColor}" fill-opacity="0.12"/>
+     <rect x="195" y="65" width="10" height="10" rx="1" transform="rotate(30,200,70)" fill="${accentColor}" fill-opacity="0.10"/>`,
+    // 2: 波点矩阵
+    `<circle cx="195" cy="18" r="3.5" fill="${accentColor}" fill-opacity="0.18"/>
+     <circle cx="213" cy="18" r="3.5" fill="${accentColor}" fill-opacity="0.14"/>
+     <circle cx="231" cy="18" r="3.5" fill="${accentColor}" fill-opacity="0.18"/>
+     <circle cx="249" cy="18" r="3.5" fill="${accentColor}" fill-opacity="0.12"/>
+     <circle cx="195" cy="36" r="3.5" fill="${accentColor}" fill-opacity="0.12"/>
+     <circle cx="213" cy="36" r="3.5" fill="${accentColor}" fill-opacity="0.18"/>
+     <circle cx="231" cy="36" r="3.5" fill="${accentColor}" fill-opacity="0.14"/>
+     <circle cx="249" cy="36" r="3.5" fill="${accentColor}" fill-opacity="0.18"/>
+     <circle cx="204" cy="60" r="3" fill="${accentColor}" fill-opacity="0.10"/>
+     <circle cx="222" cy="60" r="3" fill="${accentColor}" fill-opacity="0.10"/>
+     <circle cx="240" cy="60" r="3" fill="${accentColor}" fill-opacity="0.10"/>`,
+    // 3: 几何线条
+    `<line x1="190" y1="10" x2="260" y2="80" stroke="${accentColor}" stroke-opacity="0.12" stroke-width="1.5"/>
+     <line x1="200" y1="10" x2="270" y2="80" stroke="${accentColor}" stroke-opacity="0.08" stroke-width="1"/>
+     <circle cx="230" cy="45" r="22" fill="none" stroke="${accentColor}" stroke-opacity="0.14" stroke-width="1.5"/>
+     <circle cx="230" cy="45" r="34" fill="none" stroke="${accentColor}" stroke-opacity="0.07" stroke-width="1"/>`,
+  ];
+  const bgDecor = bgDecorations[c.bgDecorKind] ?? bgDecorations[0]!;
+
+  // ---- 发型 SVG 片段 ----
+  // 头部：椭圆形，底部 y=bottomY-42，顶部 y=bottomY-42-38=bottomY-80
+  const headCY = bottomY - 55;  // 头部中心y
+  const headRX = 16, headRY = 19;
+  const headTopY = headCY - headRY;
+
+  const hairShapes: Record<HalfBodyHairStyle, string> = {
+    short: `<rect x="${cx - 16}" y="${headTopY - 3}" width="32" height="14" rx="8" fill="${hair}"/>`,
+    medium: `<rect x="${cx - 18}" y="${headTopY - 4}" width="36" height="16" rx="9" fill="${hair}"/>
+             <rect x="${cx - 19}" y="${headCY - 10}" width="7" height="16" rx="4" fill="${hair}"/>
+             <rect x="${cx + 12}" y="${headCY - 10}" width="7" height="16" rx="4" fill="${hair}"/>`,
+    long: `<rect x="${cx - 19}" y="${headTopY - 4}" width="38" height="16" rx="10" fill="${hair}"/>
+           <rect x="${cx - 22}" y="${headCY - 8}" width="8" height="28" rx="4" fill="${hair}"/>
+           <rect x="${cx + 14}" y="${headCY - 8}" width="8" height="28" rx="4" fill="${hair}"/>`,
+    ponytail: `<rect x="${cx - 15}" y="${headTopY - 3}" width="30" height="12" rx="7" fill="${hair}"/>
+               <rect x="${cx - 3}" y="${headTopY - 14}" width="8" height="18" rx="4" fill="${hair}"/>`,
+    curly: `<ellipse cx="${cx}" cy="${headTopY - 2}" rx="18" ry="9" fill="${hair}"/>
+            <ellipse cx="${cx - 15}" cy="${headTopY + 6}" rx="7" ry="8" fill="${hair}"/>
+            <ellipse cx="${cx + 15}" cy="${headTopY + 6}" rx="7" ry="8" fill="${hair}"/>`,
+    bun: `<rect x="${cx - 14}" y="${headTopY - 2}" width="28" height="11" rx="7" fill="${hair}"/>
+          <circle cx="${cx}" cy="${headTopY - 9}" r="9" fill="${hair}"/>`,
+  };
+  const hairSVG = hairShapes[c.hairStyle] ?? hairShapes.short;
+
+  // ---- 配饰 SVG 片段 ----
+  const accessoryShapes: Record<AccessoryKind, string> = {
+    none: '',
+    headphone: `<rect x="${cx - 22}" y="${headCY - 14}" width="6" height="12" rx="3" fill="#374151"/>
+                <rect x="${cx + 16}" y="${headCY - 14}" width="6" height="12" rx="3" fill="#374151"/>
+                <path d="M ${cx - 19} ${headCY - 14} Q ${cx} ${headTopY - 16} ${cx + 19} ${headCY - 14}" fill="none" stroke="#374151" stroke-width="3"/>`,
+    glasses: `<rect x="${cx - 18}" y="${headCY - 4}" width="14" height="9" rx="4" fill="none" stroke="#374151" stroke-width="1.5"/>
+              <rect x="${cx + 4}" y="${headCY - 4}" width="14" height="9" rx="4" fill="none" stroke="#374151" stroke-width="1.5"/>
+              <line x1="${cx - 4}" y1="${headCY}" x2="${cx + 4}" y2="${headCY}" stroke="#374151" stroke-width="1.5"/>`,
+    cap: `<ellipse cx="${cx}" cy="${headTopY + 6}" rx="20" ry="6" fill="${hair}"/>
+          <rect x="${cx - 18}" y="${headTopY - 8}" width="36" height="16" rx="4" fill="${accentColor}"/>
+          <rect x="${cx - 20}" y="${headTopY + 2}" width="6" height="4" rx="2" fill="${accentColor}" fill-opacity="0.7"/>`,
+    scarf: `<rect x="${cx - 18}" y="${headCY + 14}" width="36" height="10" rx="3" fill="${accentColor}" fill-opacity="0.85"/>
+            <rect x="${cx - 5}" y="${headCY + 14}" width="12" height="20" rx="3" fill="${accentColor}" fill-opacity="0.7"/>`,
+    tie: `<polygon points="${cx},${headCY+20} ${cx-5},${headCY+28} ${cx},${headCY+46} ${cx+5},${headCY+28}" fill="${accentColor}"/>`,
+    earring: `<circle cx="${cx - 17}" cy="${headCY + 8}" r="3" fill="${accentColor}"/>
+              <circle cx="${cx + 17}" cy="${headCY + 8}" r="3" fill="${accentColor}"/>`,
+  };
+  const accessorySVG = accessoryShapes[c.accessory] ?? '';
+
+  // ---- 姿势（手臂）SVG 片段 ----
+  // 肩膀连接点：左肩 (cx-22, shoulderY-14)，右肩 (cx+22, shoulderY-14)
+  const shoulderY = bottomY - 22;
+  const poseShapes: Record<PoseKind, string> = {
+    // 双手挥手：两臂都向斜上方高举
+    both_wave: `
+      <path d="M ${cx - 22} ${shoulderY - 14} Q ${cx - 40} ${shoulderY - 32} ${cx - 34} ${shoulderY - 48}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>
+      <path d="M ${cx + 22} ${shoulderY - 14} Q ${cx + 40} ${shoulderY - 32} ${cx + 34} ${shoulderY - 48}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>
+      <ellipse cx="${cx - 32}" cy="${shoulderY - 50}" rx="7" ry="6" fill="${skin}"/>
+      <ellipse cx="${cx + 32}" cy="${shoulderY - 50}" rx="7" ry="6" fill="${skin}"/>`,
+    // 双手交叉：左手搭右肩，右手搭左肩
+    arms_crossed: `
+      <path d="M ${cx - 22} ${shoulderY - 14} Q ${cx - 4} ${shoulderY + 2} ${cx + 20} ${shoulderY - 6}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>
+      <path d="M ${cx + 22} ${shoulderY - 14} Q ${cx + 4} ${shoulderY + 2} ${cx - 20} ${shoulderY - 6}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>`,
+    // 叉腰：双臂向外弯折，肘部向外，手放腰侧
+    hands_on_hips: `
+      <path d="M ${cx - 22} ${shoulderY - 12} Q ${cx - 38} ${shoulderY - 6} ${cx - 34} ${shoulderY + 12}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>
+      <path d="M ${cx + 22} ${shoulderY - 12} Q ${cx + 38} ${shoulderY - 6} ${cx + 34} ${shoulderY + 12}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>
+      <ellipse cx="${cx - 32}" cy="${shoulderY + 14}" rx="7" ry="5" fill="${skin}"/>
+      <ellipse cx="${cx + 32}" cy="${shoulderY + 14}" rx="7" ry="5" fill="${skin}"/>`,
+    // 托腮：右臂弯曲，手撑向脸侧；左臂自然垂下
+    thinking: `
+      <path d="M ${cx + 22} ${shoulderY - 14} Q ${cx + 30} ${shoulderY - 26} ${cx + 18} ${headCY + 16}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>
+      <ellipse cx="${cx + 16}" cy="${headCY + 18}" rx="8" ry="6" fill="${skin}"/>
+      <path d="M ${cx - 22} ${shoulderY - 12} Q ${cx - 26} ${shoulderY + 2} ${cx - 24} ${shoulderY + 16}" fill="none" stroke="${skin}" stroke-width="10" stroke-linecap="round"/>`,
+  };
+  const poseSVG = poseShapes[c.pose] ?? poseShapes.both_wave;
+
+  // ---- 身体（衬衫）----
+  const bodySVG = `
+    <!-- 衬衫身体 -->
+    <path d="M ${cx - 28} ${shoulderY} Q ${cx - 32} ${shoulderY - 6} ${cx - 18} ${shoulderY - 18} L ${cx - 8} ${shoulderY - 14} L ${cx} ${shoulderY - 8} L ${cx + 8} ${shoulderY - 14} L ${cx + 18} ${shoulderY - 18} Q ${cx + 32} ${shoulderY - 6} ${cx + 28} ${shoulderY} L ${cx + 28} ${bottomY} L ${cx - 28} ${bottomY} Z" fill="${shirt}"/>
+    <!-- 衣领 -->
+    <path d="M ${cx - 8} ${shoulderY - 14} L ${cx} ${shoulderY - 4} L ${cx + 8} ${shoulderY - 14}" fill="${shirtLight}" stroke="${shirtLight}" stroke-width="1"/>
+    <!-- 衬衫翻领细节 -->
+    <path d="M ${cx - 8} ${shoulderY - 14} L ${cx - 4} ${shoulderY - 6}" fill="none" stroke="${shirtLight}" stroke-opacity="0.6" stroke-width="1.5"/>
+    <path d="M ${cx + 8} ${shoulderY - 14} L ${cx + 4} ${shoulderY - 6}" fill="none" stroke="${shirtLight}" stroke-opacity="0.6" stroke-width="1.5"/>
+  `;
+
+  // ---- 脸部五官 ----
+  const eyeY = headCY - 2;
+  const faceFeatures = `
+    <!-- 眼睛 -->
+    <ellipse cx="${cx - 5}" cy="${eyeY}" rx="2.8" ry="3.2" fill="#1a1a1a"/>
+    <ellipse cx="${cx + 5}" cy="${eyeY}" rx="2.8" ry="3.2" fill="#1a1a1a"/>
+    <!-- 眼白高光 -->
+    <circle cx="${cx - 4.2}" cy="${eyeY - 1.2}" r="0.9" fill="white"/>
+    <circle cx="${cx + 5.8}" cy="${eyeY - 1.2}" r="0.9" fill="white"/>
+    <!-- 眉毛 -->
+    <path d="M ${cx - 8} ${eyeY - 6} Q ${cx - 5} ${eyeY - 8} ${cx - 2} ${eyeY - 6}" fill="none" stroke="${hair}" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M ${cx + 2} ${eyeY - 6} Q ${cx + 5} ${eyeY - 8} ${cx + 8} ${eyeY - 6}" fill="none" stroke="${hair}" stroke-width="1.8" stroke-linecap="round"/>
+    <!-- 微笑 -->
+    <path d="M ${cx - 5} ${headCY + 8} Q ${cx} ${headCY + 13} ${cx + 5} ${headCY + 8}" fill="none" stroke="#c97b6a" stroke-width="1.8" stroke-linecap="round"/>
+  `;
+
+  // ---- 组合 SVG ----
+  const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="bg_${encodeURIComponent(name)}" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${bgFrom}"/>
+      <stop offset="100%" stop-color="${bgTo}"/>
+    </linearGradient>
+  </defs>
+  <!-- 背景 -->
+  <rect width="${W}" height="${H}" fill="url(#bg_${encodeURIComponent(name)})"/>
+  <!-- 背景装饰 -->
+  ${bgDecor}
+  <!-- 手臂（在身体下方渲染，部分被覆盖） -->
+  ${poseSVG}
+  <!-- 身体 -->
+  ${bodySVG}
+  <!-- 配饰（围巾等在头部下方） -->
+  ${c.accessory === 'scarf' ? accessorySVG : ''}
+  <!-- 头部 -->
+  <ellipse cx="${cx}" cy="${headCY}" rx="${headRX}" ry="${headRY}" fill="${skin}"/>
+  <!-- 发型 -->
+  ${hairSVG}
+  <!-- 脸部 -->
+  ${faceFeatures}
+  <!-- 其他配饰（在发型/头部上方） -->
+  ${c.accessory !== 'scarf' ? accessorySVG : ''}
+</svg>`;
+  return svgContent;
+}
+
+// 半身立像 SVG 缓存
+const _halfBodySVGCache = new Map<string, string>();
+function getHalfBodySVGDataURL(name: string): string {
+  const cached = _halfBodySVGCache.get(name);
+  if (cached) return cached;
+  const svg = generateHalfBodySVG(name);
+  const dataURL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  if (_halfBodySVGCache.size >= 500) {
+    const firstKey = _halfBodySVGCache.keys().next().value;
+    if (firstKey) _halfBodySVGCache.delete(firstKey);
+  }
+  _halfBodySVGCache.set(name, dataURL);
+  return dataURL;
+}
 </script>
 
 <template>
@@ -1127,143 +1359,15 @@ function generatePixelAvatar(name: string): string {
         :key="emp.id"
         class="employee-card"
       >
-        <!-- ① 办公工作场景 -->
+        <!-- ① 半身立像场景 -->
         <div class="employee-card__scene">
-          <!-- 天花板灯带 -->
-          <div class="absolute top-0 left-0 right-0 h-[4px] bg-gradient-to-r from-transparent via-amber-100 to-transparent opacity-80" />
-
-          <!-- 隔断墙 -->
-          <div class="absolute top-0 left-0 w-[60px] h-full bg-gradient-to-r from-slate-200 to-slate-300" />
-          <div class="absolute top-0 right-0 w-[60px] h-full bg-gradient-to-l from-slate-200 to-slate-300" />
-
-          <!-- 植物装饰 -->
-          <div class="absolute bottom-[45px] left-2 text-base opacity-90 origin-bottom animate-plant-sway">🪴</div>
-          <div class="absolute bottom-[45px] right-2 text-sm opacity-80">🌿</div>
-
-          <!-- 桌面 -->
-          <div class="absolute bottom-0 left-0 right-0 h-[42px] bg-gradient-to-b from-gray-500 to-gray-600" />
-
-          <!-- 显示器 -->
-          <div class="absolute bottom-[28px] left-1/2 -translate-x-1/2 w-[80px] h-[52px] bg-slate-800 rounded border-2 border-slate-600 animate-screen-glow">
-            <!-- 屏幕内容 -->
-            <div class="m-[5px] h-[calc(100%-10px)] bg-white rounded-sm overflow-hidden">
-              <!-- 工具栏 -->
-              <div class="h-[6px] bg-slate-100 flex gap-[2px] p-[2px] items-center">
-                <div class="w-[2px] h-[2px] bg-red-500 rounded-full" />
-                <div class="w-[2px] h-[2px] bg-yellow-500 rounded-full" />
-                <div class="w-[2px] h-[2px] bg-green-500 rounded-full" />
-              </div>
-              <!-- 文档 -->
-              <div class="p-[4px]">
-                <div class="h-[2px] bg-blue-500 rounded-[1px] w-[50%]" />
-                <div class="h-[2px] bg-slate-200 rounded-[1px] w-[80%] mt-[3px]" />
-                <div class="h-[2px] bg-slate-200 rounded-[1px] w-[70%] mt-[2px]" />
-                <div class="inline-block w-[2px] h-[3px] bg-blue-500 mt-[2px] animate-cursor-blink" />
-              </div>
-            </div>
-            <!-- 底座 -->
-            <div class="absolute -bottom-[6px] left-1/2 -translate-x-1/2 w-[14px] h-[6px] bg-slate-600" />
-            <div class="absolute -bottom-[8px] left-1/2 -translate-x-1/2 w-[35px] h-[2px] bg-slate-600 rounded-[1px]" />
-          </div>
-
-          <!-- 人物剪影 -->
-          <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 animate-subtle-float">
-            <!-- 头部 -->
-            <div
-              class="relative w-[20px] h-[22px] rounded-[50%_50%_45%_45%] mx-auto animate-head-move"
-              :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
-            >
-              <!-- 发型 - 5种不同风格 -->
-              <!-- 1. 短发：干净利落的男生短发 -->
-              <template v-if="getCharacterStyle(emp.name).hairStyle === 'short'">
-                <div
-                  class="absolute -top-[2px] left-[2px] right-[2px] h-[9px] rounded-[10px_10px_0_0]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-              </template>
-              <!-- 2. 中长发：到耳朵的中等长度 -->
-              <template v-else-if="getCharacterStyle(emp.name).hairStyle === 'medium'">
-                <div
-                  class="absolute -top-[3px] left-[0px] right-[0px] h-[11px] rounded-[12px_12px_0_0]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[6px] -left-[2px] w-[5px] h-[10px] rounded-b-[3px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[6px] -right-[2px] w-[5px] h-[10px] rounded-b-[3px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-              </template>
-              <!-- 3. 长发：披肩长发 -->
-              <template v-else-if="getCharacterStyle(emp.name).hairStyle === 'long'">
-                <div
-                  class="absolute -top-[3px] -left-[3px] -right-[3px] h-[12px] rounded-[12px_12px_4px_4px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[7px] -left-[4px] w-[6px] h-[18px] rounded-b-[4px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[7px] -right-[4px] w-[6px] h-[18px] rounded-b-[4px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-              </template>
-              <!-- 4. 马尾：扎起来的马尾 -->
-              <template v-else-if="getCharacterStyle(emp.name).hairStyle === 'ponytail'">
-                <div
-                  class="absolute -top-[2px] left-[2px] right-[2px] h-[9px] rounded-[10px_10px_0_0]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <!-- 马尾辫 -->
-                <div
-                  class="absolute -top-[6px] left-1/2 -translate-x-1/2 w-[5px] h-[10px] rounded-t-[3px]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-              </template>
-              <!-- 5. 卷发：蓬松的短发 -->
-              <template v-else>
-                <div
-                  class="absolute -top-[4px] -left-[2px] -right-[2px] h-[12px] rounded-[14px_14px_0_0]"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[6px] -left-[3px] w-[4px] h-[5px] rounded-full"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-                <div
-                  class="absolute top-[7px] -right-[3px] w-[4px] h-[5px] rounded-full"
-                  :style="{ backgroundColor: getCharacterStyle(emp.name).hairColor }"
-                />
-              </template>
-            </div>
-            <!-- 身体 -->
-            <div
-              class="w-[32px] h-[20px] rounded-t-[6px] -mt-[3px] relative"
-              :style="{ backgroundColor: getCharacterStyle(emp.name).shirtColor }"
-            >
-              <!-- 衣领 -->
-              <div
-                class="absolute top-0 left-1/2 -translate-x-1/2 w-[8px] h-[4px] rounded-b-[4px]"
-                :style="{ backgroundColor: getCharacterStyle(emp.name).shirtColorLight }"
-              />
-              <!-- 左手臂 -->
-              <div
-                class="absolute -left-[4px] bottom-0 w-[7px] h-[16px] rounded-[3px] origin-top animate-arm-type-left"
-                :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
-              />
-              <!-- 右手臂 -->
-              <div
-                class="absolute -right-[4px] bottom-0 w-[7px] h-[16px] rounded-[3px] origin-top animate-arm-type-right"
-                :style="{ backgroundColor: getCharacterStyle(emp.name).skinColor }"
-              />
-            </div>
-          </div>
-
-          <!-- 键盘 -->
-          <div class="absolute bottom-[42px] left-1/2 -translate-x-1/2 w-[50px] h-[7px] bg-slate-600 rounded-[2px]" />
+          <!-- 半身立像 SVG -->
+          <img
+            class="employee-card__halfbody"
+            :src="getHalfBodySVGDataURL(emp.name)"
+            :alt="emp.name"
+            draggable="false"
+          />
 
           <!-- 健康状态徽章 -->
           <span class="employee-card__status">
@@ -2159,9 +2263,27 @@ function generatePixelAvatar(name: string): string {
 
 .employee-card__scene {
   position: relative;
-  height: 110px;
-  overflow: visible;
-  background: linear-gradient(180deg, hsl(210 30% 95%) 0%, hsl(210 20% 88%) 100%);
+  height: 120px;
+  overflow: hidden;
+  background: hsl(210 30% 95%);
+}
+
+.employee-card__halfbody {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left center;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.employee-card:hover .employee-card__halfbody {
+  transform: scale(1.04) translateY(-2px);
 }
 
 .employee-card__status {

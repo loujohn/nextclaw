@@ -77,7 +77,7 @@ const badgeClass: Record<string, string> = {
     <!-- Header -->
     <header class="hero-section">
       <div class="relative space-y-3">
-        <span class="section-label">工作台</span>
+        <span class="section-label">工作中心</span>
         <h1 class="font-display text-3xl font-bold tracking-tight lg:text-4xl">
           运行态势与待处理事项
         </h1>
