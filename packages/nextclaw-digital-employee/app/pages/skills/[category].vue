@@ -71,6 +71,7 @@ const SKILL_CATEGORIES = [
 
 type SkillItem = {
   name: string;
+  nameZh?: string;
   source: string;
   sourceType: string;
   sourceUri: string | null;
@@ -116,7 +117,7 @@ const filteredSkills = computed(() => {
   const kw = query.value.trim().toLowerCase();
   if (kw) {
     items = items.filter((s) =>
-      [s.name, s.purpose].some((v) => v.toLowerCase().includes(kw))
+      [s.name, s.nameZh, s.purpose].some((v) => v?.toLowerCase().includes(kw))
     );
   }
   return items;
@@ -283,9 +284,15 @@ async function toggleSkill(name: string, enabled: boolean) {
 
         <!-- Name + Source -->
         <div class="mb-1 flex min-w-0 items-center gap-2">
-          <h3 class="min-w-0 truncate text-sm font-semibold">{{ skill.name }}</h3>
+          <h3 class="min-w-0 truncate text-sm font-semibold">{{ skill.nameZh || skill.name }}</h3>
           <span
-            v-if="skill.source !== 'builtin'"
+            v-if="skill.nameZh"
+            class="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+          >
+            {{ skill.name }}
+          </span>
+          <span
+            v-else-if="skill.source !== 'builtin'"
             class="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"
           >
             {{ skill.sourceType }}

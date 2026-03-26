@@ -1,5 +1,6 @@
 ---
 name: qq-group-speaker-distinction
+name_zh: QQ 群发言人识别
 description: Use when integrating QQ group chat where users want one shared group session, but the assistant must still distinguish who said each message.
 ---
 

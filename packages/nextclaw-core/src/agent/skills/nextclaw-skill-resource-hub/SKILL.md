@@ -1,6 +1,5 @@
 ---
-name: nextclaw-skill-resource-hub
-description: Curate NextClaw skill resources, including OpenClaw and community sources. Use when expanding NextClaw skills, planning reuse/adaptation, or building a skill roadmap.
+name: nextclaw-skill-resource-hubname_zh: 技能资源中心description: Curate NextClaw skill resources, including OpenClaw and community sources. Use when expanding NextClaw skills, planning reuse/adaptation, or building a skill roadmap.
 metadata: {"nextclaw":{"emoji":"🧭"}}
 ---
 

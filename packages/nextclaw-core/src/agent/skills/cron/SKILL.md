@@ -1,5 +1,6 @@
 ---
 name: cron
+name_zh: 定时任务
 description: Schedule reminders and recurring tasks.
 ---
 

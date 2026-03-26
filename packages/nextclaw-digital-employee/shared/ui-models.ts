@@ -10,7 +10,7 @@ export type DashboardSummaryInput = {
 };
 
 export type SkillCatalogInput = {
-  availableSkills: Array<{ name: string; path: string; source: string; description?: string }>;
+  availableSkills: Array<{ name: string; nameZh?: string; path: string; source: string; description?: string }>;
   installations: Array<{ skillName: string; sourceType: string; sourceUri: string; enabled: boolean }>;
   skillBindings: Array<{ employeeId: string; employeeName: string; skillName: string }>;
 };
@@ -25,6 +25,7 @@ export type DashboardSummaryView = {
 
 export type SkillCatalogEntryView = {
   name: string;
+  nameZh?: string;
   path: string;
   source: string;
   sourceType: string;
@@ -204,6 +205,7 @@ export function buildSkillCatalogEntries(input: SkillCatalogInput): SkillCatalog
       const enabled = installation?.enabled ?? skill.source === "builtin";
       return {
         name: skill.name,
+        ...(skill.nameZh ? { nameZh: skill.nameZh } : {}),
         path: skill.path,
         source: skill.source,
         sourceType: installation?.sourceType ?? skill.source,

@@ -1,5 +1,6 @@
 ---
 name: weather
+name_zh: 天气查询
 description: Get current weather and forecasts (no API key required).
 homepage: https://wttr.in/:help
 metadata: {"nextclaw":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
