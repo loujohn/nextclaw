@@ -1,6 +1,6 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
+import { resolve, isAbsolute } from "node:path";
 import { Tool } from "./base.js";
 
 const execAsync = promisify(exec);
@@ -63,7 +63,9 @@ export class ExecTool extends Tool {
 
   async execute(params: Record<string, unknown>): Promise<string> {
     const command = String(params.command ?? "");
-    const cwd = String(params.workingDir ?? this.options.workingDir ?? process.cwd());
+    const rawCwd = String(params.workingDir ?? this.options.workingDir ?? process.cwd());
+    const baseCwd = this.options.workingDir ?? process.cwd();
+    const cwd = isAbsolute(rawCwd) ? rawCwd : resolve(baseCwd, rawCwd);
     const guardError = this.guardCommand(command, cwd);
     if (guardError) {
       return guardError;

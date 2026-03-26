@@ -109,12 +109,21 @@ function writeIdentityFile(wsDir: string, emp: EmployeeIdentity): void {
 // Skills are loaded from the global workspace/skills directory by the engine.
 // Per-agent skill copying is no longer needed.
 export function syncEmployeeSkills(
-  _homeDir: string,
-  _employeeCode: string,
-  _skillNames: string[],
-  _globalWorkspaceDir: string
+  homeDir: string,
+  employeeCode: string,
+  skillNames: string[],
+  globalWorkspaceDir: string
 ): void {
-  // no-op: skills are resolved from global workspace at runtime
+  const employeeWsDir = resolveEmployeeWorkspace(homeDir, employeeCode);
+  const employeeSkillsDir = join(employeeWsDir, "skills");
+  mkdirSync(employeeSkillsDir, { recursive: true });
+
+  for (const skillName of skillNames) {
+    const src = join(globalWorkspaceDir, "skills", skillName);
+    if (!existsSync(src)) continue;
+    const dest = join(employeeSkillsDir, skillName);
+    cpSync(src, dest, { recursive: true });
+  }
 }
 
 export function removeEmployeeWorkspace(homeDir: string, employeeCode: string): void {
