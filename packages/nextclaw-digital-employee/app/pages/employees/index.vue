@@ -656,6 +656,33 @@ function getActivityStatus(emp: EmployeeResponse): ActivityStatus {
   return { text: "离线", color: "#94a3b8", dotColor: "#94a3b8" };
 }
 
+function getEmployeeDescription(emp: EmployeeResponse): string {
+  if (emp.description?.trim()) return emp.description.trim();
+  if (emp.enabledJobsCount > 0) return `负责 ${emp.enabledJobsCount} 个活跃任务`;
+  return "等待分配工作";
+}
+
+// 头像渐变色板
+const AVATAR_GRADIENTS = [
+  { from: "#6366f1", to: "#818cf8" }, // 紫
+  { from: "#f97316", to: "#fb923c" }, // 橙
+  { from: "#06b6d4", to: "#22d3ee" }, // 青
+  { from: "#ec4899", to: "#f472b6" }, // 粉
+  { from: "#10b981", to: "#34d399" }, // 绿
+  { from: "#8b5cf6", to: "#a78bfa" }, // 浅紫
+  { from: "#ef4444", to: "#f87171" }, // 红
+  { from: "#0ea5e9", to: "#38bdf8" }, // 蓝
+];
+
+function getAvatarGradient(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  const g = AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]!;
+  return `linear-gradient(135deg, ${g.from}, ${g.to})`;
+}
+
 // === 头像/卡片颜色生成（基于名称哈希，每位员工固定色系）===
 // 低饱和度柔和色系：bannerFrom/To 控制 Banner，px = 像素头像前景，bg = 像素头像背景
 // 部门卡片颜色（渐变色）
