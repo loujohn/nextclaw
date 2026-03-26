@@ -395,7 +395,7 @@ export const WebToolsConfigSchema = z.object({
 });
 
 export const ExecToolConfigSchema = z.object({
-  timeout: z.number().int().default(60)
+  timeout: z.number().int().default(300)
 });
 
 export const ToolsConfigSchema = z.object({
