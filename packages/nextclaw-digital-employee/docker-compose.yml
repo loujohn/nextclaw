@@ -10,7 +10,7 @@ services:
       - "3000:3000"
     volumes:
       # Persistent storage: SQLite DB + agent workspace files
-      - digital-employee-data:/data
+      - ./digital-employee-data:/data
     env_file:
       - .env
     restart: unless-stopped

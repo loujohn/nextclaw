@@ -74,19 +74,39 @@ export class SkillsLoader {
     return null;
   }
 
+  getSkillDir(name: string): string | null {
+    const workspaceCandidate = join(this.workspaceSkills, name);
+    if (existsSync(join(workspaceCandidate, "SKILL.md"))) return workspaceCandidate;
+    for (const dir of this.additionalSkillsDirs) {
+      const candidate = join(dir, name);
+      if (existsSync(join(candidate, "SKILL.md"))) return candidate;
+    }
+    const builtinCandidate = join(this.builtinSkills, name);
+    if (existsSync(join(builtinCandidate, "SKILL.md"))) return builtinCandidate;
+    return null;
+  }
+
   loadSkillsForContext(skillNames: string[]): string {
     const parts: string[] = [];
     for (const name of skillNames) {
       const content = this.loadSkill(name);
       if (content) {
-        parts.push(`### Skill: ${name}\n\n${this.stripFrontmatter(content)}`);
+        const skillDir = this.getSkillDir(name);
+        const locationHint = skillDir
+          ? `\n\n**Skill Directory**: \`${skillDir}\`\n(Execute scripts from this directory, e.g. \`cd ${skillDir} && node scripts/xxx.js\`)\n`
+          : "";
+        parts.push(`### Skill: ${name}${locationHint}\n\n${this.stripFrontmatter(content)}`);
       }
     }
     return parts.length ? parts.join("\n\n---\n\n") : "";
   }
 
-  buildSkillsSummary(): string {
-    const allSkills = this.listSkills(false);
+  buildSkillsSummary(filterNames?: string[]): string {
+    let allSkills = this.listSkills(false);
+    if (filterNames && filterNames.length > 0) {
+      const nameSet = new Set(filterNames);
+      allSkills = allSkills.filter((s) => nameSet.has(s.name));
+    }
     if (!allSkills.length) {
       return "";
     }

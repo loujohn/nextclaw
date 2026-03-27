@@ -9,7 +9,8 @@ export const PLATFORM_TABLES = {
   integrationConnections: "integration_connections",
   runRecords: "run_records",
   runEvents: "run_events",
-  orgSyncConfig: "org_sync_config"
+  orgSyncConfig: "org_sync_config",
+  secrets: "secrets"
 } as const;
 
 export type DepartmentRecord = {
@@ -105,6 +106,16 @@ export type RunEventRecord = {
  * 组织同步配置（单行，主键固定为 "default"）。
  * 存储钉钉 AppKey/AppSecret、定时任务触发时间及是否开启。
  */
+export type SecretRecord = {
+  id: string;
+  key: string;
+  value: string;
+  scope: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type OrgSyncConfigRecord = {
   id: string; // 固定 "default"
   app_key: string;

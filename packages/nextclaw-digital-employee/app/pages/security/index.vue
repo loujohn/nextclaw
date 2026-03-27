@@ -14,7 +14,9 @@ import {
   Download,
   Plus,
   Edit,
-  ChevronRight
+  ChevronRight,
+  Trash2,
+  KeyRound
 } from "lucide-vue-next";
 
 // ------------------- 类型定义 -------------------
@@ -141,9 +143,94 @@ const dataPolicies = ref<DataPolicyItem[]>([
   { id: "p7", category: "数据导出", description: "数据导出需管理员审批", level: "low", status: "inactive" }
 ]);
 
+// ------------------- Secrets 类型与数据 -------------------
+
+type SecretItem = {
+  id: string;
+  key: string;
+  maskedValue: string;
+  scope: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const secrets = ref<SecretItem[]>([]);
+const secretsLoading = ref(false);
+const showSecretModal = ref(false);
+const secretModalMode = ref<"add" | "edit">("add");
+const editingSecretKey = ref("");
+const secretForm = reactive({
+  key: "",
+  value: "",
+  scope: "global",
+  description: ""
+});
+const showDeleteConfirm = ref(false);
+const deletingSecretKey = ref("");
+
+async function fetchSecrets() {
+  secretsLoading.value = true;
+  try {
+    const res = await $fetch<{ ok: boolean; data: SecretItem[] }>("/api/secrets");
+    secrets.value = res.data ?? [];
+  } catch {
+    secrets.value = [];
+  } finally {
+    secretsLoading.value = false;
+  }
+}
+
+function openAddSecret() {
+  secretModalMode.value = "add";
+  secretForm.key = "";
+  secretForm.value = "";
+  secretForm.scope = "global";
+  secretForm.description = "";
+  showSecretModal.value = true;
+}
+
+function openEditSecret(s: SecretItem) {
+  secretModalMode.value = "edit";
+  editingSecretKey.value = s.key;
+  secretForm.key = s.key;
+  secretForm.value = "";
+  secretForm.scope = s.scope;
+  secretForm.description = s.description;
+  showSecretModal.value = true;
+}
+
+async function saveSecret() {
+  if (secretModalMode.value === "add") {
+    if (!secretForm.key.trim() || !secretForm.value) return;
+    await $fetch("/api/secrets", {
+      method: "POST",
+      body: { key: secretForm.key.trim(), value: secretForm.value, scope: secretForm.scope, description: secretForm.description }
+    });
+  } else {
+    await $fetch(`/api/secrets/${editingSecretKey.value}`, {
+      method: "PATCH",
+      body: { value: secretForm.value || undefined, description: secretForm.description }
+    });
+  }
+  showSecretModal.value = false;
+  await fetchSecrets();
+}
+
+function confirmDeleteSecret(key: string) {
+  deletingSecretKey.value = key;
+  showDeleteConfirm.value = true;
+}
+
+async function deleteSecret() {
+  await $fetch(`/api/secrets/${deletingSecretKey.value}`, { method: "DELETE" });
+  showDeleteConfirm.value = false;
+  await fetchSecrets();
+}
+
 // ------------------- 状态管理 -------------------
 
-const activeTab = ref<"permissions" | "audit" | "data-security">("permissions");
+const activeTab = ref<"permissions" | "audit" | "data-security" | "secrets">("permissions");
 const selectedRoleId = ref<string | null>("r3");
 const showAddRoleModal = ref(false);
 const newRoleName = ref("");
@@ -152,9 +239,14 @@ const auditFilter = ref<"all" | "success" | "failure" | "warning">("all");
 
 const tabs = [
   { key: "permissions" as const, label: "权限管理", icon: Key },
+  { key: "secrets" as const, label: "密钥管理", icon: KeyRound },
   { key: "audit" as const, label: "操作审计", icon: FileText },
   { key: "data-security" as const, label: "数据安全", icon: Database }
 ];
+
+watch(activeTab, (tab) => {
+  if (tab === "secrets") fetchSecrets();
+});
 
 const selectedRole = computed(() => roles.value.find((r) => r.id === selectedRoleId.value) ?? null);
 
@@ -603,6 +695,160 @@ const levelLabels: Record<string, string> = {
         </div>
       </div>
     </div>
+
+    <!-- ===== 密钥管理 ===== -->
+    <div v-if="activeTab === 'secrets'" class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-foreground">密钥管理</h2>
+          <p class="mt-0.5 text-xs text-muted-foreground">管理 Skill 脚本运行时所需的凭证与密钥，值以 AES-256 加密存储。</p>
+        </div>
+        <button
+          class="btn-primary text-xs"
+          @click="openAddSecret"
+        >
+          <Plus class="h-3.5 w-3.5" />
+          添加密钥
+        </button>
+      </div>
+
+      <div v-if="secretsLoading" class="py-12 text-center text-sm text-muted-foreground">加载中...</div>
+
+      <div v-else-if="secrets.length === 0" class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 py-16 text-center">
+        <KeyRound class="mb-3 h-8 w-8 text-muted-foreground/40" :stroke-width="1.5" />
+        <p class="text-sm font-medium text-muted-foreground">暂无密钥</p>
+        <p class="mt-1 text-xs text-muted-foreground">点击"添加密钥"创建第一个密钥，Skill 脚本可通过 process.env 读取。</p>
+      </div>
+
+      <div v-else class="space-y-2">
+        <div
+          v-for="s in secrets"
+          :key="s.id"
+          class="card-elevated flex items-center gap-4 rounded-xl p-4"
+        >
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <Key class="h-4 w-4 text-primary" :stroke-width="1.8" />
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <code class="text-sm font-semibold text-foreground">{{ s.key }}</code>
+              <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-muted text-muted-foreground">
+                {{ s.scope === 'global' ? '全局' : s.scope }}
+              </span>
+            </div>
+            <div class="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
+              <span class="font-mono">{{ s.maskedValue }}</span>
+              <span v-if="s.description">· {{ s.description }}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button
+              class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="编辑"
+              @click="openEditSecret(s)"
+            >
+              <Edit class="h-3.5 w-3.5" :stroke-width="1.8" />
+            </button>
+            <button
+              class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              title="删除"
+              @click="confirmDeleteSecret(s.key)"
+            >
+              <Trash2 class="h-3.5 w-3.5" :stroke-width="1.8" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 密钥添加/编辑弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showSecretModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          @click.self="showSecretModal = false"
+        >
+          <div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h2 class="mb-4 text-base font-semibold text-foreground">
+              {{ secretModalMode === 'add' ? '添加密钥' : '编辑密钥' }}
+            </h2>
+            <div class="space-y-3">
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">Key（环境变量名）</label>
+                <input
+                  v-model="secretForm.key"
+                  type="text"
+                  class="input-field font-mono"
+                  placeholder="如 DINGTALK_APP_KEY"
+                  :disabled="secretModalMode === 'edit'"
+                  :class="secretModalMode === 'edit' && 'opacity-60 cursor-not-allowed'"
+                />
+              </div>
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  Value{{ secretModalMode === 'edit' ? '（留空则不更新）' : '' }}
+                </label>
+                <input
+                  v-model="secretForm.value"
+                  type="password"
+                  class="input-field font-mono"
+                  placeholder="输入密钥值"
+                  autocomplete="off"
+                />
+              </div>
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">作用域</label>
+                <select v-model="secretForm.scope" class="input-field">
+                  <option value="global">全局（所有员工可用）</option>
+                </select>
+              </div>
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">描述（可选）</label>
+                <input
+                  v-model="secretForm.description"
+                  type="text"
+                  class="input-field"
+                  placeholder="备注说明"
+                />
+              </div>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+              <button class="btn-ghost text-sm" @click="showSecretModal = false">取消</button>
+              <button
+                class="btn-primary text-sm"
+                :disabled="secretModalMode === 'add' && (!secretForm.key.trim() || !secretForm.value)"
+                @click="saveSecret"
+              >
+                {{ secretModalMode === 'add' ? '添加' : '保存' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 删除确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showDeleteConfirm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          @click.self="showDeleteConfirm = false"
+        >
+          <div class="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h2 class="mb-2 text-base font-semibold text-foreground">确认删除</h2>
+            <p class="text-sm text-muted-foreground">
+              确定删除密钥 <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{{ deletingSecretKey }}</code> 吗？删除后 Skill 脚本将无法通过 process.env 读取该值。
+            </p>
+            <div class="mt-5 flex justify-end gap-2">
+              <button class="btn-ghost text-sm" @click="showDeleteConfirm = false">取消</button>
+              <button class="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors" @click="deleteSecret">删除</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- 新建角色弹窗 -->
     <Teleport to="body">

@@ -19,6 +19,7 @@ import {
   HeartbeatService
 } from "@nextclaw/core";
 import { buildPlatformRuntimeConfig } from "../runtime/openclaw-runtime";
+import type { SecretsRepository } from "../repositories/secrets-repository";
 
 export type NextclawEngineGatewayOptions = {
   homeDir: string;
@@ -29,6 +30,7 @@ export type NextclawEngineGatewayOptions = {
   config?: Config;
   extensionRegistry?: ExtensionRegistry;
   defaultConfig?: Record<string, unknown>;
+  secretsRepo?: SecretsRepository;
 };
 
 export type AvailableSkillView = {
@@ -144,10 +146,11 @@ function resolveBuiltinSkillsDir(): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
-function seedBuiltinSkills(workspaceDir: string): void {
+function seedBuiltinSkills(workspaceDir: string): Set<string> {
+  const builtinNames = new Set<string>();
   const builtinSkillsDir = resolveBuiltinSkillsDir();
   if (!builtinSkillsDir) {
-    return;
+    return builtinNames;
   }
   const workspaceSkillsDir = join(workspaceDir, "skills");
   mkdirSync(workspaceSkillsDir, { recursive: true });
@@ -155,13 +158,12 @@ function seedBuiltinSkills(workspaceDir: string): void {
     if (!entry.isDirectory()) {
       continue;
     }
+    builtinNames.add(entry.name);
     const sourceDir = join(builtinSkillsDir, entry.name);
     const targetDir = join(workspaceSkillsDir, entry.name);
-    if (existsSync(join(targetDir, "SKILL.md"))) {
-      continue;
-    }
-    cpSync(sourceDir, targetDir, { recursive: true });
+    cpSync(sourceDir, targetDir, { recursive: true, force: true });
   }
+  return builtinNames;
 }
 
 // Synced from packages/nextclaw/src/cli/missing-provider.ts
@@ -191,6 +193,8 @@ export class NextclawEngineGateway {
   private readonly engines: Map<string, AgentEngine> = new Map();
   private fallbackEngine: AgentEngine;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
+  private readonly builtinSkillNames: Set<string>;
+  private readonly secretsRepo?: SecretsRepository;
 
   constructor(options: NextclawEngineGatewayOptions) {
     this.homeDir = resolve(options.homeDir);
@@ -198,7 +202,7 @@ export class NextclawEngineGateway {
     process.env.NEXTCLAW_HOME = this.homeDir;
     mkdirSync(this.homeDir, { recursive: true });
     mkdirSync(this.workspaceDir, { recursive: true });
-    seedBuiltinSkills(this.workspaceDir);
+    this.builtinSkillNames = seedBuiltinSkills(this.workspaceDir);
     this.bus = options.bus ?? new MessageBus();
     this.sessionManager = options.sessionManager ?? new SessionManager(this.workspaceDir);
     this.cronService = options.cronService ?? null;
@@ -213,10 +217,11 @@ export class NextclawEngineGateway {
       config: this.config
     });
     this.extensionRegistry = options.extensionRegistry ?? { tools: [], channels: [], diagnostics: [], engines: [] };
+    this.secretsRepo = options.secretsRepo;
     this.fallbackEngine = this.createEngineForWorkspace("main", this.workspaceDir);
   }
 
-  private createEngineForWorkspace(agentId: string, workspace: string, model?: string): AgentEngine {
+  private createEngineForWorkspace(agentId: string, workspace: string, model?: string, envOverlay?: Record<string, string>): AgentEngine {
     const globalSkillsDir = join(this.workspaceDir, "skills");
     const engineContext: AgentEngineFactoryContext = {
       agentId,
@@ -235,7 +240,8 @@ export class NextclawEngineGateway {
       contextConfig: this.config.agents.context,
       config: this.config,
       extensionRegistry: this.extensionRegistry,
-      additionalSkillsDirs: workspace !== this.workspaceDir ? [globalSkillsDir] : undefined
+      additionalSkillsDirs: workspace !== this.workspaceDir ? [globalSkillsDir] : undefined,
+      envOverlay
     };
     return this.createEngine(engineContext);
   }
@@ -362,6 +368,9 @@ export class NextclawEngineGateway {
   async importFromLocalPath(sourcePath: string): Promise<ImportedSkillView> {
     const skillDir = findSkillDirectory(sourcePath);
     const skillName = parseSkillName(join(skillDir, "SKILL.md"));
+    if (this.builtinSkillNames.has(skillName)) {
+      throw new Error(`Cannot import skill "${skillName}" — conflicts with built-in skill`);
+    }
     const installPath = join(this.workspaceDir, "skills", skillName);
     rmSync(installPath, { recursive: true, force: true });
     mkdirSync(join(this.workspaceDir, "skills"), { recursive: true });
@@ -395,7 +404,18 @@ export class NextclawEngineGateway {
     const events: SessionEvent[] = [];
     const sessionKey = params.sessionKey ?? `employee:${params.employeeId}:ui:direct:web`;
     const agentId = params.agentId ?? "main";
-    const engine = this.getOrCreateEngine(agentId, params.workspace, params.model);
+
+    let envOverlay: Record<string, string> | undefined;
+    if (this.secretsRepo) {
+      const secrets = await this.secretsRepo.getDecryptedForScope(params.employeeId);
+      if (secrets.size > 0) {
+        envOverlay = Object.fromEntries(secrets);
+      }
+    }
+
+    const engine = envOverlay
+      ? this.createEngineForWorkspace(agentId, params.workspace ?? this.workspaceDir, params.model, envOverlay)
+      : this.getOrCreateEngine(agentId, params.workspace, params.model);
     const session = this.sessionManager.getOrCreate(sessionKey);
     const historyCountBefore = this.sessionManager.getHistory(session).length;
     const metadata: Record<string, unknown> = {};
@@ -416,11 +436,7 @@ export class NextclawEngineGateway {
       this.sessionManager.addMessage(session, "user", params.message);
       this.sessionManager.addMessage(session, "assistant", reply);
     }
-    return {
-      sessionKey,
-      reply,
-      events
-    };
+    return { sessionKey, reply, events };
   }
 
   // 获取会话历史，包含工具调用和推理过程等元数据

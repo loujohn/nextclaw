@@ -15,17 +15,23 @@ export async function prepareEmployeeRuntime(params: {
 }> {
   const employeeSkills = await params.employeeSkillRepo.listByEmployeeId(params.employee.id);
 
-  let disabledGlobally: Set<string> | null = null;
-  if (params.skillInstallationRepo) {
-    const installations = await params.skillInstallationRepo.list();
-    disabledGlobally = new Set(
-      installations.filter((i) => !i.enabled).map((i) => i.skillName)
-    );
-  }
+  const installations = params.skillInstallationRepo
+    ? await params.skillInstallationRepo.list()
+    : [];
 
-  const skillNames = employeeSkills
-    .filter((skill) => skill.enabled && (!disabledGlobally || !disabledGlobally.has(skill.skillName)))
+  const disabledGlobally = new Set(
+    installations.filter((i) => !i.enabled).map((i) => i.skillName)
+  );
+
+  const globallyEnabled = new Set(
+    installations.filter((i) => i.enabled).map((i) => i.skillName)
+  );
+
+  const boundSkills = employeeSkills
+    .filter((skill) => skill.enabled && !disabledGlobally.has(skill.skillName))
     .map((skill) => skill.skillName);
+
+  const skillNames = [...new Set([...boundSkills, ...globallyEnabled])];
 
   const workspace = ensureEmployeeWorkspace(
     params.homeDir,
@@ -38,8 +44,5 @@ export async function prepareEmployeeRuntime(params: {
     params.workspaceDir
   );
 
-  return {
-    workspace,
-    skillNames
-  };
+  return { workspace, skillNames };
 }

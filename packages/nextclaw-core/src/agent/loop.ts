@@ -70,6 +70,7 @@ export class AgentLoop {
       extensionRegistry?: ExtensionRegistry;
       resolveMessageToolHints?: MessageToolHintsResolver;
       agentId?: string;
+      envOverlay?: Record<string, string>;
     }
   ) {
     this.context = new ContextBuilder(options.workspace, options.contextConfig, options.additionalSkillsDirs);
@@ -102,7 +103,8 @@ export class AgentLoop {
       new ExecTool({
         workingDir: this.options.workspace,
         timeout: this.options.execConfig?.timeout ?? 60,
-        restrictToWorkspace: this.options.restrictToWorkspace ?? false
+        restrictToWorkspace: this.options.restrictToWorkspace ?? false,
+        envOverlay: this.options.envOverlay
       })
     );
 

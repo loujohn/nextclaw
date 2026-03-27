@@ -44,6 +44,9 @@ WORKDIR /app
 # Copy the self-contained Nitro output (includes bundled node_modules)
 COPY --from=builder /app/packages/nextclaw-digital-employee/dist ./
 
+# Copy templates for employee workspace initialization
+COPY --from=builder /app/packages/nextclaw/templates ./templates/
+
 # Skills layout — three access paths used by different runtime mechanisms:
 #
 # 1. /app/server/skills/  ← SkillsLoader.BUILTIN_SKILLS_DIR

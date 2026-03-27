@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Knex } from "knex";
 import { CronService, MessageBus, SessionManager } from "@nextclaw/core";
@@ -17,6 +17,7 @@ import { HumanEmployeeRepository } from "../repositories/human-employee-reposito
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
+import { SecretsRepository } from "../repositories/secrets-repository";
 import { DigitalEmployeeChannelRuntime } from "./channel-runtime";
 import { getDingTalkRuntimeConfig } from "./dingtalk-config";
 import { loadPlatformRuntimeState } from "./openclaw-runtime";
@@ -34,6 +35,7 @@ type PlatformContext = {
   runRepo: RunRecordRepository;
   skillInstallationRepo: SkillInstallationRepository;
   integrationConnectionRepo: IntegrationConnectionRepository;
+  secretsRepo: SecretsRepository;
   gateway: NextclawEngineGateway;
   skillInstallService: SkillInstallService;
   employeeRunService: EmployeeRunService;
@@ -98,6 +100,10 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const workspaceDir = join(homeDir, "workspace");
       mkdirSync(homeDir, { recursive: true });
       mkdirSync(workspaceDir, { recursive: true });
+      const homePkg = join(homeDir, "package.json");
+      if (!existsSync(homePkg)) {
+        writeFileSync(homePkg, '{ "private": true, "type": "commonjs" }\n', "utf-8");
+      }
       const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
       await ensurePlatformDatabase(db);
       const integrationConnectionRepo = new IntegrationConnectionRepository(db);
@@ -109,6 +115,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const bus = new MessageBus();
       const sessionManager = new SessionManager(workspaceDir);
       const cronService = new CronService(join(homeDir, "cron", "jobs.json"));
+      const secretsRepo = new SecretsRepository(db, homeDir);
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
@@ -117,7 +124,8 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         cronService,
         config: initialRuntimeState.config,
         extensionRegistry: initialRuntimeState.extensionRegistry,
-        defaultConfig: buildPlatformGatewayConfig()
+        defaultConfig: buildPlatformGatewayConfig(),
+        secretsRepo
       });
       const departmentRepo = new DepartmentRepository(db);
       const employeeRepo = new EmployeeRepository(db);
@@ -199,6 +207,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         runRepo,
         skillInstallationRepo,
         integrationConnectionRepo,
+        secretsRepo,
         gateway,
         skillInstallService,
         employeeRunService,

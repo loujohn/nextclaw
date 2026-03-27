@@ -18,6 +18,7 @@ export class ExecTool extends Tool {
       denyPatterns?: string[];
       allowPatterns?: string[];
       restrictToWorkspace?: boolean;
+      envOverlay?: Record<string, string>;
     } = {}
   ) {
     super();
@@ -72,7 +73,7 @@ export class ExecTool extends Tool {
     }
 
     try {
-      const env = { ...process.env };
+      const env = { ...process.env, ...(this.options.envOverlay ?? {}) };
       if (this.context.sessionKey) {
         env.NEXTCLAW_RUNTIME_SESSION_KEY = this.context.sessionKey;
       }

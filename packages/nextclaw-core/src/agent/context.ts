@@ -109,7 +109,7 @@ export class ContextBuilder {
       }
     }
 
-    const skillsSummary = this.skills.buildSkillsSummary();
+    const skillsSummary = this.skills.buildSkillsSummary(skillNames);
     if (skillsSummary) {
       parts.push(
         [

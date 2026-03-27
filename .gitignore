@@ -29,5 +29,6 @@ packages/nextclaw/*.tgz
 apps/docs/.vitepress/.temp/
 .worktrees/
 .superpowers/
+packages/nextclaw-digital-employee/digital-employee-data
 
 .github/

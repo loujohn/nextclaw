@@ -250,6 +250,19 @@ async function createEmployeeScheduleJobsTable(db: Knex): Promise<void> {
   });
 }
 
+async function createSecretsTable(db: Knex): Promise<void> {
+  if (await db.schema.hasTable(PLATFORM_TABLES.secrets)) return;
+  await db.schema.createTable(PLATFORM_TABLES.secrets, (table) => {
+    table.text("id").primary();
+    table.text("key").notNullable().unique();
+    table.text("value").notNullable();
+    table.text("scope").notNullable().defaultTo("global");
+    table.text("description").defaultTo("");
+    table.text("created_at").notNullable();
+    table.text("updated_at").notNullable();
+  });
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createDepartmentsTable(db);
   await createEmployeesTable(db);
@@ -262,6 +275,7 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createRunRecordsTable(db);
   await createRunEventsTable(db);
   await createOrgSyncConfigTable(db);
+  await createSecretsTable(db);
   await migrateEmployeesAddModel(db);
   await migrateEmployeesAddDepartmentId(db);
   await migrateAddDepartmentExternalId(db);

@@ -147,7 +147,8 @@ export class SubagentManager {
         new ExecTool({
           workingDir: this.options.workspace,
           timeout: this.options.execConfig?.timeout ?? 60,
-          restrictToWorkspace: this.options.restrictToWorkspace ?? false
+          restrictToWorkspace: this.options.restrictToWorkspace ?? false,
+          envOverlay: this.options.envOverlay
         })
       );
       tools.register(new WebSearchTool(this.options.searchConfig));

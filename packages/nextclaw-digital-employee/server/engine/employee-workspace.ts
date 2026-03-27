@@ -1,6 +1,6 @@
 // Synced approach from packages/nextclaw/src/cli/workspace.ts (WorkspaceManager.createWorkspaceTemplates)
 // Keep consistent with upstream template seeding logic.
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { APP_NAME } from "@nextclaw/core";
 
@@ -26,7 +26,6 @@ export function ensureEmployeeWorkspace(
 
   seedFromTemplates(wsDir);
   seedFromGlobal(wsDir, globalWorkspaceDir);
-  linkGlobalSkills(wsDir, globalWorkspaceDir);
 
   writeSoulFile(wsDir, employee);
   writeIdentityFile(wsDir, employee);
@@ -84,27 +83,6 @@ function seedFromGlobal(wsDir: string, globalWorkspaceDir: string): void {
     if (existsSync(src)) {
       cpSync(src, dest);
     }
-  }
-}
-
-// 将全局 skills 目录符号链接到员工工作区，
-// 使 SKILL.md 中的相对路径（如 `scripts/xxx.js`）能正确解析。
-// Windows 上使用 junction（无需管理员权限），其他平台使用 dir symlink。
-function linkGlobalSkills(wsDir: string, globalWorkspaceDir: string): void {
-  const globalSkills = join(globalWorkspaceDir, "skills");
-  const localSkills = join(wsDir, "skills");
-  if (!existsSync(globalSkills)) return;
-  try {
-    if (existsSync(localSkills)) {
-      const stat = lstatSync(localSkills);
-      if (stat.isSymbolicLink()) return;
-      if (stat.isDirectory()) {
-        rmSync(localSkills, { recursive: true, force: true });
-      }
-    }
-    symlinkSync(globalSkills, localSkills, "junction");
-  } catch {
-    // 符号链接失败时静默跳过（权限受限环境等）
   }
 }
 
