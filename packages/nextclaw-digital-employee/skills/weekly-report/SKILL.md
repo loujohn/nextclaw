@@ -131,3 +131,38 @@ zentaopms --json task list -e 10
 # 筛选已完成任务
 zentaopms --json task list -e 10 --status done
 ```
+
+## 发送通知
+
+使用脚本将周报内容写入临时文件目录，再发送钉钉通知。
+
+### 脚本位置
+
+```
+skills/weekly-report/scripts/weekly-report.py
+```
+
+### 使用方法
+
+```bash
+# 方式1: 从文件读取
+python skills/weekly-report/scripts/weekly-report.py --file /path/to/weekly.md
+
+# 方式2: 从 stdin 传入
+cat /path/to/weekly.md | python skills/weekly-report/scripts/weekly-report.py
+
+# 方式3: 直接传入内容
+python skills/weekly-report/scripts/weekly-report.py --content "周报内容"
+```
+
+生成的文件在 `temp/weekly_时间戳.md`。
+
+### 发送通知
+
+```bash
+python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '周报总结' --file temp/weekly_时间戳.md --cleanup
+```
+
+### 临时文件目录
+
+`temp/`（与 skills 同级），脚本自动创建。

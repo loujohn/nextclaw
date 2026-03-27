@@ -89,6 +89,41 @@ metadata:
 6. **综合判断** → 确定健康状态和风险等级
 7. **发送通知** → 汇总结果发送到钉钉群
 
+## 发送通知
+
+使用脚本将分析结果写入临时文件目录，再发送钉钉通知。
+
+### 脚本位置
+
+```
+skills/zentao-project-analysis/scripts/project-analysis.py
+```
+
+### 使用方法
+
+```bash
+# 方式1: 从文件读取
+python skills/zentao-project-analysis/scripts/project-analysis.py --file /path/to/report.md
+
+# 方式2: 从 stdin 传入
+cat /path/to/report.md | python skills/zentao-project-analysis/scripts/project-analysis.py
+
+# 方式3: 直接传入内容
+python skills/zentao-project-analysis/scripts/project-analysis.py --content "分析内容"
+```
+
+生成的文件在 `temp/project_analysis_时间戳.md`。
+
+### 发送通知
+
+```bash
+python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '项目分析报告' --file temp/project_analysis_时间戳.md --cleanup
+```
+
+### 临时文件目录
+
+`temp/`（与 skills 同级），脚本自动创建。
+
 ## 输出格式
 
 分析完成后，输出项目分析报告，包含：
