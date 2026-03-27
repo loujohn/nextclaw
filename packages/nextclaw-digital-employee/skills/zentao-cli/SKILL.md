@@ -55,7 +55,7 @@ zentaopms auth setup --url <禅道地址> --username <账号> --password <密码
 3. **如果返回401未认证**
    ```bash
    # 调用认证脚本
-   node skills/zentao-cli/scripts/auth.js
+   python skills/zentao-cli/scripts/auth.py
    
    # 然后重试目标命令
    zentaopms --json project list
@@ -74,7 +74,7 @@ zentaopms auth setup --url <禅道地址> --username <账号> --password <密码
 
 ```bash
 # 认证脚本位置
-node skills/zentao-cli/scripts/auth.js
+python skills/zentao-cli/scripts/auth.py
 ```
 
 此脚本会自动完成以下操作：
@@ -86,10 +86,10 @@ node skills/zentao-cli/scripts/auth.js
 
 ```bash
 # 检查认证状态
-node skills/zentao-cli/scripts/auth.js --check
+python skills/zentao-cli/scripts/auth.py --check
 
 # 自动认证（如未认证）
-node skills/zentao-cli/scripts/auth.js
+python skills/zentao-cli/scripts/auth.py
 ```
 
 ---

@@ -1,0 +1,6 @@
+variables:
+  VER: "22-alpine"
+  CACHEADDR: "packages/nextclaw-digital-employee" #必需指定编译产物目录
+include:
+  - project: 'devops-demo/ci'
+    file: 'node-python.yaml'

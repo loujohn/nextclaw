@@ -15,62 +15,83 @@ metadata:
 ## 脚本位置
 
 ```
-skills/dingtalk-notify/scripts/dingtalk-notify.js
+<本技能目录>/scripts/dingtalk-notify.py
+```
+
+### 临时文件目录
+
+所有脚本统一使用**用户主目录下的固定目录**（跨平台兼容）。
+
+**目录位置：**
+- **Windows**: `C:\Users\用户名\nextclaw-temp`
+- **Linux**: `/home/用户名/nextclaw-temp`
+- **Mac**: `/Users/用户名/nextclaw-temp`
+
+**执行工时检查脚本时会输出绝对路径：**
+```
+[工时检查] 临时文件目录：C:\Users\用户名\nextclaw-temp
+```
+
+**推荐：直接复制上述路径使用**
+```bash
+# 使用绝对路径
+python scripts/dingtalk-notify.py markdown '标题' --file C:\Users\用户名\nextclaw-temp\文件名.md --cleanup
 ```
 
 ## 使用方法
 
-先获取技能位置，再设置 workingDir 执行脚本。
-
-### 执行步骤
-
-1. 从系统提供的 `available_skills` 中获取技能 `location` 字段
-2. 提取技能目录作为 `workingDir`
-3. 使用相对路径执行脚本
-
-### ⚠️ 重要：使用唯一文件名
-
-传递消息内容时**必须使用带时间戳的唯一文件名**，避免残留文件干扰后续发送：
-
-```
-notify-<timestamp>.md
-```
-
-示例流程：
-1. `write_file` 写入 `notify-1711440000.md`
-2. `exec` 调用 `node scripts/dingtalk-notify.js markdown '标题' --file notify-1711440000.md`
-3. 脚本发送成功后自动删除该文件
-
-**禁止使用固定文件名**（如 `content.md`），否则多次运行会导致发送旧内容。
+直接使用相对路径执行脚本。
 
 ## 一、群机器人通知
 
 发送到钉钉群。
+
+### 参数说明
+
+| 参数 | 位置 | 必填 | 说明 |
+|------|------|------|------|
+| 类型 | 1 | 是 | 消息类型：`text`、`markdown`、`link`、`actionCard` |
+| 标题 | 2 | 否 | 消息标题（markdown/actionCard 必填） |
+| 内容 | 3 | 是 | 消息内容（支持 `\n` 换行符） |
 
 ### 消息类型示例
 
 #### Markdown 消息（推荐）
 
 ```bash
-node scripts/dingtalk-notify.js markdown '工时提醒' --file notify-1711440000.md
+# 使用脚本输出的绝对路径（推荐）
+python scripts/dingtalk-notify.py markdown '标题' --file <脚本输出的路径>/你的文件名.md --cleanup
 ```
 
 #### 文本消息
 
 ```bash
-node scripts/dingtalk-notify.js text '' '这是一条测试消息'
+# Bash/Shell 环境
+python scripts/dingtalk-notify.py text '' '这是一条测试消息'
 ```
 
 #### 链接消息
 
 ```bash
-node scripts/dingtalk-notify.js link '链接标题' '链接描述内容' 'https://example.com'
+# Bash/Shell 环境
+python scripts/dingtalk-notify.py link '链接标题' '链接描述内容' 'https://example.com'
 ```
 
 #### ActionCard 卡片消息
 
 ```bash
-node scripts/dingtalk-notify.js actioncard '卡片标题' '卡片内容描述' '查看详情' 'https://example.com'
+# Bash/Shell 环境
+python scripts/dingtalk-notify.py actioncard '卡片标题' '卡片内容描述' '查看详情' 'https://example.com'
+```
+
+### ⚠️ CMD 终端兼容性问题
+
+CMD 环境下 `echo` 的管道 `|` 会被解析为管道符，导致命令失败。
+
+**解决方案：使用 --file 从文件读取内容，发送后自动清理**
+
+```cmd
+python scripts/dingtalk-notify.py markdown '标题' --file <脚本输出的路径>\你的文件名.md --cleanup
 ```
 
 ## 二、工作通知（个人消息）
@@ -97,25 +118,15 @@ node scripts/dingtalk-notify.js actioncard '卡片标题' '卡片内容描述' '
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| --token | 否 | 应用 access_token（有默认值） |
-| --appkey | 否 | 应用 appKey（有默认值） |
-| --secret | 否 | 应用 appSecret（有默认值） |
-| --agent | 否 | 应用 AgentID（有默认值） |
-| --user | 是 | 接收者 userid（使用工时接口返回的 dingtalkId） |
-| --type | 是 | 消息类型：`text` 或 `markdown` |
-| --title | 否 | 标题（markdown 必填） |
-| --content | 是 | 消息内容（使用 --file 读取文件） |
+| --user | 是 | 接收者 dingtalkId |
+| --msgtype | 是 | 消息类型：`text` 或 `markdown` |
+| --file | 是 | 消息内容文件 |
 
 ### 工作通知示例
 
 ```bash
-# 发送 text 消息
-node scripts/dingtalk-notify.js work --user <dingtalkId> --type text --content '这是一条提醒'
-
-# 发送 markdown 消息
-node scripts/dingtalk-notify.js work --user <dingtalkId> --type markdown --title '工时提醒' --content --file content.md
+# 使用脚本输出的绝对路径
+python scripts/dingtalk-notify.py work '工时提醒' --user <dingtalkId> --msgtype markdown --file <脚本输出的路径>/你的文件名.md --cleanup
 ```
 
-- **user**: 使用工时接口返回的 `dingtalkId` 字段
-- **content.md**: 文件路径，文件内容支持 Markdown 格式
-```
+- **--cleanup**: 发送后自动删除文件
