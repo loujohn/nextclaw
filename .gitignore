@@ -32,3 +32,4 @@ apps/docs/.vitepress/.temp/
 packages/nextclaw-digital-employee/digital-employee-data
 
 .github/
+.dockerignore
