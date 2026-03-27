@@ -45,14 +45,17 @@ export async function getOrgSyncConfig(db: Knex): Promise<OrgSyncConfigView> {
   let record = await db<OrgSyncConfigRecord>(PLATFORM_TABLES.orgSyncConfig)
     .where({ id: CONFIG_ID })
     .first();
+  // 从环境变量读取（trim 去除 Windows 换行符 \r 及首尾空白）
+  const envAppKey = process.env.DINGTALK_APP_KEY?.trim() ?? "";
+  const envAppSecret = process.env.DINGTALK_APP_SECRET?.trim() ?? "";
   if (!record) {
     // 首次初始化：从环境变量读取默认值
     const now = new Date().toISOString();
     const defaults: OrgSyncConfigRecord = {
       id: CONFIG_ID,
-      app_key: process.env.DINGTALK_APP_KEY ?? "",
-      app_secret: process.env.DINGTALK_APP_SECRET ?? "",
-      cron_expr: process.env.DINGTALK_CRON_EXPR ?? "0 1 * * *",
+      app_key: envAppKey,
+      app_secret: envAppSecret,
+      cron_expr: process.env.DINGTALK_CRON_EXPR?.trim() ?? "0 1 * * *",
       enabled: process.env.DINGTALK_SYNC_ENABLED === "true" ? 1 : 0,
       last_run_at: null,
       last_run_status: null,
@@ -64,8 +67,8 @@ export async function getOrgSyncConfig(db: Knex): Promise<OrgSyncConfigView> {
   } else {
     // 已有记录：若 DB 中字段为空而 env 中已配置，则用 env 覆盖（允许 .env 初始化已有实例）
     const envPatch: Partial<OrgSyncConfigRecord> = {};
-    if (!record.app_key && process.env.DINGTALK_APP_KEY) envPatch.app_key = process.env.DINGTALK_APP_KEY;
-    if (!record.app_secret && process.env.DINGTALK_APP_SECRET) envPatch.app_secret = process.env.DINGTALK_APP_SECRET;
+    if (!record.app_key && envAppKey) envPatch.app_key = envAppKey;
+    if (!record.app_secret && envAppSecret) envPatch.app_secret = envAppSecret;
     if (Object.keys(envPatch).length > 0) {
       envPatch.updated_at = new Date().toISOString();
       await db<OrgSyncConfigRecord>(PLATFORM_TABLES.orgSyncConfig).where({ id: CONFIG_ID }).update(envPatch);
@@ -92,16 +95,18 @@ export async function runOrgSync(
   db: Knex,
   syncApiUrl: string
 ): Promise<{ ok: boolean; summary: string; data?: unknown }> {
-  const cfg = await db<OrgSyncConfigRecord>(PLATFORM_TABLES.orgSyncConfig).where({ id: CONFIG_ID }).first();
-  if (!cfg?.app_key || !cfg.app_secret) {
+  // 通过 getOrgSyncConfig 确保 env var 回填逻辑已执行，避免直接查 DB 绕过环境变量回填
+  const syncConfig = await getOrgSyncConfig(db);
+  if (!syncConfig.appKey || !syncConfig.appSecretSet) {
     return { ok: false, summary: "未配置钉钉 AppKey 或 AppSecret" };
   }
+  const appKey = syncConfig.appKey;
   const appSecret = await getRawAppSecret(db);
 
   // 使用 TS 客户端拉取钉钉组织数据
   let orgData: unknown;
   try {
-    const client = await DingTalkOrgClient.create(cfg.app_key, appSecret);
+    const client = await DingTalkOrgClient.create(appKey, appSecret);
     orgData = await client.fetchAllOrgData();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

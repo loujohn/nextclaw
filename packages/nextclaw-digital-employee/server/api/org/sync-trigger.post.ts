@@ -7,7 +7,10 @@ export default defineEventHandler(async (event) => {
   const config = await getOrgSyncConfig(ctx.db);
 
   if (!config.appKey || !config.appSecretSet) {
-    throw createError({ statusCode: 400, statusMessage: "请先配置钉钉 AppKey 和 AppSecret" });
+    throw createError({
+      statusCode: 400,
+      statusMessage: "未检测到钉钉 AppKey / AppSecret，请配置环境变量 DINGTALK_APP_KEY 和 DINGTALK_APP_SECRET，或在【系统设置 → 钉钉同步配置】中手动填写"
+    });
   }
 
   // 构建内部 sync API URL（同主机）
