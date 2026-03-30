@@ -421,16 +421,26 @@ export class NextclawEngineGateway {
     const metadata: Record<string, unknown> = {};
     if (agentId) metadata.agentId = agentId;
     if (params.requestedSkills?.length) metadata.requested_skills = params.requestedSkills;
-    const reply = await engine.processDirect({
-      content: params.message,
-      sessionKey,
-      channel: "ui",
-      chatId: params.employeeId,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      onSessionEvent: (event) => {
-        events.push(event);
-      }
-    });
+    const modelName = params.model || this.config.agents.defaults.model || "unknown";
+    const t0 = Date.now();
+    console.log(`[model-access] START employee=${params.employeeId} model=${modelName} session=${sessionKey} msgLen=${params.message.length}`);
+    let reply: string;
+    try {
+      reply = await engine.processDirect({
+        content: params.message,
+        sessionKey,
+        channel: "ui",
+        chatId: params.employeeId,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        onSessionEvent: (event) => {
+          events.push(event);
+        }
+      });
+    } catch (err) {
+      console.error(`[model-access] ERROR employee=${params.employeeId} model=${modelName} session=${sessionKey} elapsed=${Date.now() - t0}ms`, err);
+      throw err;
+    }
+    console.log(`[model-access] END employee=${params.employeeId} model=${modelName} session=${sessionKey} elapsed=${Date.now() - t0}ms replyLen=${reply.length} events=${events.length}`);
     const historyCountAfter = this.sessionManager.getHistory(session).length;
     if (historyCountAfter === historyCountBefore) {
       this.sessionManager.addMessage(session, "user", params.message);
