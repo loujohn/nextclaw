@@ -1,5 +1,8 @@
 services:
   digital-employee:
+    dns:
+      - 114.114.114.114
+      - 8.8.8.8
     build:
       # Build context is the monorepo root (Dockerfile needs full workspace)
       context: ../..
