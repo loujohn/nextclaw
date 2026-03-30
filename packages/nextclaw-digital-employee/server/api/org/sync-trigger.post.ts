@@ -1,4 +1,4 @@
-import { createError, getRequestURL } from "h3";
+import { createError } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
 import { getOrgSyncConfig, runOrgSync } from "../../services/org-sync-service";
 
@@ -13,11 +13,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // 构建内部 sync API URL（同主机）
-  const reqUrl = getRequestURL(event);
-  const syncApiUrl = `${reqUrl.protocol}//${reqUrl.host}/api/org/sync`;
-
-  const result = await runOrgSync(ctx.db, syncApiUrl);
+  const result = await runOrgSync(ctx.db);
 
   if (!result.ok) {
     throw createError({ statusCode: 500, statusMessage: result.summary });

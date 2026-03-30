@@ -20,13 +20,9 @@ export default defineNitroPlugin(async () => {
     return;
   }
 
-  // 构建内部同步 API URL（Nitro 内部端口）
-  const port = process.env.PORT ?? "3031";
-  const syncApiUrl = `http://127.0.0.1:${port}/api/org/sync`;
-
   const task = cron.schedule(config.cronExpr, async () => {
     console.log("[org-sync-scheduler] 开始执行定时组织同步…");
-    const result = await runOrgSync(ctx.db, syncApiUrl);
+    const result = await runOrgSync(ctx.db);
     if (result.ok) {
       console.log("[org-sync-scheduler] 同步成功:", result.summary);
     } else {
