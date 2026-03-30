@@ -224,6 +224,20 @@ export async function updateOrgSyncConfig(db: Knex, patch: OrgSyncConfigUpdate):
   return getEnvOrgSyncConfig();
 }
 
+/** 提取错误的完整信息，包含 cause 链（fetch 的根因通常在 cause 里） */
+function extractErrorDetail(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const parts: string[] = [`${err.name}: ${err.message}`];
+  if (err.stack) parts.push(err.stack.split("\n").slice(1, 4).join("\n"));
+  const cause = (err as NodeJS.ErrnoException & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    parts.push(`  [cause] ${cause.name}: ${cause.message}`);
+  } else if (cause !== undefined) {
+    parts.push(`  [cause] ${String(cause)}`);
+  }
+  return parts.join("\n");
+}
+
 /** 拉取钉钉数据并直接操作数据库完成组织同步 */
 export async function runOrgSync(
   db: Knex
@@ -236,17 +250,25 @@ export async function runOrgSync(
 
   let orgData: OrgSyncBody;
   try {
+    console.log(`[OrgSync] 开始拉取钉钉数据（appKey=${envAppKey}）`);
     const client = await DingTalkOrgClient.create(envAppKey, envAppSecret);
     orgData = (await client.fetchAllOrgData()) as OrgSyncBody;
+    console.log(`[OrgSync] 钉钉数据拉取成功，部门数=${orgData.departments?.length ?? 0}，用户数=${Object.keys(orgData.users ?? {}).length}`);
   } catch (err) {
+    const detail = extractErrorDetail(err);
+    console.error(`[OrgSync] 拉取钉钉数据失败:\n${detail}`);
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, summary: `拉取钉钉组织数据失败: ${msg}` };
   }
 
   try {
+    console.log("[OrgSync] 开始写入数据库...");
     const result = await performOrgSync(db, orgData);
+    console.log(`[OrgSync] 数据库同步完成: ${JSON.stringify(result)}`);
     return { ok: true, summary: `同步成功: ${JSON.stringify(result)}`, data: result };
   } catch (err) {
+    const detail = extractErrorDetail(err);
+    console.error(`[OrgSync] 数据库同步失败:\n${detail}`);
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, summary: `同步数据库操作失败: ${msg}` };
   }

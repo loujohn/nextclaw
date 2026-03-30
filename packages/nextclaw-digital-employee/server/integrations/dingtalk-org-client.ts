@@ -5,6 +5,23 @@
 
 const DINGTALK_BASE = "https://oapi.dingtalk.com";
 
+/** 提取错误的完整信息，包括底层 cause（fetch 网络错误的根因往往在 cause 里） */
+function extractErrorDetail(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const parts: string[] = [`${err.name}: ${err.message}`];
+  const cause = (err as NodeJS.ErrnoException & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    parts.push(`  cause: ${cause.name}: ${cause.message}`);
+    const nestedCause = (cause as NodeJS.ErrnoException & { cause?: unknown }).cause;
+    if (nestedCause instanceof Error) {
+      parts.push(`  cause.cause: ${nestedCause.name}: ${nestedCause.message}`);
+    }
+  } else if (cause !== undefined) {
+    parts.push(`  cause: ${String(cause)}`);
+  }
+  return parts.join("\n");
+}
+
 // ─── 钉钉 API 响应类型 ──────────────────────────────────────────────────────
 
 type DingTalkApiResponse<T = undefined> = {
@@ -71,11 +88,20 @@ export class DingTalkOrgClient {
     url.searchParams.set("appkey", appKey);
     url.searchParams.set("appsecret", appSecret);
 
-    const resp = await fetch(url.toString());
+    console.log(`[DingTalk] 调用 gettoken 接口（appKey=${appKey}）`);
+    let resp: Response;
+    try {
+      resp = await fetch(url.toString());
+    } catch (err) {
+      console.error(`[DingTalk] gettoken 网络请求失败:\n${extractErrorDetail(err)}`);
+      throw err;
+    }
+    console.log(`[DingTalk] gettoken 响应：HTTP ${resp.status}`);
     if (!resp.ok) {
       throw new Error(`获取 AccessToken 失败：HTTP ${resp.status}`);
     }
     const data = (await resp.json()) as DingTalkApiResponse;
+    console.log(`[DingTalk] gettoken 结果：errcode=${data.errcode} errmsg=${data.errmsg} token=${data.access_token ? "已获取" : "未返回"}`);
     if (data.errcode !== 0 || !data.access_token) {
       throw new Error(`获取 AccessToken 失败：${data.errmsg ?? JSON.stringify(data)}`);
     }
@@ -85,15 +111,23 @@ export class DingTalkOrgClient {
   /** 获取子部门列表 */
   async getDepartmentList(deptId: number = 1): Promise<DingTalkDeptItem[]> {
     const url = `${DINGTALK_BASE}/topapi/v2/department/listsub?access_token=${this.accessToken}`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dept_id: deptId, language: "zh_CN" })
-    });
+    console.log(`[DingTalk] 调用 department/listsub (dept_id=${deptId})`);
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dept_id: deptId, language: "zh_CN" })
+      });
+    } catch (err) {
+      console.error(`[DingTalk] department/listsub 网络请求失败 (dept_id=${deptId}):\n${extractErrorDetail(err)}`);
+      throw err;
+    }
     if (!resp.ok) {
       throw new Error(`获取部门列表失败 (dept_id=${deptId})：HTTP ${resp.status}`);
     }
     const data = (await resp.json()) as DingTalkApiResponse<DingTalkDeptItem[]>;
+    console.log(`[DingTalk] department/listsub 结果 (dept_id=${deptId})：errcode=${data.errcode} count=${data.result?.length ?? 0}`);
     if (data.errcode !== 0) {
       throw new Error(`获取部门列表失败 (dept_id=${deptId})：${data.errmsg}`);
     }
@@ -107,15 +141,23 @@ export class DingTalkOrgClient {
     size: number = 100
   ): Promise<DingTalkUserListResult> {
     const url = `${DINGTALK_BASE}/topapi/v2/user/list?access_token=${this.accessToken}`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dept_id: deptId, cursor, size, language: "zh_CN" })
-    });
+    console.log(`[DingTalk] 调用 user/list (dept_id=${deptId}, cursor=${cursor})`);
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dept_id: deptId, cursor, size, language: "zh_CN" })
+      });
+    } catch (err) {
+      console.error(`[DingTalk] user/list 网络请求失败 (dept_id=${deptId}):\n${extractErrorDetail(err)}`);
+      throw err;
+    }
     if (!resp.ok) {
       throw new Error(`获取部门用户失败 (dept_id=${deptId})：HTTP ${resp.status}`);
     }
     const data = (await resp.json()) as DingTalkApiResponse<DingTalkUserListResult>;
+    console.log(`[DingTalk] user/list 结果 (dept_id=${deptId})：errcode=${data.errcode} count=${data.result?.list?.length ?? 0} has_more=${data.result?.has_more}`);
     if (data.errcode !== 0) {
       throw new Error(`获取部门用户失败 (dept_id=${deptId})：${data.errmsg}`);
     }
@@ -125,17 +167,24 @@ export class DingTalkOrgClient {
   /** 获取用户详情 */
   async getUserDetail(userid: string): Promise<DingTalkUserDetail | null> {
     const url = `${DINGTALK_BASE}/topapi/v2/user/get?access_token=${this.accessToken}`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userid, language: "zh_CN" })
-    });
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userid, language: "zh_CN" })
+      });
+    } catch (err) {
+      console.error(`[DingTalk] user/get 网络请求失败 (userid=${userid}):\n${extractErrorDetail(err)}`);
+      throw err;
+    }
     if (!resp.ok) {
       throw new Error(`获取用户详情失败 (userid=${userid})：HTTP ${resp.status}`);
     }
     const data = (await resp.json()) as DingTalkApiResponse<DingTalkUserDetail>;
     if (data.errcode !== 0) {
       // 用户不存在时返回 null，不抛错
+      console.warn(`[DingTalk] user/get 返回错误 (userid=${userid})：errcode=${data.errcode} errmsg=${data.errmsg}，跳过该用户`);
       return null;
     }
     return data.result ?? null;
@@ -170,7 +219,9 @@ export class DingTalkOrgClient {
    */
   async fetchAllOrgData(): Promise<DingTalkOrgData> {
     // 1. 获取完整部门树
+    console.log("[DingTalk] 开始拉取部门树...");
     const departments = await this.getAllDepartmentsRecursive();
+    console.log(`[DingTalk] 部门树拉取完成，根层部门数=${departments.length}`);
 
     // 2. BFS 展平所有部门
     const allDepts: DingTalkDeptNode[] = [];
@@ -180,6 +231,7 @@ export class DingTalkOrgClient {
       allDepts.push(dept);
       queue.push(...dept.sub_depts);
     }
+    console.log(`[DingTalk] 共发现 ${allDepts.length} 个部门，开始拉取用户...`);
 
     // 3. 遍历每个部门获取用户（分页），并对每个用户获取详情（去重）
     const users: Record<string, DingTalkUserDetail> = {};
@@ -212,6 +264,7 @@ export class DingTalkOrgClient {
       }
     }
 
+    console.log(`[DingTalk] 用户拉取完成，共获取 ${Object.keys(users).length} 个用户`);
     return { departments, users };
   }
 }
