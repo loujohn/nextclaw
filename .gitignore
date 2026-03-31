@@ -33,3 +33,4 @@ packages/nextclaw-digital-employee/digital-employee-data
 
 .github/
 .dockerignore
+pnpm-lock.yaml
