@@ -1,4 +1,7 @@
 import { CronService, HeartbeatService, type CronJob } from "@nextclaw/core";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("AutomationService");
 import { EmployeeRepository } from "../repositories/employee-repository";
 import {
   EmployeeScheduleRepository,
@@ -67,7 +70,7 @@ export class AutomationService {
       if (job.agentId) {
         const employee = await this.employeeRepo.getByCode(job.agentId);
         if (!employee) {
-          console.warn(`[AutomationService] 对话创建的任务 "${job.name}" (${job.id}) 关联的 agent "${job.agentId}" 不存在`);
+          logger.warn(`对话创建的任务 "${job.name}" (${job.id}) 关联的 agent "${job.agentId}" 不存在`);
           return null;
         }
         const message = job.payload.message || "执行定时任务";
@@ -79,7 +82,7 @@ export class AutomationService {
         });
         return result.reply;
       }
-      console.warn(`[AutomationService] 无法识别的任务格式: "${job.name}" (${job.id}), 无 agentId 且无已知前缀`);
+      logger.warn(`无法识别的任务格式: "${job.name}" (${job.id}), 无 agentId 且无已知前缀`);
       return null;
     };
 
@@ -211,7 +214,8 @@ export class AutomationService {
     }
   }
 
-  // ── Legacy single-schedule API (kept for backward compatibility) ──────────
+  // ── Legacy single-schedule API ──────────
+  // @deprecated Use createJob / updateJob instead. Will be removed in v0.16.
 
   async upsertSchedule(input: {
     employeeId: string;

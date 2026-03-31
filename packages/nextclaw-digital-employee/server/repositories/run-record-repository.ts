@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type RunEventRecord, type RunRecord } from "../db/schema";
+import { RunStatus } from "../db/enums";
 
 export type RunRecordView = {
   id: string;
@@ -62,7 +63,7 @@ export class RunRecordRepository {
       employee_id: params.employeeId,
       trigger_type: params.triggerType,
       trigger_source: params.triggerSource,
-      status: "running",
+      status: RunStatus.Running,
       started_at: startedAt,
       finished_at: null,
       summary: "",
@@ -72,6 +73,11 @@ export class RunRecordRepository {
     return toRunRecordView(record);
   }
 
+  /**
+   * Append events with batch-scoped sequential seq (1-based within each call).
+   * For single-batch-per-run usage this gives a clean 1..N ordering.
+   * If multi-batch append is needed in the future, switch to MAX(seq)+1 query.
+   */
   async appendEvents(runId: string, events: Array<{ eventType: string; payload: Record<string, unknown> }>): Promise<void> {
     if (events.length === 0) {
       return;
@@ -111,7 +117,7 @@ export class RunRecordRepository {
 
   async listPagedByEmployeeId(params: { employeeId: string; page: number; pageSize: number; scheduleJobId?: string }): Promise<{ items: RunRecordView[]; total: number }> {
     const offset = (params.page - 1) * params.pageSize;
-    const applyFilter = (q: ReturnType<typeof this.db<RunRecord>>) => {
+    const applyFilter = (q: Knex.QueryBuilder) => {
       let query = q.where({ employee_id: params.employeeId });
       if (params.scheduleJobId) {
         query = query.where({ trigger_source: params.scheduleJobId });
@@ -119,13 +125,13 @@ export class RunRecordRepository {
       return query;
     };
     const [rows, countResult] = await Promise.all([
-      applyFilter(this.db<RunRecord>(PLATFORM_TABLES.runRecords).orderBy("started_at", "desc"))
+      applyFilter(this.db(PLATFORM_TABLES.runRecords).orderBy("started_at", "desc"))
         .limit(params.pageSize)
         .offset(offset),
-      applyFilter(this.db<RunRecord>(PLATFORM_TABLES.runRecords)).count({ count: "id" }).first()
+      applyFilter(this.db(PLATFORM_TABLES.runRecords)).count({ count: "id" }).first()
     ]);
-    const total = Number(countResult?.count ?? 0);
-    return { items: rows.map(toRunRecordView), total };
+    const total = Number((countResult as { count?: number | string } | undefined)?.count ?? 0);
+    return { items: (rows as RunRecord[]).map(toRunRecordView), total };
   }
 
   async list(limit = 50): Promise<RunRecordView[]> {
@@ -137,18 +143,18 @@ export class RunRecordRepository {
 
   async listPaged(params: { page: number; pageSize: number; status?: string }): Promise<{ items: RunRecordView[]; total: number }> {
     const offset = (params.page - 1) * params.pageSize;
-    const applyStatus = (q: ReturnType<typeof this.db<RunRecord>>) =>
+    const applyStatus = (q: Knex.QueryBuilder) =>
       params.status ? q.where({ status: params.status }) : q;
     const [rows, countResult] = await Promise.all([
       applyStatus(
-        this.db<RunRecord>(PLATFORM_TABLES.runRecords).orderBy("started_at", "desc")
+        this.db(PLATFORM_TABLES.runRecords).orderBy("started_at", "desc")
       )
         .limit(params.pageSize)
         .offset(offset),
-      applyStatus(this.db<RunRecord>(PLATFORM_TABLES.runRecords)).count({ count: "id" }).first()
+      applyStatus(this.db(PLATFORM_TABLES.runRecords)).count({ count: "id" }).first()
     ]);
-    const total = Number(countResult?.count ?? 0);
-    return { items: rows.map(toRunRecordView), total };
+    const total = Number((countResult as { count?: number | string } | undefined)?.count ?? 0);
+    return { items: (rows as RunRecord[]).map(toRunRecordView), total };
   }
 
   async getById(runId: string): Promise<(RunRecordView & { events: RunEventView[] }) | null> {

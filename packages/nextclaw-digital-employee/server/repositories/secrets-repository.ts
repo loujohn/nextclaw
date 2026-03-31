@@ -7,6 +7,7 @@ import { PLATFORM_TABLES, type SecretRecord } from "../db/schema";
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
+const ENCRYPTION_VERSION = 0x01;
 
 export type SecretView = {
   id: string;
@@ -44,17 +45,28 @@ function encrypt(plaintext: string, key: Buffer): string {
   const cipher = createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf-8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
-  return Buffer.concat([iv, authTag, encrypted]).toString("base64");
+  // Format: [version(1B)] [iv(16B)] [authTag(16B)] [ciphertext]
+  const versionBuf = Buffer.from([ENCRYPTION_VERSION]);
+  return Buffer.concat([versionBuf, iv, authTag, encrypted]).toString("base64");
+}
+
+function decryptRaw(data: Buffer, key: Buffer, offset: number): string {
+  const iv = data.subarray(offset, offset + IV_LENGTH);
+  const authTag = data.subarray(offset + IV_LENGTH, offset + IV_LENGTH + AUTH_TAG_LENGTH);
+  const encrypted = data.subarray(offset + IV_LENGTH + AUTH_TAG_LENGTH);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf-8");
 }
 
 function decrypt(ciphertext: string, key: Buffer): string {
   const data = Buffer.from(ciphertext, "base64");
-  const iv = data.subarray(0, IV_LENGTH);
-  const authTag = data.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
-  const encrypted = data.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf-8");
+  const versionByte = data[0];
+  if (versionByte === ENCRYPTION_VERSION) {
+    return decryptRaw(data, key, 1);
+  }
+  // Fallback: legacy format without version header
+  return decryptRaw(data, key, 0);
 }
 
 function toView(record: SecretRecord, key: Buffer): SecretView {

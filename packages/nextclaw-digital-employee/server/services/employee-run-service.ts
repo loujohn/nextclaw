@@ -5,6 +5,8 @@ import { RunRecordRepository } from "../repositories/run-record-repository";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { buildChatResultCards, type ChatMessageView, type ChatResultCardView } from "../../shared/ui-models";
 import { prepareEmployeeRuntime } from "./employee-runtime-preparation";
+import { ConfigError, classifyError } from "../errors/platform-errors";
+import { RunStatus } from "../db/enums";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -33,6 +35,14 @@ export class EmployeeRunService {
     const employee = await this.employeeRepo.getById(params.employeeId);
     if (!employee) {
       throw new Error(`Employee not found: ${params.employeeId}`);
+    }
+
+    // Pre-check: model API key must be configured (skip if method not available, e.g. in tests)
+    if (typeof this.gateway.hasConfiguredProvider === "function" && !this.gateway.hasConfiguredProvider()) {
+      throw new ConfigError(
+        "未配置模型 API Key",
+        "请在「系统设置 → 模型提供商」中配置 API Key 后再执行。"
+      );
     }
 
     const { workspace, skillNames } = await prepareEmployeeRuntime({
@@ -68,7 +78,7 @@ export class EmployeeRunService {
         }))
       );
       await this.runRepo.complete(run.id, {
-        status: "completed",
+        status: RunStatus.Completed,
         summary: result.reply,
         result: {
           reply: result.reply,
@@ -87,14 +97,15 @@ export class EmployeeRunService {
         runSummary: result.reply
       };
     } catch (error) {
+      const classified = classifyError(error);
       await this.runRepo.complete(run.id, {
-        status: "failed",
+        status: RunStatus.Failed,
         summary: String(error),
         result: {
-          error: String(error)
+          error: classified.toJSON()
         }
       });
-      throw error;
+      throw classified;
     }
   }
 }

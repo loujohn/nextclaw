@@ -161,6 +161,7 @@ function seedBuiltinSkills(workspaceDir: string): Set<string> {
     builtinNames.add(entry.name);
     const sourceDir = join(builtinSkillsDir, entry.name);
     const targetDir = join(workspaceSkillsDir, entry.name);
+    rmSync(targetDir, { recursive: true, force: true });
     cpSync(sourceDir, targetDir, { recursive: true, force: true });
   }
   return builtinNames;
@@ -256,6 +257,24 @@ export class NextclawEngineGateway {
 
   get runtimeConfig(): Config {
     return this.config;
+  }
+
+  /**
+   * Returns false only when providers are explicitly configured with empty apiKey.
+   * When providers config is absent/empty (e.g. test environments), returns true
+   * to avoid blocking — production always has providers via buildPlatformGatewayConfig.
+   */
+  hasConfiguredProvider(): boolean {
+    const providers = this.config.providers;
+    if (!providers || typeof providers !== "object") return true;
+    const entries = Object.values(providers);
+    if (entries.length === 0) return true;
+    return entries.some(
+      (p: unknown) => {
+        const provider = p as { apiKey?: string } | undefined;
+        return typeof provider?.apiKey === "string" && provider.apiKey.trim().length > 0;
+      }
+    );
   }
 
   applyRuntimeConfig(config: Config, extensionRegistry?: ExtensionRegistry): void {

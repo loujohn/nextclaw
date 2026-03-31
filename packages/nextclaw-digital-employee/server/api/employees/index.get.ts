@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
     ? { departmentId: query.departmentId === "null" ? null : String(query.departmentId) }
     : undefined;
   const employees = await ctx.employeeRepo.list(listFilter);
+  const healthMap = await ctx.healthService.computeHealthBatch(employees);
   const enriched = await Promise.all(
     employees.map(async (employee) => {
       const [skills, schedule, runs, jobs] = await Promise.all([
@@ -23,11 +24,8 @@ export default defineEventHandler(async (event) => {
         latestRun: runs[0] ?? null,
         jobsCount: jobs.length,
         enabledJobsCount: jobs.filter((j) => j.enabled).length,
-        health: {
-          hasSkills: skills.length > 0,
-          hasSchedule: Boolean(schedule) || jobs.length > 0,
-          lastStatus: runs[0]?.status ?? "idle"
-        }
+        healthStatus: healthMap.get(employee.id)?.status ?? "healthy",
+        healthDetail: healthMap.get(employee.id) ?? { status: "healthy", reasons: [] },
       };
     })
   );

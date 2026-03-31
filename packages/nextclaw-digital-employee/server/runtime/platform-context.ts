@@ -1,11 +1,16 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Knex } from "knex";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("platform-context");
 import { CronService, MessageBus, SessionManager } from "@nextclaw/core";
 import { findBuiltinProviderByName } from "@nextclaw/runtime";
-import { createPlatformKnex, ensurePlatformDatabase } from "../db/knex";
+import { createPlatformKnex, ensurePlatformDatabase, platformMigrationSource } from "../db/knex";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { AutomationService } from "../services/automation-service";
+import { EmployeeHealthService } from "../services/employee-health-service";
+import { EmployeeLifecycleService } from "../services/employee-lifecycle-service";
 import { EmployeeRunService } from "../services/employee-run-service";
 import { SkillInstallService } from "../services/skill-install-service";
 import { DepartmentRepository } from "../repositories/department-repository";
@@ -40,6 +45,8 @@ type PlatformContext = {
   skillInstallService: SkillInstallService;
   employeeRunService: EmployeeRunService;
   automationService: AutomationService;
+  lifecycleService: EmployeeLifecycleService;
+  healthService: EmployeeHealthService;
   channelRuntime: DigitalEmployeeChannelRuntime;
 };
 
@@ -106,6 +113,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       }
       const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
       await ensurePlatformDatabase(db);
+      await db.migrate.latest({ migrationSource: platformMigrationSource });
       const integrationConnectionRepo = new IntegrationConnectionRepository(db);
       const initialRuntimeState = loadPlatformRuntimeState({
         workspaceDir,
@@ -183,15 +191,22 @@ export async function getPlatformContext(): Promise<PlatformContext> {
             });
           } catch (err) {
             if (!isRetry) {
-              console.warn(`[platform-context] 定时任务 "${job.name}" (${job.id}) 同步失败，500ms 后重试`);
+              logger.warn(`定时任务 "${job.name}" (${job.id}) 同步失败，500ms 后重试`);
               await new Promise((r) => setTimeout(r, 500));
               return syncToDb(true);
             }
-            console.error(`[platform-context] 定时任务 "${job.name}" (${job.id}) 同步数据库失败:`, err);
+            logger.error(`定时任务 "${job.name}" (${job.id}) 同步数据库失败:`, err);
           }
         };
         void syncToDb();
       };
+      const healthService = new EmployeeHealthService(runRepo, gateway);
+      const lifecycleService = new EmployeeLifecycleService(
+        employeeRepo,
+        employeeSkillRepo,
+        automationService,
+        gateway
+      );
       await channelRuntime.start();
       await automationService.start();
       return {
@@ -212,6 +227,8 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         skillInstallService,
         employeeRunService,
         automationService,
+        lifecycleService,
+        healthService,
         channelRuntime
       };
     })();

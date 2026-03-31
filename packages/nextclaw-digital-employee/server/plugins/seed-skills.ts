@@ -29,6 +29,7 @@ export default defineNitroPlugin(async () => {
     if (existsSync(srcPath)) {
       try {
         mkdirSync(workspaceSkillsDir, { recursive: true });
+        rmSync(installPath, { recursive: true, force: true });
         cpSync(srcPath, installPath, { recursive: true, force: true });
         console.log(`[seed-skills] installed from source: ${skillName}`);
       } catch (err) {
