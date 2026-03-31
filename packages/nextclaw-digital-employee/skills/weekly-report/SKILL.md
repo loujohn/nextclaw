@@ -20,39 +20,39 @@ metadata:
 
 ### 项目信息
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 项目名称 | 项目名称 | `project list`、`project info` |
-| 项目状态 | 项目当前状态 | `project info` |
-| 项目经理 | 负责人 | `project info` |
+| 字段     | 说明         | 来源命令                       |
+| -------- | ------------ | ------------------------------ |
+| 项目名称 | 项目名称     | `project list`、`project info` |
+| 项目状态 | 项目当前状态 | `project info`                 |
+| 项目经理 | 负责人       | `project info`                 |
 
 ### 迭代信息
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 迭代名称 | 执行/迭代名称 | `execution list` |
-| 迭代状态 | wait/doing/done | `execution list` |
-| 进度 | 进度百分比 | `execution info` |
-| 开始/结束日期 | 时间范围 | `execution info` |
+| 字段          | 说明            | 来源命令         |
+| ------------- | --------------- | ---------------- |
+| 迭代名称      | 执行/迭代名称   | `execution list` |
+| 迭代状态      | wait/doing/done | `execution list` |
+| 进度          | 进度百分比      | `execution info` |
+| 开始/结束日期 | 时间范围        | `execution info` |
 
 ### 任务统计
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 总任务数 | 迭代下全部任务 | `task list -e <execution_id>` |
-| 已完成 | 状态为done/closed | `task list -e <execution_id> --status done` |
-| 进行中 | 状态为doing | `task list -e <execution_id> --status doing` |
-| 待处理 | 状态为wait | `task list -e <execution_id> --status wait` |
+| 字段     | 说明              | 来源命令                                     |
+| -------- | ----------------- | -------------------------------------------- |
+| 总任务数 | 迭代下全部任务    | `task list -e <execution_id>`                |
+| 已完成   | 状态为done/closed | `task list -e <execution_id> --status done`  |
+| 进行中   | 状态为doing       | `task list -e <execution_id> --status doing` |
+| 待处理   | 状态为wait        | `task list -e <execution_id> --status wait`  |
 
 ### 任务详情
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 任务名称 | 任务标题 | `task info <task_id>` |
-| 预计工时 | estimate | `task info` |
-| 已消耗工时 | consumed | `task info` |
-| 子任务 | parent:0 为主任务 | `task info` |
-| 指派人 | assignedTo | `task info` |
+| 字段       | 说明              | 来源命令              |
+| ---------- | ----------------- | --------------------- |
+| 任务名称   | 任务标题          | `task info <task_id>` |
+| 预计工时   | estimate          | `task info`           |
+| 已消耗工时 | consumed          | `task info`           |
+| 子任务     | parent:0 为主任务 | `task info`           |
+| 指派人     | assignedTo        | `task info`           |
 
 ## 分析规则
 
@@ -91,12 +91,13 @@ metadata:
 
 ### 任务详情字段
 
-| 字段 | 说明 |
-|------|------|
-| progress | 父任务当前进度百分比 |
+| 字段     | 说明                             |
+| -------- | -------------------------------- |
+| progress | 父任务当前进度百分比             |
 | children | 子任务列表（包含在父任务详情中） |
 
 **注意**：
+
 - 以父任务为纬度进行统计
 - 父任务（parent:0 或 parent:-1）包含多个子任务（parent 为父任务ID）
 - 进度直接从 `progress` 字段获取
@@ -155,14 +156,20 @@ cat /path/to/weekly.md | python skills/weekly-report/scripts/weekly-report.py
 python skills/weekly-report/scripts/weekly-report.py --content "周报内容"
 ```
 
-生成的文件在 `temp/weekly_时间戳.md`。
-
-### 发送通知
-
-```bash
-python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '周报总结' --file temp/weekly_时间戳.md --cleanup
-```
+生成的文件在 `C:\Users\用户名\nextclaw-temp\weekly_时间戳.md`。
 
 ### 临时文件目录
 
-`temp/`（与 skills 同级），脚本自动创建。
+所有脚本统一使用**用户主目录下的固定目录**（跨平台兼容）。
+
+**目录位置：**
+
+- **Windows**: `C:\Users\用户名\nextclaw-temp`
+- **Linux**: `/home/用户名/nextclaw-temp`
+- **Mac**: `/Users/用户名/nextclaw-temp`
+
+**执行脚本时会输出绝对路径**
+
+```bash
+python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '周报总结' --file C:\Users\用户名\nextclaw-temp\weekly_时间戳.md --cleanup
+```
