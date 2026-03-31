@@ -17,6 +17,9 @@ import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { prepareEmployeeRuntime } from "../services/employee-runtime-preparation";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("ChannelRuntime");
 
 export type DigitalEmployeeChannelRuntimeState = {
   config: Config;
@@ -82,12 +85,7 @@ export class DigitalEmployeeChannelRuntime {
     await this.channelManager.startAll();
     const started = await startPluginChannelGateways({
       registry: state.pluginRegistry,
-      logger: {
-        info: () => {},
-        warn: () => {},
-        error: () => {},
-        debug: () => {}
-      }
+      logger: log
     });
     this.pluginGatewayHandles = started.handles;
   }

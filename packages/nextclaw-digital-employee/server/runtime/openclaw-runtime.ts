@@ -128,10 +128,10 @@ export function loadPlatformRuntimeState(params: {
     reservedProviderIds: builtinProviderIds(),
     reservedEngineKinds: ["native"],
     logger: params.logger ?? {
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-      debug: () => {}
+      info: (msg: string, ...args: unknown[]) => console.info("[OpenClawPlugins]", msg, ...args),
+      warn: (msg: string, ...args: unknown[]) => console.warn("[OpenClawPlugins]", msg, ...args),
+      error: (msg: string, ...args: unknown[]) => console.error("[OpenClawPlugins]", msg, ...args),
+      debug: (msg: string, ...args: unknown[]) => console.debug("[OpenClawPlugins]", msg, ...args)
     }
   });
   return {
