@@ -24,20 +24,23 @@ python skills/work-time-check/scripts/work-time-check.py --output --per-user --p
 
 ### 命令行选项
 
-| 选项 | 说明 |
-|------|------|
-| `--output` | 输出群通知 Markdown 文件 |
-| `--per-user` | 为每个未填写人员生成通知文件 |
+| 选项           | 说明                         |
+| -------------- | ---------------------------- |
+| `--output`     | 输出群通知 Markdown 文件     |
+| `--per-user`   | 为每个未填写人员生成通知文件 |
 | `--per-leader` | 为每个项目负责人生成通知文件 |
-| （无参数） | 输出 JSON 格式数据 |
+| （无参数）     | 输出 JSON 格式数据           |
 
 ### 环境变量
 
-| 变量 | 说明 |
-|------|------|
-| WORK_TIME_BASE_URL | 基础 URL（默认：http://shangji.dcg-internal-services.test.dcginner:10006/api） |
-| WORK_TIME_API | 工时数据接口地址 |
-| TIMEOUT | 请求超时时间（毫秒），默认 600000 |
+| 变量          | 说明                              |
+| ------------- | --------------------------------- |
+| PM_BASE_URL   | 基础 URL                          |
+| PM_API        | 工时数据接口地址（可选）          |
+| PM_TIMEOUT    | 请求超时时间（毫秒），默认 600000 |
+| PM_BASIC_AUTH | Basic 认证凭证                    |
+| PM_USERNAME   | API 用户名                        |
+| PM_PASSWORD   | API 密码                          |
 
 ## 接口返回格式
 
@@ -84,11 +87,13 @@ Agent 执行工时检查任务的完整流程：
 1. **调用 work-time-check** 获取工时数据并生成通知文件（一次请求）
    - ⚠️ 此步骤非常耗时，通常需要 2-5 分钟
 
-  2. **生成所有通知文件（推荐）**
+2. **生成所有通知文件（推荐）**
+
+
     ```bash
     python work-time-check/scripts/work-time-check.py --output --per-user --per-leader
     ```
-    
+
     脚本会输出：
     ```
     [工时检查] 临时文件目录：C:\Users\用户名\nextclaw-temp
@@ -97,30 +102,32 @@ Agent 执行工时检查任务的完整流程：
     [工时检查] 已生成负责人通知文件
     [工时检查] 已生成通知清单：C:\Users\用户名\nextclaw-temp\notify_list_xxx.txt
     ```
-    
+
     **直接复制输出的路径使用即可。**
 
-  3. **查看通知清单**
-     - 脚本会输出临时文件目录的绝对路径
-     - 打开 `<输出路径>/notify_list_时间戳.txt` 查看所有需要发送的通知
-     - 清单包含：文件路径、接收人、dingtalkId
+3. **查看通知清单**
+   - 脚本会输出临时文件目录的绝对路径
+   - 打开 `<输出路径>/notify_list_时间戳.txt` 查看所有需要发送的通知
+   - 清单包含：文件路径、接收人、dingtalkId
 
-  4. **发送通知**
-     ```bash
-     # 发送群通知（使用脚本输出的绝对路径）
-     python dingtalk-notify/scripts/dingtalk-notify.py markdown '工时填写提醒' --file <脚本输出的路径>/group_时间戳.md --cleanup
-     
-     # 发送个人/负责人通知（文件名已包含钉钉 ID，可自动提取，无需手动指定--user）
-     python dingtalk-notify/scripts/dingtalk-notify.py work '工时提醒' --msgtype markdown --file <脚本输出的路径>/user_钉钉 ID_时间戳.md --cleanup
-     ```
+4. **发送通知**
 
- 5. **核对清单确保无遗漏**
-    - 钉钉ID在文件名中（如 `user_钉钉ID_时间戳.md`），发送工作通知时会自动从文件名提取
-    - **注意**: 钉钉ID必须正确，ID错误将导致工作通知无法发送到对应用户
+   ```bash
+   # 发送群通知（使用脚本输出的绝对路径）
+   python dingtalk-notify/scripts/dingtalk-notify.py markdown '工时填写提醒' --file <脚本输出的路径>/group_时间戳.md --cleanup
+
+   # 发送个人/负责人通知（文件名已包含钉钉 ID，可自动提取，无需手动指定--user）
+   python dingtalk-notify/scripts/dingtalk-notify.py work '工时提醒' --msgtype markdown --file <脚本输出的路径>/user_钉钉 ID_时间戳.md --cleanup
+   ```
+
+5. **核对清单确保无遗漏**
+   - 钉钉ID在文件名中（如 `user_钉钉ID_时间戳.md`），发送工作通知时会自动从文件名提取
+   - **注意**: 钉钉ID必须正确，ID错误将导致工作通知无法发送到对应用户
 
 ### ⚠️ 重要：通知内容规范
 
 **禁止在任何通知消息中暴露以下信息：**
+
 - dingtalkId
 - projectLeaderDingtalkId
 - appkey / appSecret
@@ -129,6 +136,7 @@ Agent 执行工时检查任务的完整流程：
 - 任何内部编号或ID
 
 **消息内容只能包含：**
+
 - 姓名（cnName）
 - 项目名称（projectName）
 - 任务名称（tasks）
@@ -140,16 +148,19 @@ Agent 执行工时检查任务的完整流程：
 所有脚本统一使用**用户主目录下的固定目录**（跨平台兼容）。
 
 **目录位置：**
+
 - **Windows**: `C:\Users\用户名\nextclaw-temp`
 - **Linux**: `/home/用户名/nextclaw-temp`
 - **Mac**: `/Users/用户名/nextclaw-temp`
 
 **执行脚本时会输出绝对路径：**
+
 ```
 [工时检查] 临时文件目录：C:\Users\用户名\nextclaw-temp
 ```
 
 **推荐：直接复制上述路径使用**
+
 ```bash
 # 使用绝对路径
 python dingtalk-notify/scripts/dingtalk-notify.py markdown '标题' --file C:\Users\用户名\nextclaw-temp\group_时间戳.md --cleanup

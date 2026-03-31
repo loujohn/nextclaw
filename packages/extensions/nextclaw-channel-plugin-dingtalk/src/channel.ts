@@ -7,7 +7,16 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
-import { fetch } from "undici";
+import { fetch, ProxyAgent, Agent } from "undici";
+
+function buildDispatcher() {
+  const proxyUrl = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
+  if (proxyUrl) {
+    console.log(`[dingtalk] using proxy: ${proxyUrl}`);
+    return new ProxyAgent(proxyUrl);
+  }
+  return new Agent();
+}
 import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { normalizeString } from "./utils";
@@ -23,6 +32,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     this.running = true;
     const normalized = normalizeDingTalkConfig(this.config);
     const entries = Object.entries(normalized.accounts).filter(([, account]) => account.clientId && account.clientSecret);
+    console.log(`[dingtalk] starting, accounts=${entries.map(([id]) => id).join(",") || "(none)"}`);
     if (entries.length === 0) {
       this.running = false;
       throw new Error("DingTalk accounts not configured");
@@ -31,6 +41,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     const startedClients: DWClient[] = [];
     try {
       for (const [accountId, account] of entries) {
+        console.log(`[dingtalk] connecting account=${accountId} clientId=${account.clientId}`);
         const client = new DWClient({
           clientId: account.clientId,
           clientSecret: account.clientSecret,
@@ -43,6 +54,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         await client.connect();
         this.clients.set(accountId, client);
         startedClients.push(client);
+        console.log(`[dingtalk] connected account=${accountId}`);
       }
     } catch (error) {
       this.running = false;
@@ -51,17 +63,20 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       }
       this.clients.clear();
       this.tokens.clear();
+      console.error(`[dingtalk] start failed`, error);
       throw error;
     }
   }
 
   async stop(): Promise<void> {
+    console.log(`[dingtalk] stopping, accounts=${this.clients.size}`);
     this.running = false;
     for (const client of this.clients.values()) {
       client.disconnect();
     }
     this.clients.clear();
     this.tokens.clear();
+    console.log(`[dingtalk] stopped`);
   }
 
   async send(msg: OutboundMessage): Promise<void> {
@@ -74,6 +89,8 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     }
 
     const target = resolveOutboundTarget(msg);
+    console.log(`[dingtalk] send account=${accountId} target=${target.kind}:${target.targetId} contentLen=${msg.content.length}`);
+    const t0 = Date.now();
     const token = await this.getAccessToken(accountId, account);
     const robotCode = account.robotCode || account.clientId;
     const url =
@@ -102,17 +119,28 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
             })
           };
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-acs-dingtalk-access-token": token
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-      throw new Error(`DingTalk send failed: ${response.status}`);
+    let response: Awaited<ReturnType<typeof fetch>>;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-acs-dingtalk-access-token": token
+        },
+        body: JSON.stringify(payload),
+        dispatcher: buildDispatcher(),
+        signal: AbortSignal.timeout(15_000)
+      });
+    } catch (err) {
+      console.error(`[dingtalk] send FAILED (network) account=${accountId} target=${target.kind}:${target.targetId} elapsed=${Date.now() - t0}ms`, err);
+      throw err;
     }
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.error(`[dingtalk] send FAILED (http) account=${accountId} status=${response.status} elapsed=${Date.now() - t0}ms body=${body}`);
+      throw new Error(`DingTalk send failed: ${response.status} ${body}`);
+    }
+    console.log(`[dingtalk] send OK account=${accountId} target=${target.kind}:${target.targetId} elapsed=${Date.now() - t0}ms`);
   }
 
   private async handleRobotMessage(
@@ -126,13 +154,15 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     }
 
     const messageId = normalizeString(res.headers?.messageId);
+    console.log(`[dingtalk] inbound account=${accountId} messageId=${messageId || "(none)"}`);
     if (!messageId) {
       return;
     }
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(res.data) as Record<string, unknown>;
-    } catch {
+    } catch (err) {
+      console.error(`[dingtalk] inbound parse error account=${accountId} messageId=${messageId}`, err);
       client.socketCallBackResponse(messageId, { ok: true });
       return;
     }
@@ -160,6 +190,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       });
 
       if (!normalized) {
+        console.log(`[dingtalk] inbound dropped (normalize returned null) account=${accountId} messageId=${messageId}`);
         return;
       }
 
@@ -171,21 +202,25 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           isGroup
         })
       ) {
+        console.log(`[dingtalk] inbound blocked by access policy account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId}`);
         return;
       }
 
       if (normalized.metadata.require_mention === true && normalized.metadata.was_mentioned !== true) {
+        console.log(`[dingtalk] inbound dropped (not mentioned) account=${accountId} messageId=${messageId}`);
         return;
       }
 
+      console.log(`[dingtalk] inbound dispatching account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId} isGroup=${isGroup} contentLen=${normalized.content.length}`);
       await this.handleMessage({
         senderId: normalized.senderId,
         chatId: normalized.chatId,
         content: normalized.content,
         metadata: normalized.metadata
       });
+      console.log(`[dingtalk] inbound handled account=${accountId} messageId=${messageId}`);
     } catch (error) {
-      console.error("[dingtalk] failed to handle inbound message", error);
+      console.error(`[dingtalk] inbound error account=${accountId} messageId=${messageId}`, error);
     } finally {
       client.socketCallBackResponse(messageId, { ok: true });
     }
@@ -197,16 +232,27 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       return cached.token;
     }
 
-    const response = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        appKey: account.clientId,
-        appSecret: account.clientSecret
-      })
-    });
+    console.log(`[dingtalk] getAccessToken account=${accountId} (cache miss, fetching)`);
+    let response: Awaited<ReturnType<typeof fetch>>;
+    try {
+      response = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          appKey: account.clientId,
+          appSecret: account.clientSecret
+        }),
+        dispatcher: buildDispatcher(),
+        signal: AbortSignal.timeout(15_000)
+      });
+    } catch (err) {
+      console.error(`[dingtalk] getAccessToken FAILED (network) account=${accountId}`, err);
+      throw err;
+    }
     if (!response.ok) {
-      throw new Error(`DingTalk token failed: ${response.status}`);
+      const body = await response.text().catch(() => "");
+      console.error(`[dingtalk] getAccessToken FAILED (http) account=${accountId} status=${response.status} body=${body}`);
+      throw new Error(`DingTalk token failed: ${response.status} ${body}`);
     }
     const data = (await response.json()) as Record<string, unknown>;
     const token = normalizeString(data.accessToken);
