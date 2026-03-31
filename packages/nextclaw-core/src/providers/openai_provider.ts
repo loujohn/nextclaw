@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import {
   LLMProvider,
   type LLMResponse,
@@ -10,6 +11,15 @@ import {
   ChatCompletionsPayloadError,
   normalizeChatCompletionsResponse
 } from "./chat-completions-normalizer.js";
+
+function buildHttpAgent(): HttpsProxyAgent<string> | undefined {
+  const proxyUrl =
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy;
+  return proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+}
 
 export type OpenAIProviderOptions = {
   apiKey?: string | null;
@@ -33,7 +43,8 @@ export class OpenAICompatibleProvider extends LLMProvider {
     this.client = new OpenAI({
       apiKey: options.apiKey ?? undefined,
       baseURL: options.apiBase ?? undefined,
-      defaultHeaders: options.extraHeaders ?? undefined
+      defaultHeaders: options.extraHeaders ?? undefined,
+      httpAgent: buildHttpAgent()
     });
   }
 
