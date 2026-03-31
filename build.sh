@@ -16,7 +16,8 @@ else
 fi
 
 # ── Channel plugin runtime: pnpm deploy --prod ──────────────────────────────
-COMPAT_DEPLOY_DIR="packages/nextclaw-digital-employee/compat-deploy"
+# compat-deploy 放在 dist/_compat-deploy/ 内，确保随 dist 缓存一起被 deploy 阶段恢复
+COMPAT_DEPLOY_DIR="packages/nextclaw-digital-employee/dist/_compat-deploy"
 echo -e "\033[34m[deploy] 生成 openclaw-compat 生产依赖包...\033[0m"
 pnpm --filter @nextclaw/openclaw-compat deploy --prod "$COMPAT_DEPLOY_DIR"
 if [ $? -ne 0 ]; then
