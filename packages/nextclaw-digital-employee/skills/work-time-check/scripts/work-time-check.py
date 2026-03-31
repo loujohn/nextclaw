@@ -12,7 +12,14 @@ import argparse
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+CHINA_TZ = timezone(timedelta(hours=8))
+
+
+def get_china_now():
+    return datetime.now(CHINA_TZ)
+
 
 BASE_URL = os.environ.get("PM_BASE_URL", "")
 API_URL = os.environ.get(
@@ -113,11 +120,13 @@ def main():
             os.makedirs(temp_dir, exist_ok=True)
 
             print(f"[工时检查] 临时文件目录：{temp_dir}", file=sys.stderr)
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            timestamp = get_china_now().strftime("%Y%m%d%H%M%S")
 
             manifest = []
             manifest.append("# 工时通知清单")
-            manifest.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            manifest.append(
+                f"生成时间：{get_china_now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             manifest.append(f"已填写人数：{d['filledUsersCount']} 人")
             manifest.append(f"未填写人数：{d['unfilledUsersCount']} 人")
             manifest.append("")
@@ -128,7 +137,7 @@ def main():
                 lines.append("## ⏱️ 工时填写提醒")
                 lines.append("")
                 lines.append(
-                    f"**日期**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    f"**日期**: {get_china_now().strftime('%Y-%m-%d %H:%M:%S')}"
                 )
                 lines.append("")
                 lines.append(f"**已填写**: {d['filledUsersCount']} 人")
@@ -180,7 +189,7 @@ def main():
                     lines.append(f"## 工时填写提醒")
                     lines.append("")
                     lines.append(
-                        f"**日期**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"**日期**: {get_china_now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     lines.append("")
                     lines.append(
@@ -248,7 +257,7 @@ def main():
                     lines.append(f"## 工时填写提醒")
                     lines.append("")
                     lines.append(
-                        f"**日期**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"**日期**: {get_china_now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     lines.append("")
                     lines.append(
