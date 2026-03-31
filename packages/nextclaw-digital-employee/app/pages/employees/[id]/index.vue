@@ -5,6 +5,10 @@ import { MessageSquare, Bot } from "lucide-vue-next";
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 const { data, refresh } = await useEmployeeDetail(employeeId);
+const employeeChatLink = computed(() => ({
+  path: `/employees/${employeeId.value}/chat`,
+  query: route.query
+}));
 const { data: dingtalkConfig, refresh: refreshDingTalkConfig } = await useFetch<{
   ok: boolean;
   data: {
@@ -80,7 +84,7 @@ async function saveDingTalkBinding() {
           <span class="section-label">角色定义</span>
           <h2 class="mt-0.5 text-lg font-semibold">职责与人设</h2>
         </div>
-        <NuxtLink :to="`/employees/${employeeId}/chat`" class="btn-primary">
+        <NuxtLink :to="employeeChatLink" class="btn-primary">
           <MessageSquare class="h-3.5 w-3.5" :stroke-width="1.8" />
           进入聊天
         </NuxtLink>

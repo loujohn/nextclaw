@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { ChatMessageView, ChatResultCardView } from "~~/shared/ui-models";
+import type { ChatMessageView } from "~~/shared/ui-models";
 import { renderMarkdown, formatTime } from "~/lib/utils";
-import { Send, Copy, ExternalLink, Settings, Sparkles, User, Bot, AlertCircle, MessageCircle, StopCircle, Wrench, Brain, ChevronDown, ChevronRight, Terminal } from "lucide-vue-next";
+import { Send, User, Bot, AlertCircle, MessageCircle, StopCircle, Wrench, Brain, ChevronDown, ChevronRight, Terminal } from "lucide-vue-next";
 
 const expandedToolCalls = ref<Set<number>>(new Set());
 const expandedReasoning = ref<Set<number>>(new Set());
@@ -35,21 +35,16 @@ const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 const draft = ref("");
 const sending = ref(false);
-const lastRunId = ref("");
 const errorMessage = ref("");
-const resultCards = ref<ChatResultCardView[]>([]);
 const messages = ref<ChatMessageView[]>([]);
 const threadEl = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
-const copied = ref(false);
 const abortController = ref<AbortController | null>(null);
 const { data: employee, refresh: refreshEmployee } = await useEmployeeDetail(employeeId);
 const { data: history, refresh: refreshHistory } = await useFetch<{
   ok: boolean;
   data: {
     messages: ChatMessageView[];
-    lastRunId: string;
-    resultCards: ChatResultCardView[];
   };
 }>(
   `/api/employees/${employeeId.value}/chat/history`,
@@ -61,15 +56,7 @@ const { refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
 
 watchEffect(() => {
   const historyData = history.value?.data;
-  const restoredRunId = historyData?.lastRunId ?? "";
-  const restoredResultCards = historyData?.resultCards ?? [];
   messages.value = (historyData?.messages ?? []).filter(m => m.content?.trim() || m.toolCalls?.length || m.role === "tool");
-  if (!lastRunId.value && restoredRunId) {
-    lastRunId.value = restoredRunId;
-  }
-  if (resultCards.value.length === 0 && restoredResultCards.length > 0) {
-    resultCards.value = restoredResultCards;
-  }
 });
 
 function scrollToBottom() {
@@ -102,19 +89,13 @@ async function sendMessage(input = draft.value) {
       ok: boolean;
       data: {
         reply: string;
-        runId: string;
-        sessionKey: string;
         messages: ChatMessageView[];
-        resultCards: ChatResultCardView[];
-        runSummary: string;
       };
     }>(`/api/employees/${employeeId.value}/chat`, {
       method: "POST",
       body: { message: input },
       signal: abortController.value.signal,
     });
-    resultCards.value = result.data.resultCards;
-    lastRunId.value = result.data.runId;
     messages.value = result.data.messages.filter(m => m.content?.trim() || m.toolCalls?.length || m.role === "tool");
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
@@ -152,23 +133,16 @@ function autoResize(e: Event) {
   el.style.height = Math.min(el.scrollHeight, 180) + "px";
 }
 
-async function copyToClipboard(text: string) {
-  await navigator.clipboard.writeText(text);
-  copied.value = true;
-  setTimeout(() => { copied.value = false; }, 2000);
-}
 </script>
 
 <template>
-  <div class="grid gap-6 lg:grid-cols-[1fr_320px]">
-    <!-- Chat Main -->
-    <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
       <!-- Intro -->
       <div class="space-y-3">
         <div>
           <span class="section-label">对话</span>
           <h2 class="mt-0.5 text-lg font-semibold">与 {{ employee?.data?.name ?? "员工" }} 对话</h2>
-          <p class="text-sm text-muted-foreground">发送指令、查看结果和执行下一步动作。</p>
+          <p class="text-sm text-muted-foreground">发送指令并持续对话。</p>
         </div>
 
       </div>
@@ -340,66 +314,5 @@ async function copyToClipboard(text: string) {
         <span>{{ errorMessage }}</span>
         <NuxtLink to="/integrations" class="ml-auto shrink-0 font-semibold underline">去配置集成</NuxtLink>
       </div>
-    </div>
-
-    <!-- Right Sidebar -->
-    <aside class="space-y-4">
-      <!-- Result Cards -->
-      <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <span class="section-label">结果</span>
-            <h3 class="mt-0.5 text-sm font-semibold">本次结果卡片</h3>
-          </div>
-          <NuxtLink v-if="lastRunId" :to="`/runs?runId=${lastRunId}`" class="text-xs text-muted-foreground transition-colors hover:text-foreground">
-            详情 →
-          </NuxtLink>
-        </div>
-        <div class="space-y-3">
-          <ResultCard v-for="card in resultCards" :key="`${card.kind}-${card.title}`" :card="card" />
-          <div
-            v-if="resultCards.length === 0"
-            class="flex flex-col items-center py-8 text-center"
-          >
-            <div class="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/5">
-              <Sparkles class="h-5 w-5 text-primary/30" :stroke-width="1.5" />
-            </div>
-            <p class="text-sm font-medium text-muted-foreground">等待结果产出</p>
-            <p class="mt-0.5 text-xs text-muted-foreground">执行后会自动整理为卡片。</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Actions -->
-      <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <span class="section-label mb-3 block">快捷操作</span>
-        <div class="space-y-2">
-          <button
-            class="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-all duration-150 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="resultCards.length === 0"
-            @click="resultCards[0] && copyToClipboard(resultCards[0].content ?? '')"
-          >
-            <Copy class="h-3.5 w-3.5" :stroke-width="1.8" />
-            {{ copied ? "已复制" : "复制摘要" }}
-          </button>
-          <NuxtLink
-            v-if="lastRunId"
-            :to="`/runs?runId=${lastRunId}`"
-            class="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-all duration-150 hover:bg-muted/50"
-          >
-            <ExternalLink class="h-3.5 w-3.5" :stroke-width="1.8" />
-            查看运行详情
-          </NuxtLink>
-          <NuxtLink
-            to="/integrations"
-            class="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-all duration-150 hover:bg-muted/50"
-          >
-            <Settings class="h-3.5 w-3.5" :stroke-width="1.8" />
-            检查集成配置
-          </NuxtLink>
-        </div>
-      </div>
-
-    </aside>
   </div>
 </template>

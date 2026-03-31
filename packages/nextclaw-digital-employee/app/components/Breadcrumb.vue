@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ChevronRight } from "lucide-vue-next";
+import type { RouteLocationRaw } from "vue-router";
 
 defineProps<{
-  items: Array<{ label: string; to?: string }>;
+  items: Array<{ label: string; to?: RouteLocationRaw }>;
 }>();
 </script>
 
