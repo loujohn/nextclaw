@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { Agent, ProxyAgent, fetch as undiciFetch } from "undici";
 import {
   LLMProvider,
   type LLMResponse,
@@ -12,13 +12,52 @@ import {
   normalizeChatCompletionsResponse
 } from "./chat-completions-normalizer.js";
 
-function buildHttpAgent(): HttpsProxyAgent<string> | undefined {
+/** 判断 hostname 是否命中 NO_PROXY 中的某条规则 */
+function matchesNoProxy(hostname: string, pattern: string): boolean {
+  if (pattern === "*") return true;
+  const p = pattern.startsWith(".") ? pattern.slice(1) : pattern;
+  return hostname === p || hostname.endsWith("." + p);
+}
+
+/**
+ * 构造一个自定义 fetch，在运行时按目标 URL 决定是否走代理。
+ * - HTTPS_PROXY / HTTP_PROXY：代理地址
+ * - NO_PROXY：逗号分隔的 hostname/域名后缀，命中则直连
+ * 若未配置代理则返回 undefined，OpenAI SDK 自行使用默认 fetch。
+ */
+function buildProxiedFetch(): typeof globalThis.fetch | undefined {
   const proxyUrl =
     process.env.HTTPS_PROXY ||
     process.env.https_proxy ||
     process.env.HTTP_PROXY ||
     process.env.http_proxy;
-  return proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+  if (!proxyUrl) return undefined;
+
+  const noProxyPatterns = (process.env.NO_PROXY ?? process.env.no_proxy ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const proxyAgent = new ProxyAgent(proxyUrl);
+  const directAgent = new Agent();
+
+  return (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+    let hostname = "";
+    try {
+      hostname = new URL(url).hostname;
+    } catch { /* ignore */ }
+    const bypass = noProxyPatterns.some((p) => matchesNoProxy(hostname, p));
+    return undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+      ...init,
+      dispatcher: bypass ? directAgent : proxyAgent
+    } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>;
+  };
 }
 
 export type OpenAIProviderOptions = {
@@ -40,11 +79,13 @@ export class OpenAICompatibleProvider extends LLMProvider {
     this.defaultModel = options.defaultModel;
     this.extraHeaders = options.extraHeaders ?? null;
     this.wireApi = options.wireApi ?? "auto";
+    const proxiedFetch = buildProxiedFetch();
     this.client = new OpenAI({
       apiKey: options.apiKey ?? undefined,
       baseURL: options.apiBase ?? undefined,
       defaultHeaders: options.extraHeaders ?? undefined,
-      httpAgent: buildHttpAgent()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(proxiedFetch ? { fetch: proxiedFetch as any } : {})
     });
   }
 

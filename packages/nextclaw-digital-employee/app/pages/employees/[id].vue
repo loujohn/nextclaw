@@ -1,24 +1,28 @@
 <script setup lang="ts">
 import { formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
-import { CircleCheck, CircleAlert, Clock } from "lucide-vue-next";
+import { CircleCheck, CircleAlert } from "lucide-vue-next";
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 const { data } = await useEmployeeDetail(employeeId);
 const isOverviewTab = computed(() => route.path === `/employees/${employeeId.value}`);
+const employeeCenterLink = computed(() => ({
+  path: "/employees",
+  query: route.query
+}));
 
 const tabs = computed(() => [
-  { label: "概览", to: `/employees/${employeeId.value}` },
-  { label: "聊天", to: `/employees/${employeeId.value}/chat` },
-  { label: "定时任务", to: `/employees/${employeeId.value}/jobs` },
-  { label: "运行记录", to: `/employees/${employeeId.value}/runs` }
+  { label: "概览", to: { path: `/employees/${employeeId.value}`, query: route.query } },
+  { label: "聊天", to: { path: `/employees/${employeeId.value}/chat`, query: route.query } },
+  { label: "定时任务", to: { path: `/employees/${employeeId.value}/jobs`, query: route.query } },
+  { label: "运行记录", to: { path: `/employees/${employeeId.value}/runs`, query: route.query } }
 ]);
 </script>
 
 <template>
   <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8" v-if="data?.data">
     <Breadcrumb :items="[
-      { label: '员工中心', to: '/employees' },
+      { label: '员工中心', to: employeeCenterLink },
       { label: data.data.name }
     ]" />
 

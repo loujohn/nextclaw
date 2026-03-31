@@ -30,6 +30,7 @@ apps/docs/.vitepress/.temp/
 .worktrees/
 .superpowers/
 packages/nextclaw-digital-employee/digital-employee-data
+packages/nextclaw-digital-employee/dist/_compat-deploy/
 
 .github/
 .dockerignore
