@@ -124,8 +124,12 @@ export class ChannelManager {
 
     const outbound = this.normalizeOutbound(msg);
     if (!outbound) {
+      // eslint-disable-next-line no-console
+      console.log(`[channel-manager] outbound dropped (silent reply) channel=${msg.channel} chat=${msg.chatId}`);
       return true;
     }
+    // eslint-disable-next-line no-console
+    console.log(`[channel-manager] outbound channel=${msg.channel} chat=${msg.chatId} contentLen=${outbound.content?.length ?? 0}`);
     await channel.send(outbound);
     return true;
   }
@@ -137,7 +141,7 @@ export class ChannelManager {
         await this.deliver(msg);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`Error sending to ${msg.channel}: ${String(err)}`);
+        console.error(`[channel-manager] dispatch error channel=${msg.channel} chat=${msg.chatId}: ${String(err)}`);
       }
     }
   }
