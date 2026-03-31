@@ -5,7 +5,7 @@ description: "政务科技公司商务与售前知识库。涵盖公司战略定
 metadata:
   nextclaw:
     emoji: "🏢"
-    category: "domain-knowledge"
+    category: "solutions"
 ---
 
 # 政务科技公司专家技能

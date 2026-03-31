@@ -5,7 +5,7 @@ description: "生成专业政务分层架构图（HTML/CSS），支持四横四�
 metadata:
   nextclaw:
     emoji: "🏗️"
-    category: "solution-design"
+    category: "solutions"
 ---
 
 # 架构图生成器

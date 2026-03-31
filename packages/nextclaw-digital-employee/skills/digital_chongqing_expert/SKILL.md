@@ -5,7 +5,7 @@ description: "数字重庆建设全域知识库。涵盖1361整体架构、三�
 metadata:
   nextclaw:
     emoji: "🏙️"
-    category: "domain-knowledge"
+    category: "solutions"
 ---
 
 # 数字重庆建设专家技能
