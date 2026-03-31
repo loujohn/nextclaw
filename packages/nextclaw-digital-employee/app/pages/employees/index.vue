@@ -59,10 +59,77 @@ const { data: skillPayload } = await useFetch<SkillListPayload>("/api/skills");
 const { data: departmentPayload, refresh: refreshDepts } = await useFetch<{ ok: boolean; data: DepartmentView[] }>("/api/departments");
 type HumanEmployeeListPayload = { ok: boolean; data: HumanMemberBrief[] };
 const { data: humanEmployeePayload, refresh: refreshHumanEmployees } = await useFetch<HumanEmployeeListPayload>("/api/org/human-employees");
+const route = useRoute();
 
-const selectedDeptId = ref<string | null>(null);
+function getSingleQueryValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+  return value ?? "";
+}
+
+function resolveInitialViewMode(): 'overview' | 'list' {
+  return getSingleQueryValue(route.query.view) === 'list' ? 'list' : 'overview';
+}
+
+function resolveInitialDeptId(): string | null {
+  const deptId = getSingleQueryValue(route.query.deptId).trim();
+  return deptId || null;
+}
+
+function resolveInitialSearchQuery(): string {
+  return getSingleQueryValue(route.query.q);
+}
+
+function buildEmployeeListRouteQuery(options?: {
+  view?: 'overview' | 'list';
+  deptId?: string | null;
+  q?: string;
+}): Record<string, string> {
+  const view = options?.view ?? viewMode.value;
+  const deptId = options?.deptId ?? selectedDeptId.value;
+  const keyword = (options?.q ?? query.value).trim();
+  if (view !== 'list') {
+    return {};
+  }
+  return {
+    view: 'list',
+    ...(deptId ? { deptId } : {}),
+    ...(keyword ? { q: keyword } : {})
+  };
+}
+
+function hasSameEmployeeListQuery(nextQuery: Record<string, string>): boolean {
+  const currentQuery = buildEmployeeListRouteQuery({
+    view: resolveInitialViewMode(),
+    deptId: resolveInitialDeptId(),
+    q: resolveInitialSearchQuery()
+  });
+  const currentKeys = Object.keys(currentQuery);
+  const nextKeys = Object.keys(nextQuery);
+  if (currentKeys.length !== nextKeys.length) {
+    return false;
+  }
+  return nextKeys.every((key) => currentQuery[key] === nextQuery[key]);
+}
+
+async function replaceEmployeeListRoute(nextQuery: Record<string, string>) {
+  if (hasSameEmployeeListQuery(nextQuery)) {
+    return;
+  }
+  await navigateTo({ path: '/employees', query: nextQuery }, { replace: true });
+}
+
+function buildEmployeeWorkbenchRoute(employeeId: string) {
+  return {
+    path: `/employees/${employeeId}`,
+    query: buildEmployeeListRouteQuery()
+  };
+}
+
+const selectedDeptId = ref<string | null>(resolveInitialDeptId());
 // 视图模式：overview=总览，list=员工列表
-const viewMode = ref<'overview' | 'list'>('overview');
+const viewMode = ref<'overview' | 'list'>(resolveInitialViewMode());
 
 // 部门展开状态
 const expandedDepts = ref<Set<string>>(new Set());
@@ -82,10 +149,13 @@ function isDeptExpanded(deptId: string): boolean {
 function handleSelectDept(id: string | null) {
   selectedDeptId.value = id;
   viewMode.value = 'list';
+  void replaceEmployeeListRoute(buildEmployeeListRouteQuery({ view: 'list', deptId: id }));
 }
 function handleSelectOverview() {
   selectedDeptId.value = null;
   viewMode.value = 'overview';
+  query.value = "";
+  void replaceEmployeeListRoute({});
 }
 
 // 点击部门卡片的逻辑
@@ -120,7 +190,7 @@ const viewerLoading = ref(false);
 const step = ref(0);
 const editStep = ref(0);
 const viewStep = ref(0);
-const query = ref("");
+const query = ref(resolveInitialSearchQuery());
 const form = reactive({
   name: "",
   code: "",
@@ -390,6 +460,19 @@ const filteredEmployees = computed(() => {
   );
 });
 
+watch(() => route.query, () => {
+  viewMode.value = resolveInitialViewMode();
+  selectedDeptId.value = resolveInitialDeptId();
+  query.value = resolveInitialSearchQuery();
+});
+
+watch(query, (value) => {
+  if (viewMode.value !== 'list') {
+    return;
+  }
+  void replaceEmployeeListRoute(buildEmployeeListRouteQuery({ view: 'list', deptId: selectedDeptId.value, q: value }));
+});
+
 const steps = [
   { title: "基础信息", desc: "定义员工的身份与角色" },
   { title: "工作设定", desc: "模型与行为偏好" },
@@ -428,7 +511,7 @@ async function createEmployee() {
     resetForm();
     showCreator.value = false;
     await refresh();
-    await navigateTo(`/employees/${created.data.id}`);
+    await navigateTo(buildEmployeeWorkbenchRoute(created.data.id));
   } catch (error) {
     createError.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -1152,7 +1235,7 @@ function getAvatarStyle(name: string): Record<string, string> {
         v-for="emp in filteredEmployees"
         :key="emp.id"
         class="employee-list-card"
-        @click="navigateTo(`/employees/${emp.id}`)"
+        @click="navigateTo(buildEmployeeWorkbenchRoute(emp.id))"
       >
         <!-- 头像 -->
         <div

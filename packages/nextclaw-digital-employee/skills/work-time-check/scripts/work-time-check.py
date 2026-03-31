@@ -14,13 +14,14 @@ import urllib.parse
 import urllib.error
 from datetime import datetime
 
-BASE_URL = os.environ.get(
-    "WORK_TIME_BASE_URL", "http://shangji.dcg-internal-services.test.dcginner:10006/api"
-)
+BASE_URL = os.environ.get("PM_BASE_URL", "")
 API_URL = os.environ.get(
-    "WORK_TIME_API", f"{BASE_URL}/admin/zenTaoTaskLog/unfilledDetail"
+    "PM_API", BASE_URL + "/admin/zenTaoTaskLog/unfilledDetail" if BASE_URL else ""
 )
-TIMEOUT = int(os.environ.get("TIMEOUT", "600000"))
+TIMEOUT = int(os.environ.get("PM_TIMEOUT", "600000"))
+BASIC_AUTH = os.environ.get("PM_BASIC_AUTH", "Basic your_base64_here")
+API_USERNAME = os.environ.get("PM_USERNAME", "admin")
+API_PASSWORD = os.environ.get("PM_PASSWORD", "your_password_here")
 
 
 def post_form(url, form_data, timeout):
@@ -31,7 +32,7 @@ def post_form(url, form_data, timeout):
         data=data,
         headers={
             "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": "Basic dGVzdDp0ZXN0",
+            "Authorization": BASIC_AUTH,
             "Accept": "application/json",
             "User-Agent": "nextclaw-work-time-check/1.0",
         },
@@ -69,8 +70,8 @@ def get_token(base_url, timeout):
     token_url = f"{base_url}/admin/oauth2/token"
     form_data = {
         "grant_type": "password",
-        "username": "admin",
-        "password": "Dcg@123456",
+        "username": API_USERNAME,
+        "password": API_PASSWORD,
         "login_type": "quick",
     }
     result = post_form(token_url, form_data, timeout)

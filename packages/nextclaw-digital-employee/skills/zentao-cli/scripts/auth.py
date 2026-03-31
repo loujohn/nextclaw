@@ -5,12 +5,11 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
-import subprocess
 import os
 
-ZENTAO_URL = "https://zentao.common.dcginner:18080"
-ZENTAO_USER = "admin"
-ZENTAO_PASS = "ZenTaoqwe!@#$66"
+ZENTAO_URL = os.environ.get("ZENTAO_URL", "https://zentao.example.com:18080")
+ZENTAO_USER = os.environ.get("ZENTAO_USER", "admin")
+ZENTAO_PASS = os.environ.get("ZENTAO_PASS", "your_password_here")
 
 
 def exec_cmd(command, check=True):

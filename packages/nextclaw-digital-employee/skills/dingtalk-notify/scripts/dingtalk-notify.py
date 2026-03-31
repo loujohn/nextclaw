@@ -26,14 +26,17 @@ import urllib.error
 import base64
 import tempfile
 
-WEBHOOK_URL = "https://oapi.dingtalk.com/robot/send?access_token=a999bbee464d0c21493980cdacc6b096982b7f6b04218a34f69dfa61278feb00"
-WORK_NOTIFY_URL = (
-    "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2"
+WEBHOOK_URL = os.environ.get("DINGTALK_WEBHOOK_URL", "your_webhook_url_here")
+WORK_NOTIFY_URL = os.environ.get(
+    "DINGTALK_WORK_NOTIFY_URL",
+    "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2",
 )
-TOKEN_URL = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
-DEFAULT_APP_KEY = "dingfztactakcnl0wkwd"
-DEFAULT_APP_SECRET = "gJx89RoiA_4iVHAJqRpJkSSgY2byjjTlPqRyIudDccZwTTC5c7UrTBP65HZvy-xP"
-DEFAULT_AGENT_ID = "3941085354"
+TOKEN_URL = os.environ.get(
+    "DINGTALK_TOKEN_URL", "https://api.dingtalk.com/v1.0/oauth2/accessToken"
+)
+DEFAULT_APP_KEY = os.environ.get("DINGTALK_APP_KEY", "your_appkey_here")
+DEFAULT_APP_SECRET = os.environ.get("DINGTALK_APP_SECRET", "your_appsecret_here")
+DEFAULT_AGENT_ID = os.environ.get("DINGTALK_AGENT_ID", "your_agent_id_here")
 
 
 def read_file_content(file_path):
@@ -48,6 +51,8 @@ def read_file_content(file_path):
 
 def send_request(url, data, timeout=30):
     """发送HTTP请求"""
+    if not url:
+        raise ValueError("URL未配置，请设置环境变量 DINGTALK_WEBHOOK_URL")
     req = urllib.request.Request(
         url,
         data=json.dumps(data).encode("utf-8"),
