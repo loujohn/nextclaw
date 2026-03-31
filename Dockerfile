@@ -7,6 +7,7 @@ ENV http_proxy=http://172.31.1.95:1080
 ENV https_proxy=http://172.31.1.95:1080
 ENV no_proxy=localhost,127.0.0.1,::1,*.local,172.0.0.0/8
 ENV NODE_PATH=/app/plugins-runtime/node_modules
+ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY packages/nextclaw-digital-employee/dist ./
 COPY packages/nextclaw-digital-employee/skills ./dist/skills/
