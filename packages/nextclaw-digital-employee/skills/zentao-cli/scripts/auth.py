@@ -6,6 +6,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 import os
+import subprocess
 
 ZENTAO_URL = os.environ.get("ZENTAO_URL", "https://zentao.example.com:18080")
 ZENTAO_USER = os.environ.get("ZENTAO_USER", "admin")
