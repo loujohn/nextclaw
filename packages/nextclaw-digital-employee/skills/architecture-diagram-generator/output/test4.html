@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI+"城市规建运治一体化"综合场景驾驶舱[市级/区县] - 16:9比例PPT版</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif; background-color: #333;
+      display: flex; justify-content: center; align-items: center;  
+      min-height: 100vh; padding: 20px;
+    }
+    .main-wrapper {
+      width: 1920px; height: 1080px; position: relative; background-color: #eaf2f8;
+      display: flex; flex-direction: column; padding: 24px 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); overflow: hidden; 
+    }
+    .arch-table { flex: 1; display: flex; min-height: 0; }
+    .arch-main-column { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+    .arch-right-column { width: 120px; margin-left: 10px; display: flex; gap: 6px; }
+
+    /* ========== 通用层分离式结构 ========== */
+    .arch-layer { display: flex; gap: 8px; min-height: 0; }
+    
+    .layer-duan { flex: 0 0 auto; } 
+    .layer-app { flex: 4; min-height: 0; } 
+    .layer-support { flex: 2.2; min-height: 0; }
+    .layer-data { flex: 2.5; min-height: 0; }
+    .layer-infra { flex: 0 0 auto; }
+
+    .layer-label {
+      width: 58px; background-color: #17508e; color: #ffffff;
+      font-size: 16px; font-weight: bold; letter-spacing: 2px;
+      display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.4;
+      padding: 0; 
+    }
+    .layer-content {
+      flex: 1; background: #ffffff; border: 3px solid #17508e; padding: 6px;
+      display: flex; flex-direction: column; gap: 4px; position: relative; min-height: 0;
+    }
+
+    /* ========== 1.两端 ========== */
+    .duan-content { flex-direction: row; gap: 6px; padding: 6px; }
+    .duan-module-left, .duan-module-right {
+      background-color: #3272b6; color: #ffffff; font-weight: bold;
+      font-size: 18px; text-align: center; padding: 12px 0; display: flex; align-items: center; justify-content: center;
+    }
+    .duan-module-left { flex: 1; } .duan-module-right { flex: 1.8; }
+
+    /* ========== 2.业务应用 ========== */
+    .app-content { flex-direction: column; gap: 4px; }
+    .app-cockpit {
+      background: linear-gradient(90deg, #17508e 0%, #3a7dc9 50%, #17508e 100%);
+      color: #ffffff; font-size: 20px; font-weight: bold; text-align: center;
+      padding: 6px 0; letter-spacing: 2px; flex: 0 0 auto;
+    }
+    .app-scenes { display: flex; gap: 4px; flex: 0 0 auto; }
+    .scene-label {
+      flex: 1; color: #ffffff; font-size: 13px; font-weight: bold;
+      padding: 6px 2px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    
+    /* 解决问题1：恢复五个核心板块独立边框 */
+    .app-groups-container { display: flex; flex-direction: row; gap: 6px; flex: 1; min-height: 0; }
+    .app-group {
+      flex: 1; border: 2px solid #17508e; display: flex; flex-direction: column;
+      background-color: #fbfcff; min-height: 0; 
+    }
+    .app-group-title {
+      background-color: #17508e; color: #ffffff; font-weight: bold;
+      font-size: 14px; text-align: center; padding: 4px 0; flex: 0 0 auto;
+    }
+    .app-group-inner { flex: 1; display: flex; flex-direction: column; padding: 4px; gap: 4px; min-height: 0; }
+    
+    .app-vert-section { flex: 1.25; display: flex; gap: 3px; min-height: 0; }
+    .app-vert-col { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    /* 解决问题2：统一长度，取消过高间隙，竖排列充满其父盒子！ */
+    .app-vert-text {
+      flex: 1; /* 占据所在上半部的所有高度，因此长度完全一致 */
+      background-color: #3272b6; color: #ffffff; font-size: 11px;
+      line-height: 1.25; text-align: center; padding: 6px 2px; letter-spacing: 1px;
+    }
+    /* 但我为了解决斜杠折行使用了 <br>，所以在JS里我又放回去了，保证中文纯正竖列 */
+
+    .app-horz-section { flex: 1; display: flex; flex-direction: column; gap: 3px; min-height: 0;}
+    .app-horz-row { flex: 1; display: flex; gap: 2px; justify-content: stretch; min-height: 0;}
+    
+    /* 解决问题3：去除可能造成空白偏移的 pre-wrap */
+    .app-horz-item {
+      color: #ffffff; font-size: 11px; text-align: center; padding: 4px;
+      line-height: 1.25; white-space: normal; display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+    }
+
+    .global-down-arrows {
+      display: flex; align-items: center; justify-content: center; position: relative;
+      height: 10px; margin-left: 66px; flex: 0 0 auto;
+    }
+    .d-arrow {
+      width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-top: 20px solid #17508e;
+      position: absolute; top: -10px;
+    }
+    .da-1 { left: 16%; } .da-2 { left: 50%; transform: translateX(-50%); } .da-3 { left: 81%; }
+
+    /* ========== 3. 连接带 ========== */
+    .conn-band-wrap {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-left: 66px; height: 38px; flex: 0 0 auto; margin-top:2px;
+    }
+    .conn-left-box, .conn-right-box {
+      background-color: #79a1c4; color: #fff; font-weight: bold; font-size: 14px; padding: 6px 14px; 
+    }
+    .conn-center-text { color: #000; font-size: 16px; font-weight: bold; margin: 0 10px; }
+    .conn-arrow-h { flex: 1; display: flex; padding: 0 10px; justify-content: center; }
+    .clip-arrow-right {
+      width: 100%; max-width: 250px; height: 30px; background: #17508e;
+      clip-path: polygon(0% 0%, 90% 0%, 100% 50%, 90% 100%, 0% 100%, 10% 50%);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .clip-arrow-right span {
+      display: block; width: 96%; height: 24px; background: #eaf2f8; 
+      clip-path: polygon(0% 0%, 90% 0%, 100% 50%, 90% 100%, 0% 100%, 10% 50%);
+      color: #17508e; font-weight: bold; font-size: 14px; text-align: center; line-height: 24px;
+    }
+    .clip-arrow-left {
+      width: 100%; max-width: 250px; height: 30px; background: #17508e;
+      clip-path: polygon(10% 0%, 100% 0%, 90% 50%, 100% 100%, 10% 100%, 0% 50%);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .clip-arrow-left span {
+      display: block; width: 96%; height: 24px; background: #eaf2f8; 
+      clip-path: polygon(10% 0%, 100% 0%, 90% 50%, 100% 100%, 10% 100%, 0% 50%);
+      color: #17508e; font-weight: bold; font-size: 14px; text-align: center; line-height: 24px;
+    }
+
+    /* ========== 4. 业务支撑层 ========== */
+    .support-grid { display: flex; gap: 8px; flex: 1; min-height: 0; }
+    .support-box {
+      flex: 1; border: 2px dashed #17508e; display: flex; flex-direction: column; padding: 4px; min-height: 0; 
+    }
+    .support-box-title {
+      font-size: 14px; font-weight: bold; color: #17508e; text-align: center; padding: 4px; flex: 0 0 auto;
+    }
+    .support-box-items {
+      padding: 0 4px; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px; align-content: flex-start;
+    }
+    .support-item {
+      background-color: #d1e1f3; color: #17508e; font-size: 12px; font-weight: bold;
+      text-align: center; padding: 6px 2px; display: flex; align-items: center; justify-content: center;
+    }
+    .support-bars { display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; }
+    .support-fullbar { text-align: center; font-weight: bold; padding: 6px; font-size: 14px; }
+    .bar-transparent { color: #000; border-top: 1px dotted #ccc; font-size: 16px; padding: 6px;}
+    .bar-solid { background-color: #17508e; color: #ffffff; }
+    .bar-solid_light { background-color: #3f7ec1; color: #ffffff; }
+
+    /* ========== 5. 数据资源 ========== */
+    .data-top-row { display: flex; gap: 8px; flex: 1; min-height: 0;}
+    .data-left { flex: 0.8; display: flex; flex-direction: column; min-height: 0;} 
+    .data-middle { flex: 0.6; display: flex; flex-direction: column; min-height: 0;} 
+    .data-right { flex: 1.6; display: flex; flex-direction: column; min-height: 0;}
+    .data-title { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 6px; color: #222222; flex: 0 0 auto;}
+    
+    .data-drs-grid { flex: 1; border: 2px dashed #8db7e8; background: #fdfdfd; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px 6px; align-content: center; justify-items: center; min-height: 0;}
+    .drs-item { display: flex; flex-direction: column; align-items: center; }
+    .cylinder {
+      width: 50px; height: 26px; background: linear-gradient(180deg, #6496d0 0%, #306aad 100%);
+      position: relative; margin-top: 6px;
+    }
+    .cylinder::before { content:''; position: absolute; top: -6px; left:0; width:50px; height: 12px; background: #8db5e2; border-radius: 50%; border: 1px solid #235894; }
+    .cylinder::after { content:''; position: absolute; bottom: -6px; left:0; width:50px; height: 12px; background: #306aad; border-radius: 50%; border: 1px solid #235894; border-top: none; }
+    .cylinder-text { font-size: 11px; margin-top: 12px; font-weight: bold; }
+    
+    .trusted-box, .warehouse-box { flex: 1; border: 2px dashed #8db7e8; padding: 6px; display: flex; flex-direction: column; min-height: 0;}
+    .trusted-grid { flex: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center;}
+    .trusted-item { background: #e9f0f8; border: 1px solid #bccce0; font-size: 11px; padding: 4px; text-align: center; font-weight: bold;}
+    
+    .hq-box { flex: 1; border: 2px dashed #d1e1f3; padding: 4px; display: flex; flex-direction: column; justify-content: center; min-height: 0;}
+    .hq-title { font-size: 12px; font-weight: bold; text-align: center; margin-bottom: 2px; }
+    .hq-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .hq-item { background: #5b99db; color: white; font-size: 11px; padding: 4px 2px; border-radius: 4px; text-align: center; white-space: nowrap; }
+
+    .data-bottom-row { display: flex; gap: 8px; flex: 0 0 auto;}
+    .db-type-group { flex: 1; display: flex; gap: 6px; border: 2px dashed #8db7e8; padding: 4px; align-items: center; }
+    .db-type-label { font-size: 13px; font-weight: bold; padding: 0 6px; width: 40px; text-align: center; border-right: 2px solid #17508e; }
+    .db-type-items { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+    .db-bag { background: #5b99db; color: white; border-radius: 12px; padding: 3px 10px; font-size: 11px; font-weight: bold;}
+
+    /* ========== 6. 基础设施 ========== */
+    .infra-content { padding: 4px !important; }
+    .infra-cloud-title { text-align: center; font-weight: bold; font-size: 16px; background: #d0e4f5; padding: 4px 0; border: 3px solid #17508e; border-bottom: none; }
+    .infra-items-row { display: flex; background: #17508e; border: 3px solid #17508e; }
+    .infra-item { flex: 1; color: #fff; font-size: 14px; font-weight: bold; text-align: center; padding: 4px 0; border-right: 1px solid rgba(255,255,255,0.4); }
+    .infra-item:last-child { border-right: none; }
+
+    /* ========== 7. 四纵竖条 ========== */
+    .vert-sys-bar { flex: 1; display: flex; flex-direction: column; }
+    .vert-sys-title {
+      font-size: 18px; font-weight: 900; color: #000; letter-spacing: 0px; line-height: 1.1;
+      text-align: center; padding-top: 10px; margin-bottom: 10px; flex: 0 0 auto;
+    }
+    .vert-sys-box {
+      border: 2px dashed #888; border-top: none; flex: 1; margin: 0 10px 10px; border-top: 2px dashed #888; min-height: 0;
+    }
+
+    /* ========== 8. 图例 ========== */
+    .legend-box {
+      position: absolute; bottom: 8px; right: 8px; background: transparent; border: 2px dashed #888; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; z-index: 50;
+    }
+    .leg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: bold;}
+    .leg-color { width: 14px; height: 10px; border: 1px solid #666; }
+    .leg-bg-new { background: #17508e; }
+    .leg-bg-existing { background: #3272b6; }
+    .leg-bg-reuse { background: #00af50; }
+
+  </style>
+</head>
+<body>
+  <div class="main-wrapper">
+    <div class="arch-table">
+      <div class="arch-main-column">
+      <div class="arch-layer layer-duan">
+        <div class="layer-label"><span>两<br>端</span></div>
+        <div class="layer-content duan-content">
+          <div class="duan-module-left">渝快政</div>
+          <div class="duan-module-right">渝快办</div>
+        </div>
+      </div>
+    
+      <div class="arch-layer layer-app">
+        <div class="layer-label"><span>业务<br>应用<br>体系</span></div>
+        <div class="layer-content app-content">
+          
+      <div class="app-cockpit">AI+ “城市规建运治一体化”综合场景驾驶舱[市级/区县]</div>
+      <div class="app-scenes"><div class="scene-label" style="background:#00b050">城市体检更新智管</div><div class="scene-label" style="background:#3b78c4">数字管线综合智管</div><div class="scene-label" style="background:#3b78c4">城市交通缓堵促畅智治</div><div class="scene-label" style="background:#3b78c4">15分钟高品质生活圈智慧服务</div><div class="scene-label" style="background:#3b78c4">地灾风险综合智管</div><div class="scene-label" style="background:#3b78c4">两江四岸整体智治</div><div class="scene-label" style="background:#3b78c4">中心城区内毗邻区域城市综合智治</div><div class="scene-label" style="background:#1a5694">......</div></div>
+    
+          <div class="app-groups-container">
+            
+        <div class="app-group">
+          <div class="app-group-title">体检画像</div>
+          <div class="app-group-inner">
+            <div class="app-vert-section"><div class="app-vert-col"><div class="app-vert-text">体<br>检<br>方<br>案<br>编<br>制</div></div><div class="app-vert-col"><div class="app-vert-text">片<br>区<br>智<br>能<br>画<br>像</div></div><div class="app-vert-col"><div class="app-vert-text">体<br>检<br>数<br>据<br>汇<br>聚</div></div><div class="app-vert-col"><div class="app-vert-text">体<br>检<br>分<br>析<br>诊<br>断</div></div><div class="app-vert-col"><div class="app-vert-text">城<br>市<br>智<br>能<br>画<br>像</div></div><div class="app-vert-col"><div class="app-vert-text">智<br>能<br>画<br>像</div></div><div class="app-vert-col"><div class="app-vert-text">社<br>区<br>/<br>项<br>目</div></div><div class="app-vert-col"><div class="app-vert-text">体<br>检<br>效<br>果<br>评<br>估</div></div></div>
+            <div class="app-horz-section"><div class="app-horz-row"><div class="app-horz-item" style="flex: 3; background: #3b78c4">管道燃气安全在线</div><div class="app-horz-item" style="flex: 2; background: #3b78c4">15分钟高品质生活圈</div><div class="app-horz-item" style="flex: 3; background: #3b78c4">城市规划统筹</div></div><div class="app-horz-row"><div class="app-horz-item" style="flex: 3; background: #6fa0d9">体检分析诊断</div><div class="app-horz-item" style="flex: 2; background: #6fa0d9">城市智能画像</div><div class="app-horz-item" style="flex: 3; background: #6fa0d9">...</div></div></div>
+          </div>
+        </div>
+      
+        <div class="app-group">
+          <div class="app-group-title">规划赋能</div>
+          <div class="app-group-inner">
+            <div class="app-vert-section"><div class="app-vert-col"><div class="app-vert-text">方<br>案<br>编<br>制<br>规<br>划</div></div><div class="app-vert-col"><div class="app-vert-text">专<br>项<br>规<br>划<br>报<br>审</div></div><div class="app-vert-col"><div class="app-vert-text">规<br>划<br>报<br>审</div></div><div class="app-vert-col"><div class="app-vert-text">方<br>案<br>策<br>划<br>编<br>制</div></div><div class="app-vert-col"><div class="app-vert-text">片<br>区<br>规<br>划</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>报<br>审</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>策<br>划</div></div><div class="app-vert-col"><div class="app-vert-text">产<br>业<br>招<br>商</div></div><div class="app-vert-col"><div class="app-vert-text">方<br>案<br>编<br>制</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>实<br>施<br>规<br>划</div></div><div class="app-vert-col"><div class="app-vert-text">实<br>施<br>方<br>案<br>报<br>审</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>赋<br>码<br>入<br>库</div></div><div class="app-vert-col"><div class="app-vert-text">计<br>划<br>编<br>制</div></div><div class="app-vert-col"><div class="app-vert-text">年<br>度<br>建<br>设<br>计<br>划</div></div></div>
+            <div class="app-horz-section"><div class="app-horz-row"><div class="app-horz-item" style="flex: 4; background: #3b78c4">数字管线</div><div class="app-horz-item" style="flex: 4; background: #3b78c4">公房在线</div><div class="app-horz-item" style="flex: 6; background: #3b78c4">渝路智管</div></div><div class="app-horz-row"><div class="app-horz-item" style="flex: 4; background: #3b78c4">经济-产业一链通</div><div class="app-horz-item" style="flex: 4; background: #3b78c4">城市内涝治理</div><div class="app-horz-item" style="flex: 6; background: #3b78c4">城市更新资源信息平台</div></div></div>
+          </div>
+        </div>
+      
+        <div class="app-group">
+          <div class="app-group-title">建设实施</div>
+          <div class="app-group-inner">
+            <div class="app-vert-section"><div class="app-vert-col"><div class="app-vert-text">联<br>合<br>审<br>批</div></div><div class="app-vert-col"><div class="app-vert-text">勘<br>察<br>设<br>计</div></div><div class="app-vert-col"><div class="app-vert-text">施<br>工<br>图<br>审<br>查<br>备<br>案</div></div><div class="app-vert-col"><div class="app-vert-text">施<br>工<br>许<br>可</div></div><div class="app-vert-col"><div class="app-vert-text">开<br>工<br>报<br>监</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>施<br>工</div></div><div class="app-vert-col"><div class="app-vert-text">安<br>全<br>监<br>管</div></div><div class="app-vert-col"><div class="app-vert-text">工<br>程<br>质<br>量</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>竣<br>工<br>验<br>收</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>联<br>合<br>验<br>收</div></div><div class="app-vert-col"><div class="app-vert-text">档<br>案<br>移<br>交</div></div><div class="app-vert-col"><div class="app-vert-text">项<br>目<br>验<br>收<br>评<br>估</div></div></div>
+            <div class="app-horz-section"><div class="app-horz-row"><div class="app-horz-item" style="flex: 4; background: #3b78c4">工程质量安全保障</div><div class="app-horz-item" style="flex: 4; background: #3b78c4">工程审批在线</div><div class="app-horz-item" style="flex: 4; background: #3b78c4">工程渣土治理利用</div></div><div class="app-horz-row"><div class="app-horz-item" style="flex: 6; background: #6fa0d9">二三维联动施工图审查</div><div class="app-horz-item" style="flex: 6; background: #6fa0d9">......</div></div></div>
+          </div>
+        </div>
+      
+        <div class="app-group">
+          <div class="app-group-title">运行运营</div>
+          <div class="app-group-inner">
+            <div class="app-vert-section"><div class="app-vert-col"><div class="app-vert-text">城<br>市<br>运<br>行</div></div><div class="app-vert-col"><div class="app-vert-text">城<br>市<br>运<br>营</div></div><div class="app-vert-col"><div class="app-vert-text">成<br>效<br>评<br>估</div></div></div>
+            <div class="app-horz-section"><div class="app-horz-row"><div class="app-horz-item" style="flex: 3; background: #3b78c4">经济运行监测</div></div><div class="app-horz-row"><div class="app-horz-item" style="flex: 3; background: #6fa0d9">城市运营管理</div></div></div>
+          </div>
+        </div>
+      
+        <div class="app-group">
+          <div class="app-group-title">协同治理</div>
+          <div class="app-group-inner">
+            <div class="app-vert-section"><div class="app-vert-col"><div class="app-vert-text">空<br>间<br>闲<br>置<br>置<br>换</div></div><div class="app-vert-col"><div class="app-vert-text">应<br>急<br>处<br>置</div></div><div class="app-vert-col"><div class="app-vert-text">城<br>市<br>安<br>全</div></div><div class="app-vert-col"><div class="app-vert-text">问<br>题<br>诉<br>求</div></div><div class="app-vert-col"><div class="app-vert-text">群<br>众<br>协<br>同</div></div><div class="app-vert-col"><div class="app-vert-text">重<br>大<br>项<br>目<br>调<br>度</div></div><div class="app-vert-col"><div class="app-vert-text">成<br>效<br>评<br>估<br>评<br>价</div></div><div class="app-vert-col"><div class="app-vert-text">协<br>同<br>治<br>理</div></div></div>
+            <div class="app-horz-section"><div class="app-horz-row"><div class="app-horz-item" style="flex: 4; background: #3b78c4">土地要素用途智管</div><div class="app-horz-item" style="flex: 4; background: #3b78c4">生活垃圾分类治理</div></div><div class="app-horz-row"><div class="app-horz-item" style="flex: 4; background: #3b78c4">高楼消防</div><div class="app-horz-item" style="flex: 4; background: #6fa0d9">......</div></div></div>
+          </div>
+        </div>
+      
+          </div>
+        </div>
+      </div>
+      <div class="global-down-arrows">
+         <div class="d-arrow da-1"></div>
+         <div class="d-arrow da-2"></div>
+         <div class="d-arrow da-3"></div>
+      </div>
+    
+      <div class="conn-band-wrap">
+        <div class="conn-left-box">各区县住房与城乡建设部门</div>
+        <div class="conn-arrow-h">
+          <div class="clip-arrow-right"><span>纵向、横向贯通</span></div>
+        </div>
+        <div class="conn-center-text">三级数字化城市运行和治理中心</div>
+        <div class="conn-arrow-h">
+          <div class="clip-arrow-left"><span>多跨协同、综合集成</span></div>
+        </div>
+        <div class="conn-right-box">市规自局、城管局等协同部门</div>
+      </div>
+    
+      <div class="arch-layer layer-support">
+        <div class="layer-label"><span>业务<br>支撑<br>层</span></div>
+        <div class="layer-content support-content">
+          <div class="support-grid">
+        <div class="support-box">
+          <div class="support-box-title">IRS能力组件</div>
+          <div class="support-box-items"><div class="support-item">统一身份认证</div><div class="support-item">用户体系(渝快政)</div><div class="support-item">矢量电子地图</div><div class="support-item">消息通知</div><div class="support-item">业务协同网关</div><div class="support-item">CIM（升级）</div><div class="support-item">智能预案</div><div class="support-item">事件中心</div><div class="support-item">......</div></div>
+        </div>
+      
+        <div class="support-box">
+          <div class="support-box-title">自建组件</div>
+          <div class="support-box-items"><div class="support-item">图模线上协同组件</div><div class="support-item">模型上图能力组件</div><div class="support-item">图模管理能力组件</div><div class="support-item">工程化能力组件</div><div class="support-item">一模到底能力组件</div><div class="support-item">......</div></div>
+        </div>
+      
+        <div class="support-box">
+          <div class="support-box-title">AI智能体</div>
+          <div class="support-box-items"><div class="support-item">片区布局模拟分析智能体</div><div class="support-item">体检分析智能体</div><div class="support-item">项目生成三维生成智能体</div><div class="support-item">图纸、模型审查智能体</div><div class="support-item">线上平面审批智能体</div><div class="support-item">成效评估智能体</div><div class="support-item">更新空间三维生成智能体</div></div>
+        </div>
+      </div>
+          <div class="support-bars"><div class="support-fullbar bar-transparent">一体化数字资源系统（IRS） +数字重庆AI底座</div><div class="support-fullbar bar-solid">市级物联感知系统</div><div class="support-fullbar bar-solid_light">行业物联感知系统</div></div>
+        </div>
+      </div>
+    
+      <div class="arch-layer layer-data">
+        <div class="layer-label"><span>数据<br>资源<br>层</span></div>
+        <div class="layer-content data-content">
+          <div class="data-top-row">
+            <div class="data-left">
+              <div class="data-title">公共数据资源管理系统（DRS）</div>
+              <div class="data-drs-grid">
+      <div class="drs-item">
+        <div class="cylinder"></div>
+        <div class="cylinder-text">规自数仓</div>
+      </div>
+    
+      <div class="drs-item">
+        <div class="cylinder"></div>
+        <div class="cylinder-text">城管数仓</div>
+      </div>
+    
+      <div class="drs-item">
+        <div class="cylinder"></div>
+        <div class="cylinder-text">交委数仓</div>
+      </div>
+    
+      <div class="drs-item">
+        <div class="cylinder"></div>
+        <div class="cylinder-text">经信委数仓</div>
+      </div>
+    
+      <div class="drs-item">
+        <div class="cylinder"></div>
+        <div class="cylinder-text">发改委数仓</div>
+      </div>
+    
+      <div class="drs-item">
+        <div class="cylinder"></div>
+        <div class="cylinder-text">其他......</div>
+      </div>
+    </div>
+            </div>
+            <div class="data-middle">
+              <div class="trusted-box">
+                <div class="data-title">可信数据空间</div>
+                <div class="trusted-grid"><div class="trusted-item">可信数据空间管理</div><div class="trusted-item">数字合约管理</div><div class="trusted-item">接入连接器管理</div><div class="trusted-item">数据使用控制</div></div>
+              </div>
+            </div>
+            <div class="data-right">
+              <div class="warehouse-box">
+                <div class="data-title">住建数仓</div>
+                <div class="hq-box">
+                  <div class="hq-title">高质量数据集</div>
+                  <div class="hq-grid"><div class="hq-item">体检更新高质量数据集</div><div class="hq-item">国土空间高质量数据集</div><div class="hq-item">地质勘察高质量数据集</div><div class="hq-item">工程设计高质量数据集</div><div class="hq-item">空间运营高质量数据集</div><div class="hq-item">........</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="data-bottom-row">
+            <div class="db-type-group">
+               <div class="db-type-label">业务库</div>
+               <div class="db-type-items"><div class="db-bag">城市体检库</div><div class="db-bag">项目更新库</div><div class="db-bag">项目实施库</div><div class="db-bag">城市治理库</div><div class="db-bag">........</div></div>
+            </div>
+            <div class="db-type-group">
+               <div class="db-type-label">专题库</div>
+               <div class="db-type-items"><div class="db-bag">国土空间库</div><div class="db-bag">CIM模型库</div><div class="db-bag">........</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    
+      <div class="arch-layer layer-infra">
+        <div class="layer-label"><span>基础设<br>施层</span></div>
+        <div class="layer-content infra-content">
+          <div class="infra-cloud-title">政务云（信创）</div>
+          <div class="infra-items-row"><div class="infra-item">互联网</div><div class="infra-item">电子政务外网</div><div class="infra-item">感知网</div><div class="infra-item">视联网</div></div>
+        </div>
+      </div>
+    </div>
+      <div class="arch-right-column">
+        <div class="vert-sys-bar">
+          <div class="vert-sys-title">标<br>准<br>规<br>范<br>体<br>系</div>
+          <div class="vert-sys-box"></div>
+        </div>
+      
+        <div class="vert-sys-bar">
+          <div class="vert-sys-title">制<br>度<br>规<br>则<br>体<br>系</div>
+          <div class="vert-sys-box"></div>
+        </div>
+      
+        <div class="vert-sys-bar">
+          <div class="vert-sys-title">安<br>全<br>防<br>护<br>体<br>系</div>
+          <div class="vert-sys-box"></div>
+        </div>
+      
+        <div class="vert-sys-bar">
+          <div class="vert-sys-title">工<br>作<br>推<br>进<br>体<br>系</div>
+          <div class="vert-sys-box"></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend-box">
+      <div class="leg-item">
+         <span class="leg-color leg-bg-new"></span>
+         <span class="leg-txt">新建</span>
+      </div>
+    
+      <div class="leg-item">
+         <span class="leg-color leg-bg-existing"></span>
+         <span class="leg-txt">既有集成</span>
+      </div>
+    
+      <div class="leg-item">
+         <span class="leg-color leg-bg-reuse"></span>
+         <span class="leg-txt">复用</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

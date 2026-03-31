@@ -1,4 +1,3 @@
-import * as https from "node:https";
 import {
   BaseChannel,
   evaluateChannelAccessPolicy,
@@ -10,33 +9,55 @@ import {
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { fetch, ProxyAgent, Agent } from "undici";
+
 import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { normalizeString } from "./utils";
 
-function resolveProxyUrl(): string | undefined {
+function getProxyUrl(): string | undefined {
   return process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
 }
 
-/**
- * Patch Node.js https.globalAgent so ws (WebSocket) and axios route through the proxy.
- * ws uses https.globalAgent for wss:// connections and does not read HTTPS_PROXY env itself.
- */
-function patchGlobalHttpsAgent(): void {
-  const proxyUrl = resolveProxyUrl();
-  if (!proxyUrl) {
-    return;
-  }
-  https.globalAgent = new HttpsProxyAgent(proxyUrl) as unknown as https.Agent;
-  console.log(`[dingtalk] patched https.globalAgent with proxy: ${proxyUrl}`);
-}
-
 function buildDispatcher() {
-  const proxyUrl = resolveProxyUrl();
+  const proxyUrl = getProxyUrl();
   if (proxyUrl) {
+    console.log(`[dingtalk] using http proxy: ${proxyUrl}`);
     return new ProxyAgent(proxyUrl);
   }
   return new Agent();
+}
+
+/**
+ * ws 内部默认 createConnection = tls.connect（直连），绕过 http(s).globalAgent。
+ * 注入自定义 createConnection → HttpsProxyAgent.connect() → CONNECT 隧道 → TLS。
+ */
+function injectWsProxy(client: DWClient): void {
+  const proxyUrl = getProxyUrl();
+  if (!proxyUrl) return;
+
+  const agent = new HttpsProxyAgent(proxyUrl);
+  const base = (client as any).sslopts ?? {};
+  (client as any).sslopts = {
+    ...base,
+    createConnection(
+      options: any,
+      oncreate: (err: Error | null, socket?: any) => void,
+    ) {
+      (agent as any)
+        .connect({} as any, {
+          host: options.host,
+          hostname: options.hostname || options.host,
+          port: Number(options.port) || 443,
+          secureEndpoint: true,
+          servername: options.servername || options.host,
+        })
+        .then(
+          (socket: any) => oncreate(null, socket),
+          (err: Error) => oncreate(err),
+        );
+    },
+  };
+  console.log(`[dingtalk] ws proxy injected → ${proxyUrl}`);
 }
 
 type TokenState = { token: string; expiresAt: number };
@@ -47,7 +68,6 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
   private tokens = new Map<string, TokenState>();
 
   async start(): Promise<void> {
-    patchGlobalHttpsAgent();
     this.running = true;
     const normalized = normalizeDingTalkConfig(this.config);
     const entries = Object.entries(normalized.accounts).filter(([, account]) => account.clientId && account.clientSecret);
@@ -66,6 +86,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           clientSecret: account.clientSecret,
           debug: false
         });
+        injectWsProxy(client);
         client.registerCallbackListener(TOPIC_ROBOT, async (event: DWClientDownStream) => {
           await this.handleRobotMessage(accountId, account, event);
         });

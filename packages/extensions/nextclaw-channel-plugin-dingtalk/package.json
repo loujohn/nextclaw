@@ -26,6 +26,7 @@
   "dependencies": {
     "@nextclaw/core": "workspace:*",
     "dingtalk-stream": "^2.1.4",
+    "https-proxy-agent": "^8.0.0",
     "jiti": "^1.21.7",
     "undici": "^6.21.0"
   },

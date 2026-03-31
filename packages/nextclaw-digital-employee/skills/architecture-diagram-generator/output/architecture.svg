@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1230" viewBox="0 0 1600 1230">
+    <defs>
+      <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style="stop-color:#e8f4fc;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#ffffff;stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#bgGradient)"/>
+  
+    <text x="800" y="50" text-anchor="middle" font-family=""Microsoft YaHei", "SimHei", sans-serif" font-size="32" font-weight="bold" fill="#1e5aa8">
+      数字重庆总体架构
+    </text>
+    <line x1="100" y1="70" x2="1500" y2="70" stroke="#1e5aa8" stroke-width="3"/>
+  
+      <rect x="40" y="80" width="1520" height="200" fill="white" stroke="#ddd" stroke-width="1" rx="8"/>
+    
+      <rect x="40" y="80" width="60" height="200" fill="#1e5aa8" rx="8"/>
+      <text x="70" y="180" text-anchor="middle" font-family=""Microsoft YaHei", "SimHei", sans-serif" font-size="20" font-weight="bold" fill="white" transform="rotate(-90, 70, 180)">
+        两端
+      </text>
+    
+      <rect x="40" y="310" width="1520" height="200" fill="white" stroke="#ddd" stroke-width="1" rx="8"/>
+    
+      <rect x="40" y="310" width="60" height="200" fill="#2d7dd2" rx="8"/>
+      <text x="70" y="410" text-anchor="middle" font-family=""Microsoft YaHei", "SimHei", sans-serif" font-size="20" font-weight="bold" fill="white" transform="rotate(-90, 70, 410)">
+        业务应用体系
+      </text>
+    
+      <rect x="40" y="540" width="1520" height="200" fill="white" stroke="#ddd" stroke-width="1" rx="8"/>
+    
+      <rect x="40" y="540" width="60" height="200" fill="#4a9eff" rx="8"/>
+      <text x="70" y="640" text-anchor="middle" font-family=""Microsoft YaHei", "SimHei", sans-serif" font-size="20" font-weight="bold" fill="white" transform="rotate(-90, 70, 640)">
+        业务支撑层
+      </text>
+    
+      <rect x="40" y="770" width="1520" height="200" fill="white" stroke="#ddd" stroke-width="1" rx="8"/>
+    
+      <rect x="40" y="770" width="60" height="200" fill="#6bb3ff" rx="8"/>
+      <text x="70" y="870" text-anchor="middle" font-family=""Microsoft YaHei", "SimHei", sans-serif" font-size="20" font-weight="bold" fill="white" transform="rotate(-90, 70, 870)">
+        数据资源层
+      </text>
+    
+      <rect x="40" y="1000" width="1520" height="200" fill="white" stroke="#ddd" stroke-width="1" rx="8"/>
+    
+      <rect x="40" y="1000" width="60" height="200" fill="#1e5aa8" rx="8"/>
+      <text x="70" y="1100" text-anchor="middle" font-family=""Microsoft YaHei", "SimHei", sans-serif" font-size="20" font-weight="bold" fill="white" transform="rotate(-90, 70, 1100)">
+        基础设施层
+      </text>
+    </svg>

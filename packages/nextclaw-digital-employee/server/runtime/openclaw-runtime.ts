@@ -5,6 +5,9 @@ import {
 } from "@nextclaw/core";
 import { builtinProviderIds } from "@nextclaw/runtime";
 import { loadOpenClawPlugins, type PluginRegistry, type PluginLogger } from "@nextclaw/openclaw-compat";
+import { createLogger } from "../utils/logger";
+
+const pluginLog = createLogger("OpenClawPlugins");
 
 type RuntimeConfigOptions = {
   workspaceDir: string;
@@ -127,12 +130,7 @@ export function loadPlatformRuntimeState(params: {
     reservedChannelIds: [],
     reservedProviderIds: builtinProviderIds(),
     reservedEngineKinds: ["native"],
-    logger: params.logger ?? {
-      info: (msg: string, ...args: unknown[]) => console.info("[OpenClawPlugins]", msg, ...args),
-      warn: (msg: string, ...args: unknown[]) => console.warn("[OpenClawPlugins]", msg, ...args),
-      error: (msg: string, ...args: unknown[]) => console.error("[OpenClawPlugins]", msg, ...args),
-      debug: (msg: string, ...args: unknown[]) => console.debug("[OpenClawPlugins]", msg, ...args)
-    }
+    logger: params.logger ?? pluginLog
   });
   return {
     config,

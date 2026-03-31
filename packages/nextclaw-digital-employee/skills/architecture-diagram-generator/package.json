@@ -1,0 +1,23 @@
+{
+  "name": "architecture-diagram-generator",
+  "version": "1.0.0",
+  "description": "使用 HTML/CSS + SVG 生成分层架构图",
+  "main": "scripts/generate_architecture.js",
+  "scripts": {
+    "generate": "node scripts/generate_architecture.js",
+    "example": "node scripts/generate_architecture.js --input examples/digital_chongqing.json --output output",
+    "example:fire": "node scripts/generate_architecture.js --input examples/fire_intelligence_agent.json --output output"
+  },
+  "keywords": [
+    "architecture",
+    "diagram",
+    "svg",
+    "html",
+    "css",
+    "visualization"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
