@@ -20,50 +20,50 @@ metadata:
 
 ### 项目基础信息
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 项目名称 | 项目名称 | `project list`、`project info` |
-| 项目状态 | wait/doing/done/suspended/closed | `project info` |
-| 项目经理 | 负责人 | `project info` |
-| 总工时 | 项目总工时 | `project info` |
-| 已消耗 | 已消耗工时 | `project info` |
-| 剩余工时 | 剩余可用工时 | `project info` |
+| 字段     | 说明                             | 来源命令                       |
+| -------- | -------------------------------- | ------------------------------ |
+| 项目名称 | 项目名称                         | `project list`、`project info` |
+| 项目状态 | wait/doing/done/suspended/closed | `project info`                 |
+| 项目经理 | 负责人                           | `project info`                 |
+| 总工时   | 项目总工时                       | `project info`                 |
+| 已消耗   | 已消耗工时                       | `project info`                 |
+| 剩余工时 | 剩余可用工时                     | `project info`                 |
 
 ### 执行/迭代信息
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 迭代名称 | 执行/迭代名称 | `execution list` |
-| 迭代状态 | wait/doing/done | `execution list` |
-| 进度 | 进度百分比 | `execution info` |
-| 开始/结束日期 | 时间范围 | `execution info` |
+| 字段          | 说明            | 来源命令         |
+| ------------- | --------------- | ---------------- |
+| 迭代名称      | 执行/迭代名称   | `execution list` |
+| 迭代状态      | wait/doing/done | `execution list` |
+| 进度          | 进度百分比      | `execution info` |
+| 开始/结束日期 | 时间范围        | `execution info` |
 
 ### 任务统计
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
-| 总任务数 | 执行下全部任务 | `task list -e <execution_id>` |
-| 已完成 | 状态为done | `task list -e <execution_id> --status done` |
-| 进行中 | 状态为doing | `task list -e <execution_id> --status doing` |
-| 待处理 | 状态为wait | `task list -e <execution_id> --status wait` |
-| 阻塞任务 | 超过截止日期且状态为doing | `task list` 筛选 deadline |
+| 字段     | 说明                      | 来源命令                                     |
+| -------- | ------------------------- | -------------------------------------------- |
+| 总任务数 | 执行下全部任务            | `task list -e <execution_id>`                |
+| 已完成   | 状态为done                | `task list -e <execution_id> --status done`  |
+| 进行中   | 状态为doing               | `task list -e <execution_id> --status doing` |
+| 待处理   | 状态为wait                | `task list -e <execution_id> --status wait`  |
+| 阻塞任务 | 超过截止日期且状态为doing | `task list` 筛选 deadline                    |
 
 ### 团队信息
 
-| 字段 | 说明 | 来源命令 |
-|------|------|----------|
+| 字段     | 说明         | 来源命令                    |
+| -------- | ------------ | --------------------------- |
 | 团队成员 | 项目成员列表 | `team list -p <project_id>` |
-| 角色 | 成员角色 | `team list` |
+| 角色     | 成员角色     | `team list`                 |
 
 ## 分析规则
 
 ### 项目健康状态判断
 
-| 状态 | 条件 |
-|------|------|
-| 正常 | 进行中，任务进度正常，无阻塞 |
+| 状态 | 条件                                         |
+| ---- | -------------------------------------------- |
+| 正常 | 进行中，任务进度正常，无阻塞                 |
 | 风险 | 进行中，剩余工时不足 或 超过截止日期任务 > 3 |
-| 停滞 | 状态为wait超过3天 或 任务无进展超过1周 |
+| 停滞 | 状态为wait超过3天 或 任务无进展超过1周       |
 
 ### 风险识别规则
 
@@ -73,11 +73,11 @@ metadata:
 
 ### 通知优先级
 
-| 优先级 | 触发条件 |
-|--------|----------|
-| 高 | 项目状态为suspended/closed，或风险指标超过阈值 |
-| 中 | 任务延期 > 3个，或进度落后于计划 |
-| 低 | 常规周报，无异常 |
+| 优先级 | 触发条件                                       |
+| ------ | ---------------------------------------------- |
+| 高     | 项目状态为suspended/closed，或风险指标超过阈值 |
+| 中     | 任务延期 > 3个，或进度落后于计划               |
+| 低     | 常规周报，无异常                               |
 
 ## 分析流程
 
@@ -112,17 +112,23 @@ cat /path/to/report.md | python skills/zentao-project-analysis/scripts/project-a
 python skills/zentao-project-analysis/scripts/project-analysis.py --content "分析内容"
 ```
 
-生成的文件在 `temp/project_analysis_时间戳.md`。
-
-### 发送通知
-
-```bash
-python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '项目分析报告' --file temp/project_analysis_时间戳.md --cleanup
-```
+生成的文件在 `C:\Users\用户名\nextclaw-temp\project_analysis_时间戳.md`。
 
 ### 临时文件目录
 
-`temp/`（与 skills 同级），脚本自动创建。
+所有脚本统一使用**用户主目录下的固定目录**（跨平台兼容）。
+
+**目录位置：**
+
+- **Windows**: `C:\Users\用户名\nextclaw-temp`
+- **Linux**: `/home/用户名/nextclaw-temp`
+- **Mac**: `/Users/用户名/nextclaw-temp`
+
+**执行脚本时会输出绝对路径**
+
+```bash
+python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '项目分析报告' --file C:\Users\用户名\nextclaw-temp\project_analysis_时间戳.md --cleanup
+```
 
 ## 输出格式
 
