@@ -50,9 +50,7 @@ def ensure_auth():
     print("[禅道认证] 未认证，正在进行认证...")
     print(f"[禅道认证] ZENTAO_URL: {ZENTAO_URL}", file=sys.stderr)
     print(f"[禅道认证] ZENTAO_USER: {ZENTAO_USER}", file=sys.stderr)
-    print(f"[禅道认证] ZENTAO_PASS: {repr(ZENTAO_PASS)}", file=sys.stderr)
-    cmd = f'zentaopms auth setup --url {ZENTAO_URL} --username {ZENTAO_USER} --password "{ZENTAO_PASS}" --insecure'
-    print(f"[禅道认证] 执行命令: {cmd}", file=sys.stderr)
+    cmd = f"zentaopms auth setup --url {ZENTAO_URL} --username {ZENTAO_USER} --password '{ZENTAO_PASS}' --insecure"
     result = exec_cmd(cmd)
 
     if check_auth():
