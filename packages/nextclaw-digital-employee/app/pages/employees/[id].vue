@@ -15,8 +15,13 @@ const tabs = computed(() => [
   { label: "概览", to: { path: `/employees/${employeeId.value}`, query: route.query } },
   { label: "聊天", to: { path: `/employees/${employeeId.value}/chat`, query: route.query } },
   { label: "定时任务", to: { path: `/employees/${employeeId.value}/jobs`, query: route.query } },
-  { label: "运行记录", to: { path: `/employees/${employeeId.value}/runs`, query: route.query } }
+  { label: "运行记录", to: { path: `/employees/${employeeId.value}/runs`, query: route.query } },
+  { label: "工作空间", to: { path: `/employees/${employeeId.value}/workspace`, query: route.query } }
 ]);
+
+function isTabActive(path: string): boolean {
+  return route.path === path;
+}
 </script>
 
 <template>
@@ -67,10 +72,10 @@ const tabs = computed(() => [
     <nav class="flex gap-2">
       <NuxtLink
         v-for="tab in tabs"
-        :key="tab.to"
+        :key="tab.to.path"
         :to="tab.to"
         class="rounded-full px-4 py-2 text-sm font-medium transition-colors"
-        :class="$route.path === tab.to
+        :class="isTabActive(tab.to.path)
           ? 'bg-primary text-primary-foreground'
           : 'border border-border bg-card text-muted-foreground hover:text-foreground'"
       >
