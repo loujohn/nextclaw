@@ -1,3 +1,4 @@
+import * as https from "node:https";
 import {
   BaseChannel,
   evaluateChannelAccessPolicy,
@@ -7,19 +8,36 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { fetch, ProxyAgent, Agent } from "undici";
+import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
+import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
+import { normalizeString } from "./utils";
+
+function resolveProxyUrl(): string | undefined {
+  return process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
+}
+
+/**
+ * Patch Node.js https.globalAgent so ws (WebSocket) and axios route through the proxy.
+ * ws uses https.globalAgent for wss:// connections and does not read HTTPS_PROXY env itself.
+ */
+function patchGlobalHttpsAgent(): void {
+  const proxyUrl = resolveProxyUrl();
+  if (!proxyUrl) {
+    return;
+  }
+  https.globalAgent = new HttpsProxyAgent(proxyUrl) as unknown as https.Agent;
+  console.log(`[dingtalk] patched https.globalAgent with proxy: ${proxyUrl}`);
+}
 
 function buildDispatcher() {
-  const proxyUrl = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
+  const proxyUrl = resolveProxyUrl();
   if (proxyUrl) {
-    console.log(`[dingtalk] using proxy: ${proxyUrl}`);
     return new ProxyAgent(proxyUrl);
   }
   return new Agent();
 }
-import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
-import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
-import { normalizeString } from "./utils";
 
 type TokenState = { token: string; expiresAt: number };
 
@@ -29,6 +47,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
   private tokens = new Map<string, TokenState>();
 
   async start(): Promise<void> {
+    patchGlobalHttpsAgent();
     this.running = true;
     const normalized = normalizeDingTalkConfig(this.config);
     const entries = Object.entries(normalized.accounts).filter(([, account]) => account.clientId && account.clientSecret);
