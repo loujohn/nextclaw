@@ -16,8 +16,9 @@ else
 fi
 
 # ── Channel plugin runtime: pnpm deploy --prod ──────────────────────────────
+COMPAT_DEPLOY_DIR="packages/nextclaw-digital-employee/compat-deploy"
 echo -e "\033[34m[deploy] 生成 openclaw-compat 生产依赖包...\033[0m"
-pnpm --filter @nextclaw/openclaw-compat deploy --prod /app/compat-deploy
+pnpm --filter @nextclaw/openclaw-compat deploy --prod "$COMPAT_DEPLOY_DIR"
 if [ $? -ne 0 ]; then
   echo -e "\033[31m[deploy] pnpm deploy 失败!\033[0m"
   exit 1
@@ -27,7 +28,7 @@ fi
 echo -e "\033[34m[deploy] 拷贝 channel plugin 包...\033[0m"
 for pkg in dingtalk discord email feishu mochat qq slack telegram wecom whatsapp; do
   src="packages/extensions/nextclaw-channel-plugin-$pkg"
-  dest="/app/compat-deploy/node_modules/@nextclaw/channel-plugin-$pkg"
+  dest="$COMPAT_DEPLOY_DIR/node_modules/@nextclaw/channel-plugin-$pkg"
   if [ -d "$src" ]; then
     cp -r "$src" "$dest"
     echo "  copied $src -> $dest"
@@ -39,7 +40,7 @@ echo -e "\033[34m[deploy] 拷贝 workspace 公共包 (dist only)...\033[0m"
 for pair in "packages/nextclaw-core:core" "packages/extensions/nextclaw-channel-runtime:channel-runtime"; do
   src="${pair%%:*}"
   name="${pair##*:}"
-  dest="/app/compat-deploy/node_modules/@nextclaw/$name"
+  dest="$COMPAT_DEPLOY_DIR/node_modules/@nextclaw/$name"
   mkdir -p "$dest"
   cp "$src/package.json" "$dest/"
   if [ -d "$src/dist" ]; then
