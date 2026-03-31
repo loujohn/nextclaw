@@ -1,3 +1,34 @@
+import type { ErrorCategory } from "../server/errors/platform-errors";
+
+export type PlatformErrorView = {
+  category: ErrorCategory;
+  message: string;
+  hint?: string;
+};
+
+export const HealthStatus = {
+  Healthy: "healthy",
+  Warning: "warning",
+  Error: "error",
+} as const;
+export type HealthStatus = (typeof HealthStatus)[keyof typeof HealthStatus];
+
+export type HealthDetail = {
+  status: HealthStatus;
+  reasons: string[];
+};
+
+export function buildHealthDetail(checks: { hasApiKey: boolean; hasRecentFailure: boolean; isActive: boolean }): HealthDetail {
+  const reasons: string[] = [];
+  if (!checks.isActive) reasons.push("员工已停用");
+  if (!checks.hasApiKey) reasons.push("未配置模型 API Key");
+  if (checks.hasRecentFailure) reasons.push("近期存在运行失败");
+
+  if (reasons.length === 0) return { status: HealthStatus.Healthy, reasons: [] };
+  if (!checks.hasApiKey || !checks.isActive) return { status: HealthStatus.Error, reasons };
+  return { status: HealthStatus.Warning, reasons };
+}
+
 export type ScheduleSummaryInput = {
   scheduleKind: string;
   nextRunAt?: string | null;

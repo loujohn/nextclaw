@@ -1,8 +1,5 @@
 import { createError, readBody } from "h3";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { ensureEmployeeWorkspace, resolveEmployeeWorkspace } from "../../engine/employee-workspace";
 
 type CreateEmployeeBody = {
   name?: string;
@@ -28,58 +25,36 @@ export default defineEventHandler(async (event) => {
       statusMessage: "name and code are required"
     });
   }
+
   const ctx = await getPlatformContext();
-  let employee;
   try {
-    employee = await ctx.employeeRepo.create({
-      name,
-      code,
-      description: body?.description ?? "",
-      systemPrompt: body?.systemPrompt ?? "",
-      model: body?.model ?? "",
-      departmentId: body?.departmentId ?? null
+    const validScheduleKinds = new Set(["cron", "every", "heartbeat"]);
+    const hasSchedule = body?.scheduleKind && validScheduleKinds.has(body.scheduleKind) && (body.scheduleKind === "cron" ? body.cronExpr : body.everyMs);
+    const result = await ctx.lifecycleService.createEmployee({
+      employee: {
+        name,
+        code,
+        description: body?.description ?? "",
+        systemPrompt: body?.systemPrompt ?? "",
+        model: body?.model ?? "",
+        departmentId: body?.departmentId ?? null,
+      },
+      skillNames: body?.skillNames,
+      schedule: hasSchedule
+        ? {
+            scheduleKind: body.scheduleKind as "cron" | "every" | "heartbeat",
+            cronExpr: body.cronExpr,
+            everyMs: body.everyMs,
+          }
+        : undefined,
+      workspaceFiles: body?.workspaceFiles,
     });
-  } catch (err: any) {
+    return { ok: true, data: result };
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
     throw createError({
-      statusCode: err?.statusCode ?? 500,
-      statusMessage: err?.message ?? "创建员工失败"
+      statusCode: e?.statusCode ?? 500,
+      statusMessage: e?.message ?? "创建员工失败"
     });
   }
-
-  ensureEmployeeWorkspace(ctx.gateway.homeDir, {
-    code: employee.code,
-    name: employee.name,
-    description: employee.description,
-    systemPrompt: employee.systemPrompt
-  }, ctx.gateway.workspaceDir);
-
-  const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
-  const wsFiles = body?.workspaceFiles ?? {};
-  const wsDir = resolveEmployeeWorkspace(ctx.gateway.homeDir, employee.code);
-  for (const [filename, content] of Object.entries(wsFiles)) {
-    if (WRITABLE_FILES.has(filename) && typeof content === "string" && content.trim()) {
-      writeFileSync(join(wsDir, filename), content, "utf-8");
-    }
-  }
-
-  const skillNames = body?.skillNames ?? [];
-  const skills = await ctx.employeeSkillRepo.replaceForEmployee(employee.id, skillNames);
-
-  const hasSchedule = body?.scheduleKind && (body.scheduleKind === "cron" ? body.cronExpr : body.everyMs);
-  const schedule = hasSchedule
-    ? await ctx.automationService.upsertSchedule({
-        employeeId: employee.id,
-        scheduleKind: body.scheduleKind as "cron" | "every" | "heartbeat",
-        cronExpr: body?.cronExpr,
-        everyMs: body?.everyMs
-      })
-    : null;
-  return {
-    ok: true,
-    data: {
-      ...employee,
-      skills,
-      schedule
-    }
-  };
 });

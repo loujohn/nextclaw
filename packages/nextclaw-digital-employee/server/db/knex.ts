@@ -263,6 +263,65 @@ async function createSecretsTable(db: Knex): Promise<void> {
   });
 }
 
+async function migrateAddQueryIndexes(db: Knex): Promise<void> {
+  const masterRows = await db.raw(
+    "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='employees' AND name LIKE '%code%'"
+  );
+  for (const idx of masterRows) {
+    if (idx.name && idx.name !== "idx_employees_code_active") {
+      await db.raw(`DROP INDEX IF EXISTS "${idx.name}"`);
+    }
+  }
+  await db.raw(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "idx_employees_code_active" ON "employees" ("code") WHERE "status" != 'archived'`
+  );
+  await db.raw(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "idx_employee_skills_eid_name" ON "employee_skills" ("employee_id", "skill_name")`
+  );
+  await db.raw(
+    `CREATE INDEX IF NOT EXISTS "idx_run_records_eid_started" ON "run_records" ("employee_id", "started_at" DESC)`
+  );
+  await db.raw(
+    `CREATE INDEX IF NOT EXISTS "idx_run_events_rid_seq" ON "run_events" ("run_id", "seq" ASC)`
+  );
+  await db.raw(
+    `CREATE INDEX IF NOT EXISTS "idx_schedule_jobs_eid" ON "employee_schedule_jobs" ("employee_id")`
+  );
+}
+
+async function migrateLegacySchedulesToJobs(db: Knex): Promise<void> {
+  const hasLegacyTable = await db.schema.hasTable(PLATFORM_TABLES.employeeSchedules);
+  if (!hasLegacyTable) return;
+
+  const legacyRows = await db(PLATFORM_TABLES.employeeSchedules).select("*");
+  if (legacyRows.length === 0) return;
+
+  for (const row of legacyRows) {
+    const existingJob = await db(PLATFORM_TABLES.employeeScheduleJobs)
+      .where({ employee_id: row.employee_id })
+      .first();
+    if (existingJob) continue;
+
+    const now = new Date().toISOString();
+    await db(PLATFORM_TABLES.employeeScheduleJobs).insert({
+      id: row.id,
+      employee_id: row.employee_id,
+      name: "默认调度 (迁移)",
+      description: "从旧版单调度自动迁移",
+      schedule_kind: row.schedule_kind,
+      cron_expr: row.cron_expr ?? null,
+      every_ms: row.every_ms ?? null,
+      heartbeat_interval_s: row.heartbeat_interval_s ?? null,
+      task_prompt: row.schedule_message ?? "",
+      enabled: row.enabled,
+      runtime_job_id: row.runtime_job_id ?? null,
+      next_run_at: row.next_run_at ?? null,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+}
+
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createDepartmentsTable(db);
   await createEmployeesTable(db);
@@ -279,4 +338,68 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await migrateEmployeesAddModel(db);
   await migrateEmployeesAddDepartmentId(db);
   await migrateAddDepartmentExternalId(db);
+  await migrateAddQueryIndexes(db);
+  await migrateLegacySchedulesToJobs(db);
 }
+
+type MigrationEntry = {
+  name: string;
+  up: (knex: Knex) => Promise<void>;
+  down: (knex: Knex) => Promise<void>;
+};
+
+class InlineMigrationSource implements Knex.MigrationSource<MigrationEntry> {
+  private readonly entries: MigrationEntry[];
+
+  constructor(entries: MigrationEntry[]) {
+    this.entries = entries;
+  }
+
+  getMigrations(): Promise<MigrationEntry[]> {
+    return Promise.resolve(this.entries);
+  }
+
+  getMigrationName(migration: MigrationEntry): string {
+    return migration.name;
+  }
+
+  getMigration(migration: MigrationEntry): Promise<Knex.Migration> {
+    return Promise.resolve({ up: migration.up, down: migration.down });
+  }
+}
+
+const platformMigrations: MigrationEntry[] = [
+  {
+    name: "001_baseline.ts",
+    async up(knex) {
+      await ensurePlatformDatabase(knex);
+    },
+    async down() {
+      // Baseline — not reversible
+    },
+  },
+  {
+    name: "002_enums_constraints_indexes.ts",
+    async up(knex) {
+      await migrateAddQueryIndexes(knex);
+    },
+    async down(knex) {
+      await knex.raw(`DROP INDEX IF EXISTS "idx_schedule_jobs_eid"`);
+      await knex.raw(`DROP INDEX IF EXISTS "idx_run_events_rid_seq"`);
+      await knex.raw(`DROP INDEX IF EXISTS "idx_run_records_eid_started"`);
+      await knex.raw(`DROP INDEX IF EXISTS "idx_employee_skills_eid_name"`);
+      await knex.raw(`DROP INDEX IF EXISTS "idx_employees_code_active"`);
+    },
+  },
+  {
+    name: "003_legacy_schedule_migration.ts",
+    async up(knex) {
+      await migrateLegacySchedulesToJobs(knex);
+    },
+    async down() {
+      // Not reversible — see migrations/003_legacy_schedule_migration.ts
+    },
+  },
+];
+
+export const platformMigrationSource = new InlineMigrationSource(platformMigrations);

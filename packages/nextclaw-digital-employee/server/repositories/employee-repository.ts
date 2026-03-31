@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type EmployeeRecord } from "../db/schema";
+import { EmployeeStatus } from "../db/enums";
 
 export type CreateEmployeeInput = {
   name: string;
@@ -59,12 +60,15 @@ export class EmployeeRepository {
       description: input.description.trim(),
       system_prompt: input.systemPrompt.trim(),
       model: input.model?.trim() ?? "",
-      status: "active",
+      status: EmployeeStatus.Active,
       department_id: input.departmentId ?? null,
       created_at: now,
       updated_at: now
     };
-    const existing = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ code: record.code }).first();
+    const existing = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
+      .where({ code: record.code })
+      .whereNot({ status: EmployeeStatus.Archived })
+      .first();
     if (existing) {
       throw Object.assign(new Error(`员工 code '${record.code}' 已存在`), { statusCode: 409 });
     }
@@ -72,18 +76,27 @@ export class EmployeeRepository {
     return toEmployeeView(record);
   }
 
-  async getById(id: string): Promise<EmployeeView | null> {
-    const record = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id }).first();
+  async getById(id: string, includeArchived = false): Promise<EmployeeView | null> {
+    let query = this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id });
+    if (!includeArchived) {
+      query = query.whereNot({ status: EmployeeStatus.Archived });
+    }
+    const record = await query.first();
     return record ? toEmployeeView(record) : null;
   }
 
   async getByCode(code: string): Promise<EmployeeView | null> {
-    const record = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ code: code.trim() }).first();
+    const record = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
+      .where({ code: code.trim() })
+      .whereNot({ status: EmployeeStatus.Archived })
+      .first();
     return record ? toEmployeeView(record) : null;
   }
 
   async list(filter?: { departmentId?: string | null }): Promise<EmployeeView[]> {
-    let query = this.db<EmployeeRecord>(PLATFORM_TABLES.employees).orderBy("created_at", "desc");
+    let query = this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
+      .whereNot({ status: EmployeeStatus.Archived })
+      .orderBy("created_at", "desc");
     if (filter?.departmentId !== undefined) {
       query = query.where({ department_id: filter.departmentId });
     }
@@ -111,7 +124,15 @@ export class EmployeeRepository {
     return record ? toEmployeeView(record) : null;
   }
 
-  async deleteById(id: string): Promise<boolean> {
+  async archiveById(id: string): Promise<boolean> {
+    const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
+      .where({ id })
+      .whereNot({ status: EmployeeStatus.Archived })
+      .update({ status: EmployeeStatus.Archived, updated_at: new Date().toISOString() });
+    return affected > 0;
+  }
+
+  async hardDeleteById(id: string): Promise<boolean> {
     const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id }).delete();
     return affected > 0;
   }

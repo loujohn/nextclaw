@@ -12,12 +12,13 @@ type UpdateEmployeeBody = {
   model?: string;
   departmentId?: string | null;
   skillNames?: string[];
-  scheduleKind?: "cron" | "every" | "heartbeat";
+  scheduleKind?: string;
   cronExpr?: string;
   everyMs?: number;
   workspaceFiles?: Record<string, string>;
 };
 
+const VALID_SCHEDULE_KINDS = new Set(["cron", "every", "heartbeat"]);
 const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
 
 export default defineEventHandler(async (event) => {
@@ -81,14 +82,14 @@ export default defineEventHandler(async (event) => {
     skills = await ctx.employeeSkillRepo.replaceForEmployee(id, body.skillNames);
   }
 
-  let schedule = await ctx.employeeScheduleRepo.getByEmployeeId(id);
-  if (body?.scheduleKind) {
-    schedule = await ctx.automationService.upsertSchedule({
-      employeeId: id,
-      scheduleKind: body.scheduleKind,
+  let jobs = await ctx.automationService.listJobsForEmployee(id);
+  if (body?.scheduleKind && VALID_SCHEDULE_KINDS.has(body.scheduleKind)) {
+    const upserted = await ctx.lifecycleService.upsertSchedule(id, updated.name, {
+      scheduleKind: body.scheduleKind as "cron" | "every" | "heartbeat",
       cronExpr: body.cronExpr,
-      everyMs: body.everyMs
+      everyMs: body.everyMs,
     });
+    jobs = [upserted];
   }
 
   return {
@@ -96,7 +97,7 @@ export default defineEventHandler(async (event) => {
     data: {
       ...updated,
       skills,
-      schedule
+      jobs,
     }
   };
 });
