@@ -51,6 +51,7 @@ const STEPS = [
   { title: "基础信息", desc: "定义员工的身份与角色" },
   { title: "工作设定", desc: "模型与行为偏好" },
   { title: "能力配置", desc: "选择员工可使用的技能" },
+  { title: "自动任务", desc: "定义周期性执行策略" },
 ];
 
 const currentStep = ref(0);
@@ -299,8 +300,8 @@ function onFormSubmit() {
                   </label>
                 </div>
 
-                <!-- Step 3: 自动任务 (reserved for future steps expansion) -->
-                <div v-else class="space-y-3">
+                <!-- Step 3: 自动任务 -->
+                <div v-else-if="currentStep === 3" class="space-y-3">
                   <div class="grid gap-2">
                     <label
                       v-for="opt in [

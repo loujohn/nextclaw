@@ -152,12 +152,12 @@ export class SkillsLoader {
     if (!content || !content.startsWith("---")) {
       return null;
     }
-    const match = content.match(/^---\n(.*?)\n---/s);
+    const match = content.match(/^---\r?\n(.*?)\r?\n---/s);
     if (!match) {
       return null;
     }
     const metadata: Record<string, string> = {};
-    for (const line of match[1].split("\n")) {
+    for (const line of match[1].split(/\r?\n/)) {
       const [key, ...rest] = line.split(":");
       if (!key || rest.length === 0) {
         continue;
@@ -177,7 +177,7 @@ export class SkillsLoader {
 
   private stripFrontmatter(content: string): string {
     if (content.startsWith("---")) {
-      const match = content.match(/^---\n.*?\n---\n/s);
+      const match = content.match(/^---\r?\n.*?\r?\n---\r?\n/s);
       if (match) {
         return content.slice(match[0].length).trim();
       }
