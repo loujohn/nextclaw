@@ -7,7 +7,12 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
-import { fetch } from "undici";
+import { fetch, ProxyAgent, Agent } from "undici";
+
+function buildDispatcher() {
+  const proxyUrl = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
+  return proxyUrl ? new ProxyAgent(proxyUrl) : new Agent();
+}
 import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { normalizeString } from "./utils";
@@ -108,7 +113,9 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         "content-type": "application/json",
         "x-acs-dingtalk-access-token": token
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      dispatcher: buildDispatcher(),
+      signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok) {
       throw new Error(`DingTalk send failed: ${response.status}`);
@@ -203,7 +210,9 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       body: JSON.stringify({
         appKey: account.clientId,
         appSecret: account.clientSecret
-      })
+      }),
+      dispatcher: buildDispatcher(),
+      signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok) {
       throw new Error(`DingTalk token failed: ${response.status}`);
