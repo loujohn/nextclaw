@@ -907,6 +907,14 @@ export async function getDingTalkRuntimeConfig(
     channels: {
       dingtalk: buildDingTalkRuntimeChannel(stored.rawChannel)
     },
-    bindings: mergeDingTalkEmployeeBindings({ bindings: [] }, stored.routing).bindings
+    bindings: mergeDingTalkEmployeeBindings({ bindings: [] }, stored.routing).bindings,
+    plugins: {
+      enabled: true,
+      entries: {
+        "builtin-channel-dingtalk": {
+          enabled: true
+        }
+      }
+    }
   };
 }
