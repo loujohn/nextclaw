@@ -7,6 +7,7 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
+import https from "https";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { fetch, ProxyAgent, Agent } from "undici";
 
@@ -28,28 +29,20 @@ function buildDispatcher() {
 }
 
 /**
- * dingtalk-stream 内部使用 axios 发送 API 请求。
- * 我们通过修改 DWClient 实例的内部 axios dispatcher 来配置 httpsAgent，
- * 使其可以通过 HTTP 代理转发 CONNECT 请求到 dingtalk API。
+ * 全局配置 HTTPS 代理。
+ * 通过修改 Node.js https.globalAgent，使所有 HTTPS 请求（包括 DNS）都通过代理。
+ * 这是最可靠的方式，确保 dingtalk-stream 的所有连接都被代理。
  */
-function injectProxyAgent(client: DWClient): void {
+function setupGlobalHttpsProxy(): void {
   const proxyUrl = getProxyUrl();
   if (!proxyUrl) return;
 
   try {
     const httpsAgent = new HttpsProxyAgent(proxyUrl);
-    // DWClient 内部使用 axios，通过访问其内部属性设置 httpsAgent
-    if ((client as any).apiClient?.requestConfig?.httpsAgent === undefined) {
-      if ((client as any).apiClient) {
-        (client as any).apiClient.requestConfig = {
-          ...(client as any).apiClient.requestConfig,
-          httpsAgent
-        };
-      }
-    }
-    console.log(`[dingtalk] https proxy agent configured → ${proxyUrl}`);
+    (https.globalAgent as any) = httpsAgent;
+    console.log(`[dingtalk] global https agent patched → ${proxyUrl}`);
   } catch (error) {
-    console.error(`[dingtalk] failed to configure proxy agent:`, error);
+    console.error(`[dingtalk] failed to set global https agent:`, error);
   }
 }
 
@@ -62,6 +55,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
 
   async start(): Promise<void> {
     this.running = true;
+    setupGlobalHttpsProxy();
     const normalized = normalizeDingTalkConfig(this.config);
     const entries = Object.entries(normalized.accounts).filter(([, account]) => account.clientId && account.clientSecret);
     console.log(`[dingtalk] starting, accounts=${entries.map(([id]) => id).join(",") || "(none)"}`);
@@ -79,7 +73,6 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           clientSecret: account.clientSecret,
           debug: false
         });
-        injectProxyAgent(client);
         client.registerCallbackListener(TOPIC_ROBOT, async (event: DWClientDownStream) => {
           await this.handleRobotMessage(accountId, account, event);
         });
