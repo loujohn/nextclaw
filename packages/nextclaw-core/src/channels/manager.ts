@@ -56,7 +56,7 @@ export class ChannelManager {
       await channel.start();
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`Failed to start channel ${name}: ${String(err)}`);
+      console.error(`Failed to start channel ${name}:`, err);
     }
   }
 

@@ -564,5 +564,11 @@ export function loadOpenClawPlugins(options: PluginLoadOptions): PluginRegistry 
     seenIds.set(pluginId, candidate.origin);
   }
 
+  for (const diag of registry.diagnostics) {
+    if (diag.level === "error") {
+      logger.error(`[plugin] ${diag.source ?? diag.pluginId ?? "unknown"}: ${diag.message}`);
+    }
+  }
+
   return registry;
 }
