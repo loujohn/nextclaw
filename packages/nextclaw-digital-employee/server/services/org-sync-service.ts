@@ -3,6 +3,9 @@ import type { Knex } from "knex";
 import { PLATFORM_TABLES, type OrgSyncConfigRecord } from "../db/schema";
 import { DingTalkOrgClient } from "../integrations/dingtalk-org-client";
 import { DepartmentRepository } from "../repositories/department-repository";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("OrgSync");
 
 const CONFIG_ID = "default";
 
@@ -205,7 +208,7 @@ function getEnvOrgSyncConfig(): OrgSyncConfigView {
   const envAppSecret = process.env.DINGTALK_APP_SECRET?.trim() ?? "";
   const cronExpr = process.env.DINGTALK_CRON_EXPR?.trim() ?? "0 1 * * *";
   const enabled = process.env.DINGTALK_SYNC_ENABLED === "true";
-  console.log("Org Sync Config from env:", { envAppKey: !!envAppKey, envAppSecret: !!envAppSecret, cronExpr, enabled });
+  log.info("Org Sync Config from env:", { envAppKey: !!envAppKey, envAppSecret: !!envAppSecret, cronExpr, enabled });
   return {
     appKey: envAppKey,
     appSecretSet: !!envAppSecret,
@@ -250,25 +253,25 @@ export async function runOrgSync(
 
   let orgData: OrgSyncBody;
   try {
-    console.log(`[OrgSync] 开始拉取钉钉数据（appKey=${envAppKey}）`);
+    log.info(`开始拉取钉钉数据（appKey=${envAppKey}）`);
     const client = await DingTalkOrgClient.create(envAppKey, envAppSecret);
     orgData = (await client.fetchAllOrgData()) as OrgSyncBody;
-    console.log(`[OrgSync] 钉钉数据拉取成功，部门数=${orgData.departments?.length ?? 0}，用户数=${Object.keys(orgData.users ?? {}).length}`);
+    log.info(`钉钉数据拉取成功，部门数=${orgData.departments?.length ?? 0}，用户数=${Object.keys(orgData.users ?? {}).length}`);
   } catch (err) {
     const detail = extractErrorDetail(err);
-    console.error(`[OrgSync] 拉取钉钉数据失败:\n${detail}`);
+    log.error(`拉取钉钉数据失败:\n${detail}`);
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, summary: `拉取钉钉组织数据失败: ${msg}` };
   }
 
   try {
-    console.log("[OrgSync] 开始写入数据库...");
+    log.info("开始写入数据库...");
     const result = await performOrgSync(db, orgData);
-    console.log(`[OrgSync] 数据库同步完成: ${JSON.stringify(result)}`);
+    log.info(`数据库同步完成: ${JSON.stringify(result)}`);
     return { ok: true, summary: `同步成功: ${JSON.stringify(result)}`, data: result };
   } catch (err) {
     const detail = extractErrorDetail(err);
-    console.error(`[OrgSync] 数据库同步失败:\n${detail}`);
+    log.error(`数据库同步失败:\n${detail}`);
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, summary: `同步数据库操作失败: ${msg}` };
   }

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createLogger } from "../utils/logger";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -181,6 +182,8 @@ class MissingProvider extends LLMProvider {
     return this.defaultModel;
   }
 }
+
+const gatewayLog = createLogger("EngineGateway");
 
 export class NextclawEngineGateway {
   readonly homeDir: string;
@@ -442,7 +445,7 @@ export class NextclawEngineGateway {
     if (params.requestedSkills?.length) metadata.requested_skills = params.requestedSkills;
     const modelName = params.model || this.config.agents.defaults.model || "unknown";
     const t0 = Date.now();
-    console.log(`[model-access] START employee=${params.employeeId} model=${modelName} session=${sessionKey} msgLen=${params.message.length}`);
+    gatewayLog.info(`START employee=${params.employeeId} model=${modelName} session=${sessionKey} msgLen=${params.message.length}`);
     let reply: string;
     try {
       reply = await engine.processDirect({
@@ -456,10 +459,10 @@ export class NextclawEngineGateway {
         }
       });
     } catch (err) {
-      console.error(`[model-access] ERROR employee=${params.employeeId} model=${modelName} session=${sessionKey} elapsed=${Date.now() - t0}ms`, err);
+      gatewayLog.error(`ERROR employee=${params.employeeId} model=${modelName} session=${sessionKey} elapsed=${Date.now() - t0}ms`, err);
       throw err;
     }
-    console.log(`[model-access] END employee=${params.employeeId} model=${modelName} session=${sessionKey} elapsed=${Date.now() - t0}ms replyLen=${reply.length} events=${events.length}`);
+    gatewayLog.info(`END employee=${params.employeeId} model=${modelName} session=${sessionKey} elapsed=${Date.now() - t0}ms replyLen=${reply.length} events=${events.length}`);
     const historyCountAfter = this.sessionManager.getHistory(session).length;
     if (historyCountAfter === historyCountBefore) {
       this.sessionManager.addMessage(session, "user", params.message);

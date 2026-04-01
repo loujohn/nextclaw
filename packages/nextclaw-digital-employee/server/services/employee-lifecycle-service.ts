@@ -10,6 +10,7 @@ import { ensureEmployeeWorkspace, resolveEmployeeWorkspace } from "../engine/emp
 import type { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 
 const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
+const VALID_SCHEDULE_KINDS = new Set(["cron", "every", "heartbeat"]);
 
 export class EmployeeLifecycleService {
   constructor(
@@ -87,6 +88,66 @@ export class EmployeeLifecycleService {
 
     logger.info(`Employee archived: ${employee.code} (${id})`);
     return { id, code: employee.code };
+  }
+
+  async updateEmployee(
+    id: string,
+    input: {
+      name?: string;
+      description?: string;
+      systemPrompt?: string;
+      model?: string;
+      departmentId?: string | null;
+      skillNames?: string[];
+      schedule?: { scheduleKind: string; cronExpr?: string; everyMs?: number };
+      workspaceFiles?: Record<string, string>;
+    }
+  ): Promise<{ employee: EmployeeView; skills: unknown[]; jobs: unknown[] }> {
+    const existing = await this.employeeRepo.getById(id);
+    if (!existing) {
+      throw Object.assign(new Error(`employee not found: ${id}`), { statusCode: 404 });
+    }
+
+    const name = input.name?.trim() || existing.name;
+    const updated = await this.employeeRepo.updateById(id, {
+      name,
+      description: input.description ?? existing.description,
+      systemPrompt: input.systemPrompt ?? existing.systemPrompt,
+      model: input.model ?? existing.model,
+      departmentId: input.departmentId !== undefined ? input.departmentId : undefined,
+    });
+    if (!updated) {
+      throw Object.assign(new Error(`employee not found: ${id}`), { statusCode: 404 });
+    }
+
+    ensureEmployeeWorkspace(this.gateway.homeDir, {
+      code: updated.code,
+      name: updated.name,
+      description: updated.description,
+      systemPrompt: updated.systemPrompt,
+    }, this.gateway.workspaceDir);
+
+    const wsFiles = input.workspaceFiles ?? {};
+    const wsDir = resolveEmployeeWorkspace(this.gateway.homeDir, updated.code);
+    for (const [filename, content] of Object.entries(wsFiles)) {
+      if (WRITABLE_FILES.has(filename) && typeof content === "string") {
+        writeFileSync(join(wsDir, filename), content, "utf-8");
+      }
+    }
+
+    let skills = await this.skillRepo.listByEmployeeId(id);
+    if (Array.isArray(input.skillNames)) {
+      skills = await this.skillRepo.replaceForEmployee(id, input.skillNames);
+    }
+
+    let jobs = await this.automationService.listJobsForEmployee(id);
+    if (input.schedule?.scheduleKind && VALID_SCHEDULE_KINDS.has(input.schedule.scheduleKind)) {
+      const upserted = await this.upsertSchedule(id, updated.name, input.schedule);
+      jobs = [upserted];
+    }
+
+    logger.info(`Employee updated: ${updated.code} (${id})`);
+    return { employee: updated, skills, jobs };
   }
 
   async upsertSchedule(

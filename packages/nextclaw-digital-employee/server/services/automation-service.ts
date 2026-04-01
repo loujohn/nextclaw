@@ -52,9 +52,10 @@ export class AutomationService {
         });
         return result.reply;
       }
-      // Legacy format: employee:{employeeId}
+      // @deprecated Legacy format: employee:{employeeId} — will be removed after full migration to ejob:
       const employeeId = job.name.startsWith("employee:") ? job.name.slice("employee:".length) : "";
       if (employeeId) {
+        logger.warn(`Legacy job format "employee:" detected for ${job.name}, migrate to ejob: format`);
         const employee = await this.employeeRepo.getById(employeeId);
         if (!employee) return null;
         const message = job.payload.message || `${employee.systemPrompt}\n\n请执行一次定时任务并输出最新摘要。`;
@@ -66,7 +67,7 @@ export class AutomationService {
         });
         return result.reply;
       }
-      // 通过对话创建的定时任务：携带 agentId，通过员工 code 查找并执行
+      // @deprecated Agent-created tasks via agentId — should migrate to ejob: format in v0.16
       if (job.agentId) {
         const employee = await this.employeeRepo.getByCode(job.agentId);
         if (!employee) {
