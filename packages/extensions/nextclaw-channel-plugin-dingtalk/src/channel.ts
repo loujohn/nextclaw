@@ -7,6 +7,7 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { fetch, ProxyAgent, Agent } from "undici";
 
 import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
@@ -27,19 +28,29 @@ function buildDispatcher() {
 }
 
 /**
- * 为 DWClient 配置 Node.js 代理支持。
- * Node.js 原生支持通过全局代理环境变量（HTTPS_PROXY/HTTP_PROXY），
- * 但 dingtalk-stream 内部的 axios 需要显式传入 agent。
- * 注意：WebSocket 隧道已通过环境变量生效，这里额外保证 API 层代理。
+ * dingtalk-stream 内部使用 axios 发送 API 请求。
+ * 我们通过修改 DWClient 实例的内部 axios dispatcher 来配置 httpsAgent，
+ * 使其可以通过 HTTP 代理转发 CONNECT 请求到 dingtalk API。
  */
 function injectProxyAgent(client: DWClient): void {
   const proxyUrl = getProxyUrl();
   if (!proxyUrl) return;
 
-  // dingtalk-stream 的 DWClient 内部可能缓存了 axios 实例。
-  // 无法直接修改已创建的 axios agent，但 Node.js 全局代理已通过环境变量生效。
-  // 这里仅做日志记录。
-  console.log(`[dingtalk] proxy agent configured via env → ${proxyUrl}`);
+  try {
+    const httpsAgent = new HttpsProxyAgent(proxyUrl);
+    // DWClient 内部使用 axios，通过访问其内部属性设置 httpsAgent
+    if ((client as any).apiClient?.requestConfig?.httpsAgent === undefined) {
+      if ((client as any).apiClient) {
+        (client as any).apiClient.requestConfig = {
+          ...(client as any).apiClient.requestConfig,
+          httpsAgent
+        };
+      }
+    }
+    console.log(`[dingtalk] https proxy agent configured → ${proxyUrl}`);
+  } catch (error) {
+    console.error(`[dingtalk] failed to configure proxy agent:`, error);
+  }
 }
 
 type TokenState = { token: string; expiresAt: number };
