@@ -129,11 +129,11 @@ export class DigitalEmployeeChannelRuntime {
       if (isShutdownMessage(message)) {
         continue;
       }
-      console.log(`[runtime] inbound channel=${message.channel} sender=${message.senderId} chat=${message.chatId} contentLen=${message.content.length}`);
+      log.info(`inbound channel=${message.channel} sender=${message.senderId} chat=${message.chatId} contentLen=${message.content.length}`);
       try {
         await this.handleInbound(message);
       } catch (error) {
-        console.error(`[runtime] handleInbound error channel=${message.channel} sender=${message.senderId} chat=${message.chatId}`, error);
+        log.error(`handleInbound error channel=${message.channel} sender=${message.senderId} chat=${message.chatId}`, error);
         await this.gateway.messageBus.publishOutbound({
           channel: message.channel,
           chatId: message.chatId,
@@ -148,18 +148,18 @@ export class DigitalEmployeeChannelRuntime {
   private async handleInbound(message: InboundMessage): Promise<void> {
     const route = this.routeResolver.resolveInbound({ message });
     if (route.matchedBy === "default") {
-      console.warn(`[runtime] no binding channel=${message.channel} account=${route.accountId} ${route.peer.kind}:${route.peer.id}`);
+      log.warn(`no binding channel=${message.channel} account=${route.accountId} ${route.peer.kind}:${route.peer.id}`);
       throw new Error(
         `No employee binding configured for ${message.channel} account ${route.accountId} ${route.peer.kind}:${route.peer.id}`
       );
     }
-    console.log(`[runtime] route matched agentId=${route.agentId} account=${route.accountId} session=${route.sessionKey} matchedBy=${route.matchedBy}`);
+    log.info(`route matched agentId=${route.agentId} account=${route.accountId} session=${route.sessionKey} matchedBy=${route.matchedBy}`);
     const employee = await this.options.employeeRepo.getByCode(route.agentId);
     if (!employee) {
-      console.warn(`[runtime] employee not found agentId=${route.agentId}`);
+      log.warn(`employee not found agentId=${route.agentId}`);
       throw new Error(`Bound employee not found for agentId: ${route.agentId}`);
     }
-    console.log(`[runtime] dispatching to employee code=${employee.code} name=${employee.name} session=${route.sessionKey}`);
+    log.info(`dispatching to employee code=${employee.code} name=${employee.name} session=${route.sessionKey}`);
 
     const { workspace } = await prepareEmployeeRuntime({
       employee,
@@ -174,6 +174,6 @@ export class DigitalEmployeeChannelRuntime {
       sessionKey: route.sessionKey,
       publishResponse: true
     });
-    console.log(`[runtime] handleInbound done agentId=${route.agentId} session=${route.sessionKey}`);
+    log.info(`handleInbound done agentId=${route.agentId} session=${route.sessionKey}`);
   }
 }

@@ -1,8 +1,5 @@
 import { createError, getRouterParam, readBody } from "h3";
-import { join } from "node:path";
-import { writeFileSync } from "node:fs";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { ensureEmployeeWorkspace, resolveEmployeeWorkspace } from "../../engine/employee-workspace";
 
 type UpdateEmployeeBody = {
   name?: string;
@@ -18,86 +15,35 @@ type UpdateEmployeeBody = {
   workspaceFiles?: Record<string, string>;
 };
 
-const VALID_SCHEDULE_KINDS = new Set(["cron", "every", "heartbeat"]);
-const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
-
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id") ?? "";
   const body = await readBody<UpdateEmployeeBody>(event);
+
+  if (typeof body?.code === "string" && body.code.trim()) {
+    throw createError({ statusCode: 400, statusMessage: "code is immutable" });
+  }
+
   const ctx = await getPlatformContext();
-  const existing = await ctx.employeeRepo.getById(id);
-  if (!existing) {
+  try {
+    const result = await ctx.lifecycleService.updateEmployee(id, {
+      name: body?.name,
+      description: body?.description,
+      systemPrompt: body?.systemPrompt,
+      model: body?.model,
+      departmentId: "departmentId" in (body ?? {}) ? body!.departmentId : undefined,
+      skillNames: body?.skillNames,
+      schedule: body?.scheduleKind
+        ? { scheduleKind: body.scheduleKind, cronExpr: body.cronExpr, everyMs: body.everyMs }
+        : undefined,
+      workspaceFiles: body?.workspaceFiles,
+    });
+    return { ok: true, data: { ...result.employee, skills: result.skills, jobs: result.jobs } };
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
     throw createError({
-      statusCode: 404,
-      statusMessage: `employee not found: ${id}`
+      statusCode: e?.statusCode ?? 500,
+      statusMessage: e?.message ?? "更新员工失败",
+      cause: err,
     });
   }
-
-  if (typeof body?.code === "string" && body.code.trim() && body.code.trim() !== existing.code) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "code is immutable"
-    });
-  }
-
-  const name = body?.name?.trim() ?? existing.name;
-  if (!name) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "name is required"
-    });
-  }
-
-  const updated = await ctx.employeeRepo.updateById(id, {
-    name,
-    description: body?.description ?? existing.description,
-    systemPrompt: body?.systemPrompt ?? existing.systemPrompt,
-    model: body?.model ?? existing.model,
-    departmentId: "departmentId" in (body ?? {}) ? body!.departmentId : undefined
-  });
-  if (!updated) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: `employee not found: ${id}`
-    });
-  }
-
-  ensureEmployeeWorkspace(ctx.gateway.homeDir, {
-    code: updated.code,
-    name: updated.name,
-    description: updated.description,
-    systemPrompt: updated.systemPrompt
-  }, ctx.gateway.workspaceDir);
-
-  const wsFiles = body?.workspaceFiles ?? {};
-  const wsDir = resolveEmployeeWorkspace(ctx.gateway.homeDir, updated.code);
-  for (const [filename, content] of Object.entries(wsFiles)) {
-    if (WRITABLE_FILES.has(filename) && typeof content === "string") {
-      writeFileSync(join(wsDir, filename), content, "utf-8");
-    }
-  }
-
-  let skills = await ctx.employeeSkillRepo.listByEmployeeId(id);
-  if (Array.isArray(body?.skillNames)) {
-    skills = await ctx.employeeSkillRepo.replaceForEmployee(id, body.skillNames);
-  }
-
-  let jobs = await ctx.automationService.listJobsForEmployee(id);
-  if (body?.scheduleKind && VALID_SCHEDULE_KINDS.has(body.scheduleKind)) {
-    const upserted = await ctx.lifecycleService.upsertSchedule(id, updated.name, {
-      scheduleKind: body.scheduleKind as "cron" | "every" | "heartbeat",
-      cronExpr: body.cronExpr,
-      everyMs: body.everyMs,
-    });
-    jobs = [upserted];
-  }
-
-  return {
-    ok: true,
-    data: {
-      ...updated,
-      skills,
-      jobs,
-    }
-  };
 });

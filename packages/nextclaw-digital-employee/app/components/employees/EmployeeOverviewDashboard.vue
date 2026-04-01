@@ -111,7 +111,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
       <div class="overview-stats__body">
         <div class="overview-stats__value">{{ employeeCount }} <span class="overview-stats__unit">数字员工</span></div>
         <div class="overview-stats__meta">
-          <span>覆盖率 {{ digitalEmployeeCoverage }}%</span>
+          <span>数字化率 {{ digitalEmployeeCoverage }}%</span>
           <span>今日活跃 {{ activeDigitalEmployees }}</span>
         </div>
       </div>
@@ -125,7 +125,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
       <div class="overview-stats__body">
-        <div class="overview-stats__value overview-stats__value--dark">{{ totalHumanCount }} <span class="overview-stats__unit">真人员工</span></div>
+        <div class="overview-stats__value overview-stats__value--dark">{{ totalHumanCount }} <span class="overview-stats__unit">实体员工</span></div>
         <div class="overview-stats__meta overview-stats__meta--muted">分布在 {{ departments.length }} 个部门</div>
       </div>
     </div>
@@ -134,12 +134,12 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
       <div class="overview-stats__label">人机协作比例</div>
       <div class="overview-stats__ratio-bar">
         <div class="overview-stats__ratio-human" :style="{ width: totalHumanCount + employeeCount > 0 ? (totalHumanCount / (totalHumanCount + employeeCount) * 100) + '%' : '0%' }">
-          真人 {{ totalHumanCount + employeeCount > 0 ? Math.round(totalHumanCount / (totalHumanCount + employeeCount) * 100) : 0 }}%
+          实体 {{ totalHumanCount + employeeCount > 0 ? Math.round(totalHumanCount / (totalHumanCount + employeeCount) * 100) : 0 }}%
         </div>
         <div class="overview-stats__ratio-ai">AI</div>
       </div>
       <div class="overview-stats__ratio-labels">
-        <span>{{ totalHumanCount }} 人</span>
+        <span>{{ totalHumanCount }} 实体员工</span>
         <span>{{ employeeCount }} 数字员工</span>
       </div>
     </div>
@@ -165,7 +165,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
               </svg>
               <div class="org-root-stat__text">
                 <span class="org-root-stat__value">{{ totalHumanCount }}</span>
-                <span class="org-root-stat__label">真人</span>
+                <span class="org-root-stat__label">实体员工</span>
               </div>
             </div>
             <div class="org-root-stat org-root-stat--accent">
@@ -228,7 +228,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
               <div class="org-dept-stat org-dept-stat--human">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                 <span class="org-dept-stat__value">{{ node.humanCount }}</span>
-                <span class="org-dept-stat__label">真人</span>
+                <span class="org-dept-stat__label">实体员工</span>
               </div>
               <div class="org-dept-stat org-dept-stat--digital">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /></svg>
@@ -242,7 +242,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
                 <div class="org-dept-card__ratio-digital" :style="{ width: (node.humanCount + node.digitalCount) > 0 ? (node.digitalCount / (node.humanCount + node.digitalCount) * 100) + '%' : '0%' }" />
               </div>
               <div class="org-dept-card__ratio-labels">
-                <span>{{ (node.humanCount + node.digitalCount) > 0 ? Math.round(node.humanCount / (node.humanCount + node.digitalCount) * 100) : 0 }}% 真人</span>
+                <span>{{ (node.humanCount + node.digitalCount) > 0 ? Math.round(node.humanCount / (node.humanCount + node.digitalCount) * 100) : 0 }}% 实体员工</span>
                 <span>{{ (node.humanCount + node.digitalCount) > 0 ? Math.round(node.digitalCount / (node.humanCount + node.digitalCount) * 100) : 0 }}% 数字员工</span>
               </div>
             </div>
@@ -271,7 +271,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
                         <div class="org-dept-stat org-dept-stat--human">
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                           <span class="org-dept-stat__value">{{ child.humanCount }}</span>
-                          <span class="org-dept-stat__label">真人</span>
+                          <span class="org-dept-stat__label">实体员工</span>
                         </div>
                         <div class="org-dept-stat org-dept-stat--digital">
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /></svg>
