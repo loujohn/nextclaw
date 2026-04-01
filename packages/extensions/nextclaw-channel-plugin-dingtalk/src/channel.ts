@@ -28,8 +28,8 @@ function buildDispatcher() {
 }
 
 /**
- * ws 内部默认 createConnection = tls.connect（直连），绕过 http(s).globalAgent。
- * 注入自定义 createConnection → HttpsProxyAgent.connect() → CONNECT 隧道 → TLS。
+ * 为 ws 注入代理 agent。
+ * 不直接调用 HttpsProxyAgent.connect()，避免传入非 ClientRequest 导致 req.emit 异常。
  */
 function injectWsProxy(client: DWClient): void {
   const proxyUrl = getProxyUrl();
@@ -39,23 +39,7 @@ function injectWsProxy(client: DWClient): void {
   const base = (client as any).sslopts ?? {};
   (client as any).sslopts = {
     ...base,
-    createConnection(
-      options: any,
-      oncreate: (err: Error | null, socket?: any) => void,
-    ) {
-      (agent as any)
-        .connect({} as any, {
-          host: options.host,
-          hostname: options.hostname || options.host,
-          port: Number(options.port) || 443,
-          secureEndpoint: true,
-          servername: options.servername || options.host,
-        })
-        .then(
-          (socket: any) => oncreate(null, socket),
-          (err: Error) => oncreate(err),
-        );
-    },
+    agent,
   };
   console.log(`[dingtalk] ws proxy injected → ${proxyUrl}`);
 }
