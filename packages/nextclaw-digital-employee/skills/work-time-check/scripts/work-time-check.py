@@ -154,9 +154,9 @@ def main():
                         tasks = user.get("unfilledTasks", [])
                         if tasks:
                             for task in tasks:
-                                task_names = ", ".join(task.get("tasks", []))
                                 lines.append(f"- 项目：{task['projectName']}")
-                                lines.append(f"  待填写任务：{task_names}")
+                                for t in task.get("tasks", []):
+                                    lines.append(f"  - 待填写任务：{t}")
                         else:
                             lines.append("- 可能暂无分配任务或任务未开始")
                         lines.append("")
@@ -202,8 +202,14 @@ def main():
                         lines.append("### 待填写任务")
                         lines.append("")
                         for task in tasks:
-                            for t in task.get("tasks", []):
-                                lines.append(f"- {task['projectName']} / {t}")
+                            project_name = task.get("projectName", "未知项目")
+                            task_list = task.get("tasks", [])
+                            if task_list:
+                                lines.append(f"- 项目：{project_name}")
+                                for t in task_list:
+                                    lines.append(f"  - 待填写任务：{t}")
+                            else:
+                                lines.append(f"- 项目：{project_name}")
                     else:
                         lines.append("### 温馨提示")
                         lines.append("")
@@ -244,7 +250,11 @@ def main():
                                 "users": [],
                             }
                         leaders[leader_name]["users"].append(
-                            {"name": user["cnName"], "tasks": task.get("tasks", [])}
+                            {
+                                "name": user["cnName"],
+                                "tasks": task.get("tasks", []),
+                                "projectName": task.get("projectName", "未知项目"),
+                            }
                         )
 
                 manifest.append(f"## 负责人通知 ({len(leaders)}人)")
@@ -267,9 +277,23 @@ def main():
 
                     lines.append("### 未填写人员")
                     lines.append("")
+                    user_project_tasks = {}
                     for u in info["users"]:
-                        task_list = ", ".join(u["tasks"]) if u["tasks"] else "无任务"
-                        lines.append(f"- **{u['name']}**: {task_list}")
+                        project_name = u.get("projectName", "未知项目")
+                        if project_name not in user_project_tasks:
+                            user_project_tasks[project_name] = []
+                        user_project_tasks[project_name].append(u)
+
+                    for project_name, users in user_project_tasks.items():
+                        lines.append(f"- 项目：{project_name}")
+                        for u in users:
+                            task_list = u.get("tasks", [])
+                            if task_list:
+                                lines.append(f"  - {u['name']}")
+                                for t in task_list:
+                                    lines.append(f"    - 待填写任务：{t}")
+                            else:
+                                lines.append(f"  - {u['name']}: 无任务")
 
                     lines.append("")
                     lines.append("---")

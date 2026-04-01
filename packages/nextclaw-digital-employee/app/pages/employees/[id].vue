@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
-import { CircleCheck, CircleAlert } from "lucide-vue-next";
+import { CircleCheck, CircleAlert, MessageSquare } from "lucide-vue-next";
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
@@ -10,13 +10,43 @@ const employeeCenterLink = computed(() => ({
   path: "/employees",
   query: route.query
 }));
+const employeeChatLink = computed(() => ({
+  path: `/employees/${employeeId.value}/chat`,
+  query: route.query
+}));
+
+// Department info for breadcrumb
+const { data: departmentsData } = await useFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
+const deptName = computed(() => {
+  const deptId = data.value?.data?.departmentId;
+  if (!deptId) return null;
+  return departmentsData.value?.data?.find((d) => d.id === deptId)?.name ?? null;
+});
+const deptLink = computed(() => {
+  const deptId = data.value?.data?.departmentId;
+  if (!deptId) return null;
+  return { path: "/employees", query: { view: "list", deptId } };
+});
+
+// Skills catalog for Chinese name display
+const { data: skillsData } = await useFetch<{ ok: boolean; data: Array<{ name: string; nameZh?: string }> }>("/api/skills");
+const skillNameZhMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const skill of skillsData.value?.data ?? []) {
+    if (skill.nameZh) map.set(skill.name, skill.nameZh);
+  }
+  return map;
+});
+function getSkillDisplayName(skillName: string): string {
+  return skillNameZhMap.value.get(skillName) || skillName;
+}
 
 const tabs = computed(() => [
   { label: "概览", to: { path: `/employees/${employeeId.value}`, query: route.query } },
   { label: "聊天", to: { path: `/employees/${employeeId.value}/chat`, query: route.query } },
   { label: "定时任务", to: { path: `/employees/${employeeId.value}/jobs`, query: route.query } },
   { label: "运行记录", to: { path: `/employees/${employeeId.value}/runs`, query: route.query } },
-  { label: "工作空间", to: { path: `/employees/${employeeId.value}/workspace`, query: route.query } }
+  { label: "配置", to: { path: `/employees/${employeeId.value}/config`, query: route.query } }
 ]);
 
 function isTabActive(path: string): boolean {
@@ -27,7 +57,8 @@ function isTabActive(path: string): boolean {
 <template>
   <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8" v-if="data?.data">
     <Breadcrumb :items="[
-      { label: '员工中心', to: employeeCenterLink },
+      { label: '组织架构', to: employeeCenterLink },
+      ...(deptName ? [{ label: deptName, to: deptLink ?? undefined }] : []),
       { label: data.data.name }
     ]" />
 
@@ -84,10 +115,11 @@ function isTabActive(path: string): boolean {
     </nav>
 
     <!-- Content -->
-    <div :class="isOverviewTab ? 'grid gap-6 lg:grid-cols-[280px_1fr]' : ''">
-      <!-- Sidebar -->
-      <aside v-if="isOverviewTab" class="space-y-4 lg:sticky lg:top-6 lg:self-start">
-        <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <div v-if="isOverviewTab" class="space-y-4">
+      <!-- Row 1: 状态检查 + 最近运行 (等高) -->
+      <div class="grid gap-4 lg:grid-cols-[3fr_7fr] items-stretch">
+        <!-- 状态检查 -->
+        <div class="flex flex-col rounded-xl border border-border bg-card p-4 shadow-sm">
           <span class="section-label">状态检查</span>
           <h3 class="mt-0.5 mb-3 text-sm font-semibold">工作台状态</h3>
           <div class="space-y-3">
@@ -130,20 +162,8 @@ function isTabActive(path: string): boolean {
           </div>
         </div>
 
-        <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <div class="mb-3 flex items-center justify-between">
-            <span class="section-label">已绑定技能</span>
-            <NuxtLink to="/skills" class="text-xs text-muted-foreground hover:text-foreground">技能中心 →</NuxtLink>
-          </div>
-          <div class="flex flex-wrap gap-1.5">
-            <span v-for="skill in data.data.skills" :key="skill.id" class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-              {{ skill.skillName }}
-            </span>
-            <span v-if="data.data.skills.length === 0" class="text-xs text-muted-foreground">还没有绑定技能</span>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <!-- 最近运行 -->
+        <div class="flex flex-col rounded-xl border border-border bg-card p-4 shadow-sm min-w-0 overflow-hidden">
           <span class="section-label mb-3 block">最近运行</span>
           <div class="space-y-2">
             <NuxtLink
@@ -158,12 +178,52 @@ function isTabActive(path: string): boolean {
             <p v-if="data.data.recentRuns.length === 0" class="text-xs text-muted-foreground">还没有运行记录</p>
           </div>
         </div>
-      </aside>
+      </div>
 
-      <!-- Main Content -->
-      <section>
-        <NuxtPage />
-      </section>
+      <!-- Row 2: 已绑定技能 + 角色定义 (自适应高度) -->
+      <div class="grid gap-4 lg:grid-cols-[3fr_7fr] items-start">
+        <!-- 已绑定技能 -->
+        <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="section-label">已绑定技能</span>
+            <NuxtLink to="/skills" class="text-xs text-muted-foreground hover:text-foreground">技能中心 →</NuxtLink>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <span v-for="skill in data.data.skills" :key="skill.id" class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              {{ getSkillDisplayName(skill.skillName) }}
+            </span>
+            <span v-if="data.data.skills.length === 0" class="text-xs text-muted-foreground">还没有绑定技能</span>
+          </div>
+        </div>
+
+        <!-- 角色定义 -->
+        <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div>
+              <span class="section-label">角色定义</span>
+              <h3 class="mt-0.5 text-sm font-semibold">职责与人设</h3>
+            </div>
+            <NuxtLink :to="employeeChatLink" class="btn-primary">
+              <MessageSquare class="h-3.5 w-3.5" :stroke-width="1.8" />
+              进入聊天
+            </NuxtLink>
+          </div>
+          <div class="p-4 space-y-3">
+            <p class="text-sm leading-relaxed text-muted-foreground">
+              {{ data.data.description || "未填写职责说明" }}
+            </p>
+            <div class="rounded-lg bg-muted/40 border border-border p-3">
+              <p class="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">系统提示词</p>
+              <pre class="font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">{{ data.data.systemPrompt || "尚未配置系统提示词" }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Non-overview tab content -->
+    <section v-else>
+      <NuxtPage />
+    </section>
   </div>
 </template>
