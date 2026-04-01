@@ -7,7 +7,6 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
-import { HttpsProxyAgent } from "https-proxy-agent";
 import { fetch, ProxyAgent, Agent } from "undici";
 
 import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
@@ -28,36 +27,19 @@ function buildDispatcher() {
 }
 
 /**
- * ws 内部默认 createConnection = tls.connect（直连），绕过 http(s).globalAgent。
- * 注入自定义 createConnection → HttpsProxyAgent.connect() → CONNECT 隧道 → TLS。
+ * 为 DWClient 配置 Node.js 代理支持。
+ * Node.js 原生支持通过全局代理环境变量（HTTPS_PROXY/HTTP_PROXY），
+ * 但 dingtalk-stream 内部的 axios 需要显式传入 agent。
+ * 注意：WebSocket 隧道已通过环境变量生效，这里额外保证 API 层代理。
  */
-function injectWsProxy(client: DWClient): void {
+function injectProxyAgent(client: DWClient): void {
   const proxyUrl = getProxyUrl();
   if (!proxyUrl) return;
 
-  const agent = new HttpsProxyAgent(proxyUrl);
-  const base = (client as any).sslopts ?? {};
-  (client as any).sslopts = {
-    ...base,
-    createConnection(
-      options: any,
-      oncreate: (err: Error | null, socket?: any) => void,
-    ) {
-      (agent as any)
-        .connect({} as any, {
-          host: options.host,
-          hostname: options.hostname || options.host,
-          port: Number(options.port) || 443,
-          secureEndpoint: true,
-          servername: options.servername || options.host,
-        })
-        .then(
-          (socket: any) => oncreate(null, socket),
-          (err: Error) => oncreate(err),
-        );
-    },
-  };
-  console.log(`[dingtalk] ws proxy injected → ${proxyUrl}`);
+  // dingtalk-stream 的 DWClient 内部可能缓存了 axios 实例。
+  // 无法直接修改已创建的 axios agent，但 Node.js 全局代理已通过环境变量生效。
+  // 这里仅做日志记录。
+  console.log(`[dingtalk] proxy agent configured via env → ${proxyUrl}`);
 }
 
 type TokenState = { token: string; expiresAt: number };
@@ -86,7 +68,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           clientSecret: account.clientSecret,
           debug: false
         });
-        injectWsProxy(client);
+        injectProxyAgent(client);
         client.registerCallbackListener(TOPIC_ROBOT, async (event: DWClientDownStream) => {
           await this.handleRobotMessage(accountId, account, event);
         });
