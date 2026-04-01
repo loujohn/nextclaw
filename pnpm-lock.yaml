@@ -255,8 +255,8 @@ importers:
         specifier: ^2.1.4
         version: 2.1.4
       https-proxy-agent:
-        specifier: ^8.0.0
-        version: 8.0.0
+        specifier: ^7.0.0
+        version: 7.0.6
       jiti:
         specifier: ^1.21.7
         version: 1.21.7
