@@ -448,7 +448,7 @@ function getDeptName(deptId: string | null): string | null {
         <span class="list-header__badge">员工管理</span>
         <h1 class="list-header__title">
           {{ selectedDeptName }}
-          <span v-if="selectedDeptId" class="list-header__subtitle">· 员工中心</span>
+          <span v-if="selectedDeptId" class="list-header__subtitle">· 组织架构</span>
         </h1>
         <p class="list-header__desc">
           {{ selectedDeptId ? `查看「${selectedDeptName}」部门下的员工` : '创建、管理和运营你的数字员工团队' }}
