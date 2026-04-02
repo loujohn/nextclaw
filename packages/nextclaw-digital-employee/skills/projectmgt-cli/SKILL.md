@@ -1,6 +1,6 @@
 ---
 name: projectmgt-cli
-name_zh: 项目管理 CLI
+name_zh: 项管基础工具
 description: "ProjectMGT 项目管理系统的命令行工具使用指南，支持项目、工时、人员、审批、合同、客户等模块的查询操作。当需要从 ProjectMGT 获取项目数据、工时统计或团队信息时使用。"
 metadata:
   nextclaw:
