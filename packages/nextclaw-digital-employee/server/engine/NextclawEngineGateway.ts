@@ -58,6 +58,8 @@ export type RunEmployeeTurnParams = {
   workspace?: string;
   model?: string;
   requestedSkills?: string[];
+  /** 定时任务执行时传 true，防止 AI 在执行期间调用 cron 工具重复创建任务 */
+  disableCronTool?: boolean;
 };
 
 export type RunEmployeeTurnResult = {
@@ -225,7 +227,13 @@ export class NextclawEngineGateway {
     this.fallbackEngine = this.createEngineForWorkspace("main", this.workspaceDir);
   }
 
-  private createEngineForWorkspace(agentId: string, workspace: string, model?: string, envOverlay?: Record<string, string>): AgentEngine {
+  private createEngineForWorkspace(
+    agentId: string,
+    workspace: string,
+    model?: string,
+    envOverlay?: Record<string, string>,
+    cronServiceOverride?: CronService | null
+  ): AgentEngine {
     const globalSkillsDir = join(this.workspaceDir, "skills");
     const engineContext: AgentEngineFactoryContext = {
       agentId,
@@ -237,7 +245,7 @@ export class NextclawEngineGateway {
       bus: this.bus,
       providerManager: this.providerManager,
       sessionManager: this.sessionManager,
-      cronService: this.cronService,
+      cronService: cronServiceOverride !== undefined ? cronServiceOverride : this.cronService,
       restrictToWorkspace: this.config.tools.restrictToWorkspace,
       searchConfig: this.config.search,
       execConfig: this.config.tools.exec,
@@ -435,9 +443,12 @@ export class NextclawEngineGateway {
       }
     }
 
-    const engine = envOverlay
-      ? this.createEngineForWorkspace(agentId, params.workspace ?? this.workspaceDir, params.model, envOverlay)
-      : this.getOrCreateEngine(agentId, params.workspace, params.model);
+    const engine = params.disableCronTool
+      // 定时任务执行：创建不含 CronTool 的临时引擎，防止 AI 在执行期间重复创建调度任务
+      ? this.createEngineForWorkspace(agentId, params.workspace ?? this.workspaceDir, params.model, envOverlay, null)
+      : (envOverlay
+        ? this.createEngineForWorkspace(agentId, params.workspace ?? this.workspaceDir, params.model, envOverlay)
+        : this.getOrCreateEngine(agentId, params.workspace, params.model));
     const session = this.sessionManager.getOrCreate(sessionKey);
     const historyCountBefore = this.sessionManager.getHistory(session).length;
     const metadata: Record<string, unknown> = {};
