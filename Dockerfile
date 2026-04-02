@@ -9,7 +9,7 @@ ENV no_proxy=localhost,127.0.0.1,::1,*.local,172.0.0.0/8
 ENV NODE_PATH=/app/plugins-runtime/node_modules
 ENV TZ=Asia/Shanghai
 WORKDIR /app
-COPY packages/nextclaw-core/dist/skills      ./dist/skills/
+COPY packages/nextclaw-core/src/agent/skills     ./dist/skills/
 COPY packages/nextclaw-digital-employee/dist ./
 COPY packages/nextclaw-digital-employee/skills ./dist/skills/
 COPY packages/nextclaw-digital-employee/templates ./templates/
