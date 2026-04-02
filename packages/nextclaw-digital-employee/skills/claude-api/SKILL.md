@@ -1,6 +1,7 @@
 ---
 name: claude-api
-description: "Build apps with the Claude API or Anthropic SDK. TRIGGER when: code imports `anthropic`/`@anthropic-ai/sdk`/`claude_agent_sdk`, or user asks to use Claude API, Anthropic SDKs, or Agent SDK. DO NOT TRIGGER when: code imports `openai`/other AI SDK, general programming, or ML/data-science tasks."
+name_zh: Claude API 开发
+description: "用于 Claude API / Anthropic SDK 应用开发。当代码中出现 `anthropic`、`@anthropic-ai/sdk`、`claude_agent_sdk` 或用户明确要求使用 Claude 能力时触发；不适用于 OpenAI 等其他 SDK 的通用开发任务。"
 license: Complete terms in LICENSE.txt
 ---
 
