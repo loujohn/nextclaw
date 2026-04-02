@@ -63,6 +63,21 @@ export class EmployeeSkillRepository {
     return rows.map(toView);
   }
 
+  async listByEmployeeIds(employeeIds: string[]): Promise<Map<string, EmployeeSkillView[]>> {
+    if (employeeIds.length === 0) return new Map();
+    const rows = await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills)
+      .whereIn("employee_id", employeeIds)
+      .orderBy("created_at", "asc");
+    const map = new Map<string, EmployeeSkillView[]>();
+    for (const row of rows) {
+      const view = toView(row);
+      const list = map.get(view.employeeId) ?? [];
+      list.push(view);
+      map.set(view.employeeId, list);
+    }
+    return map;
+  }
+
   async listAll(): Promise<EmployeeSkillView[]> {
     const rows = await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills).orderBy("created_at", "asc");
     return rows.map(toView);

@@ -134,6 +134,21 @@ export class EmployeeScheduleJobRepository {
     return records.map(toView);
   }
 
+  async listByEmployeeIds(employeeIds: string[]): Promise<Map<string, EmployeeScheduleJobView[]>> {
+    if (employeeIds.length === 0) return new Map();
+    const records = await this.db<EmployeeScheduleJobRecord>(PLATFORM_TABLES.employeeScheduleJobs)
+      .whereIn("employee_id", employeeIds)
+      .orderBy("created_at", "asc");
+    const map = new Map<string, EmployeeScheduleJobView[]>();
+    for (const record of records) {
+      const view = toView(record);
+      const list = map.get(view.employeeId) ?? [];
+      list.push(view);
+      map.set(view.employeeId, list);
+    }
+    return map;
+  }
+
   async listAllEnabled(): Promise<EmployeeScheduleJobView[]> {
     const records = await this.db<EmployeeScheduleJobRecord>(PLATFORM_TABLES.employeeScheduleJobs)
       .where({ enabled: 1 })
