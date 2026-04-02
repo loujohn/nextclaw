@@ -121,10 +121,10 @@ describe("digital employee engine gateway", () => {
 
     const history = gateway.getSessionHistory("employee:employee-1:test");
 
-    expect(history).toHaveLength(4);
-    expect(history[0]?.role).toBe("user");
-    expect(history[1]?.role).toBe("assistant");
-    expect(history[2]?.content).toBe("第二条消息");
+    expect(history.messages).toHaveLength(4);
+    expect(history.messages[0]?.role).toBe("user");
+    expect(history.messages[1]?.role).toBe("assistant");
+    expect(history.messages[2]?.content).toBe("第二条消息");
   });
 
   it("reuses the same message bus and session manager across cached engines", () => {
