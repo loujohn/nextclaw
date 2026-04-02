@@ -1,15 +1,8 @@
 <script setup lang="ts">
-import { formatRunStatusLabel, translateRunText } from "~~/shared/ui-models";
 import { ClipboardList } from "lucide-vue-next";
 
 const props = defineProps<{
-  runs: Array<{
-    id: string;
-    status: string;
-    summary: string;
-    startedAt: string;
-    finishedAt?: string | null;
-  }>;
+  employeeId: string;
   pageSize?: number;
 }>();
 
@@ -18,11 +11,32 @@ const emit = defineEmits<{ clickRun: [id: string] }>();
 const PAGE_SIZE = props.pageSize ?? 5;
 const currentPage = ref(1);
 
-const totalPages = computed(() => Math.max(1, Math.ceil(props.runs.length / PAGE_SIZE)));
-const pagedRuns = computed(() => {
-  const start = (currentPage.value - 1) * PAGE_SIZE;
-  return props.runs.slice(start, start + PAGE_SIZE);
-});
+type RunItem = {
+  id: string;
+  statusLabel: string;
+  summary: string;
+  tone: "teal" | "amber" | "slate" | "danger";
+  startedAtLabel: string;
+};
+
+type RunListPayload = {
+  ok: boolean;
+  data: {
+    items: RunItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  };
+};
+
+const { data } = useFetch<RunListPayload>(
+  () => `/api/employees/${props.employeeId}/runs?page=${currentPage.value}&pageSize=${PAGE_SIZE}`,
+  { key: computed(() => `employee-recent-runs:${props.employeeId}:${currentPage.value}`) }
+);
+
+const runs = computed(() => data.value?.data.items ?? []);
+const total = computed(() => data.value?.data.total ?? 0);
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
 function goPage(delta: number) {
   const next = currentPage.value + delta;
@@ -30,25 +44,14 @@ function goPage(delta: number) {
 }
 
 const STATUS_CONFIG: Record<string, { icon: string; bgClass: string; textClass: string; ringClass: string }> = {
-  running: { icon: "↻", bgClass: "bg-blue-50", textClass: "text-blue-500", ringClass: "ring-blue-100" },
-  completed: { icon: "✓", bgClass: "bg-emerald-50", textClass: "text-emerald-500", ringClass: "ring-emerald-100" },
-  failed: { icon: "✕", bgClass: "bg-red-50", textClass: "text-red-500", ringClass: "ring-red-100" },
-  interrupted: { icon: "⏸", bgClass: "bg-rose-50", textClass: "text-rose-500", ringClass: "ring-rose-100" },
+  teal: { icon: "✓", bgClass: "bg-emerald-50", textClass: "text-emerald-500", ringClass: "ring-emerald-100" },
+  amber: { icon: "↻", bgClass: "bg-blue-50", textClass: "text-blue-500", ringClass: "ring-blue-100" },
+  danger: { icon: "✕", bgClass: "bg-red-50", textClass: "text-red-500", ringClass: "ring-red-100" },
+  slate: { icon: "⏸", bgClass: "bg-rose-50", textClass: "text-rose-500", ringClass: "ring-rose-100" },
 };
 
-function getStatusConfig(status: string) {
-  return STATUS_CONFIG[status] ?? { icon: "?", bgClass: "bg-muted", textClass: "text-muted-foreground", ringClass: "ring-border" };
-}
-
-function timeAgo(dateStr: string | null): string {
-  if (!dateStr) return "";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "刚刚";
-  if (mins < 60) return `${mins} 分钟前`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.floor(hours / 24)} 天前`;
+function getStatusConfig(tone: string) {
+  return STATUS_CONFIG[tone] ?? { icon: "?", bgClass: "bg-muted", textClass: "text-muted-foreground", ringClass: "ring-border" };
 }
 </script>
 
@@ -64,27 +67,27 @@ function timeAgo(dateStr: string | null): string {
     <div class="px-[18px] py-3.5">
       <div class="flex flex-col">
         <div
-          v-for="run in pagedRuns"
+          v-for="run in runs"
           :key="run.id"
           class="group flex items-start gap-3 py-3 border-b border-border/30 last:border-b-0 cursor-pointer -mx-1 px-1 rounded-lg transition-all duration-200 hover:bg-muted/30"
           @click="emit('clickRun', run.id)"
         >
           <div
             class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-xs font-bold mt-0.5 ring-1 transition-shadow duration-200 group-hover:shadow-sm"
-            :class="[getStatusConfig(run.status).bgClass, getStatusConfig(run.status).textClass, getStatusConfig(run.status).ringClass]"
+            :class="[getStatusConfig(run.tone).bgClass, getStatusConfig(run.tone).textClass, getStatusConfig(run.tone).ringClass]"
           >
-            {{ getStatusConfig(run.status).icon }}
+            {{ getStatusConfig(run.tone).icon }}
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-[13px] font-semibold mb-0.5 group-hover:text-primary transition-colors duration-200">
-              {{ formatRunStatusLabel(run.status) }}
+              {{ run.statusLabel }}
             </p>
             <p v-if="run.summary" class="text-xs text-muted-foreground/80 leading-relaxed line-clamp-2">
-              {{ translateRunText(run.summary) }}
+              {{ run.summary }}
             </p>
           </div>
           <time class="shrink-0 text-[11px] text-muted-foreground/60 mt-0.5 tabular-nums">
-            {{ timeAgo(run.finishedAt ?? run.startedAt) }}
+            {{ run.startedAtLabel }}
           </time>
         </div>
 

@@ -167,7 +167,7 @@ function isTabActive(path: string): boolean {
           :next-job-run="nextJobRun"
         />
         <EmployeeOverviewRecentActivity
-          :runs="data.data.recentRuns"
+          :employee-id="employeeId"
           @click-run="() => router.push({ path: `/employees/${employeeId}/runs`, query: route.query })"
         />
       </div>
