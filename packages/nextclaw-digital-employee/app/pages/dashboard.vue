@@ -65,6 +65,16 @@ type SkillOption = {
   categoryLabel: string;
 };
 
+type RunDetail = {
+  employeeName: string;
+  statusLabel: string;
+  triggerLabel: string;
+  scheduleJobName: string | null;
+  summary: string;
+  result: Record<string, unknown>;
+  events: Array<{ id: string; seq: number; eventType: string; payload: Record<string, unknown>; createdAt: string }>;
+};
+
 const router = useRouter();
 
 const { data: statsPayload, refresh: refreshStats } = await useFetch<DashboardStatsPayload>("/api/dashboard/stats");
@@ -164,11 +174,25 @@ function goToEmployee(id: string) {
   router.push(`/employees/${id}`);
 }
 
-function goToRun(id: string) {
-  const run = recentRuns.value.find((r) => r.id === id);
-  if (run?.employeeId) {
-    router.push(`/employees/${run.employeeId}/runs`);
+const selectedRunDetail = ref<RunDetail | null>(null);
+const loadingRunDetail = ref(false);
+
+async function openRunDetail(runId: string) {
+  loadingRunDetail.value = true;
+  try {
+    const payload = await $fetch<{ ok: boolean; data: RunDetail }>(`/api/runs/${runId}`);
+    selectedRunDetail.value = payload.data;
+  } finally {
+    loadingRunDetail.value = false;
   }
+}
+
+function closeRunDetail() {
+  selectedRunDetail.value = null;
+}
+
+function goToRun(id: string) {
+  openRunDetail(id);
 }
 
 function goToSkillCategory(slug: string) {
@@ -299,4 +323,6 @@ const pending = computed(() => !statsPayload.value && !employeePayload.value);
     <!-- Layer 4b: Integration Strip -->
     <DashboardIntegrationStrip :integrations="integrations" />
   </div>
+
+  <RunDetailSlideOver :run="selectedRunDetail" :loading="loadingRunDetail" @close="closeRunDetail" />
 </template>
