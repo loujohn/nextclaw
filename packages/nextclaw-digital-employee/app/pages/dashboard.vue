@@ -34,27 +34,6 @@ type IntegrationItem = {
   tone: "teal" | "amber" | "slate";
 };
 
-type RunListPayload = {
-  ok: boolean;
-  data: {
-    items: Array<{
-      id: string;
-      employeeId: string | null;
-      employeeName: string;
-      statusLabel: string;
-      triggerLabel: string;
-      scheduleJobName: string | null;
-      summary: string;
-      highlight: string;
-      tone: "teal" | "amber" | "slate" | "danger";
-      startedAtLabel: string;
-    }>;
-    total: number;
-    page: number;
-    pageSize: number;
-  };
-};
-
 type SkillOption = {
   name: string;
   nameZh?: string;
@@ -79,7 +58,6 @@ const router = useRouter();
 
 const { data: statsPayload, refresh: refreshStats } = await useFetch<DashboardStatsPayload>("/api/dashboard/stats");
 const { data: employeePayload, refresh: refreshEmployees } = await useFetch<EmployeeListPayload>("/api/employees");
-const { data: runsPayload, refresh: refreshRuns } = await useFetch<RunListPayload>("/api/runs?page=1&pageSize=10");
 const { data: integrationPayload, refresh: refreshIntegrations } = await useFetch<{ ok: boolean; data: IntegrationItem[] }>("/api/integrations");
 const { data: skillPayload } = await useFetch<{ ok: boolean; data: SkillOption[] }>("/api/skills");
 const { data: departmentPayload } = await useFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
@@ -120,19 +98,6 @@ function switchEmployee(delta: number) {
   if (len <= 1) return;
   currentEmployeeIndex.value = ((currentEmployeeIndex.value + delta) % len + len) % len;
 }
-
-const recentRuns = computed(() => {
-  return (runsPayload.value?.data.items ?? []).map((r) => ({
-    id: r.id,
-    employeeId: r.employeeId,
-    employeeName: r.employeeName,
-    skillDisplayName: r.highlight || r.summary,
-    status: r.tone === "teal" ? "succeeded" : r.tone === "amber" ? "running" : r.tone === "danger" ? "failed" : "queued",
-    summary: r.summary,
-    startedAt: r.startedAtLabel,
-    finishedAt: r.startedAtLabel,
-  }));
-});
 
 const integrations = computed(() => {
   const apiItems = (integrationPayload.value?.data ?? []).map((item) => ({
@@ -205,7 +170,6 @@ onMounted(() => {
   refreshInterval = setInterval(() => {
     refreshStats();
     refreshEmployees();
-    refreshRuns();
     refreshIntegrations();
   }, 30_000);
 });
@@ -305,7 +269,6 @@ const pending = computed(() => !statsPayload.value && !employeePayload.value);
         </div>
         <div class="px-[18px] py-3.5">
           <DashboardOutputFeed
-            :runs="recentRuns"
             @click-run="goToRun"
           />
         </div>
