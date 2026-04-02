@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { pickAvatarGradient } from "~~/shared/avatar-utils";
+
 const props = defineProps<{
   employee: {
     id: string;
@@ -21,19 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ click: [] }>();
 
-const AVATAR_GRADIENTS = [
-  "linear-gradient(135deg, #6366f1, #8b5cf6)",
-  "linear-gradient(135deg, #ec4899, #f472b6)",
-  "linear-gradient(135deg, #06b6d4, #22d3ee)",
-  "linear-gradient(135deg, #f59e0b, #fbbf24)",
-  "linear-gradient(135deg, #8b5cf6, #a78bfa)",
-  "linear-gradient(135deg, #10b981, #34d399)",
-];
-
-const avatarGradient = computed(() => {
-  const hash = props.employee.id.charCodeAt(0) + props.employee.id.charCodeAt(props.employee.id.length - 1);
-  return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length];
-});
+const avatarGradient = computed(() => pickAvatarGradient(props.employee.id));
 
 const avatarChar = computed(() => props.employee.name.charAt(0));
 const isRunning = computed(() => props.employee.latestRun?.status === "running");
@@ -54,27 +44,27 @@ function getSkillDisplayName(skillName: string): string {
 
 <template>
   <div
-    class="rounded-[10px] border border-border bg-gradient-to-br from-violet-50/80 to-indigo-50/60 p-4 transition-shadow duration-200 hover:shadow-[0_4px_16px_rgba(99,102,241,0.08)] cursor-pointer"
+    class="group rounded-xl border border-border/50 bg-gradient-to-br from-violet-50/60 via-white to-indigo-50/40 p-4 transition-all duration-300 hover:shadow-[0_6px_24px_rgba(99,102,241,0.1)] hover:border-primary/20 cursor-pointer"
     @click="emit('click')"
   >
     <div class="flex items-center gap-3 mb-3">
       <div
-        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-extrabold text-white"
+        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg font-extrabold text-white shadow-md ring-2 ring-white/80"
         :style="{ background: avatarGradient }"
       >
         {{ avatarChar }}
       </div>
       <div class="min-w-0 flex-1">
         <p class="text-[15px] font-bold truncate">{{ employee.name }}</p>
-        <p class="text-[11px] text-muted-foreground truncate">{{ deptName ?? '未分配部门' }} · {{ scheduleLabel }}</p>
+        <p class="text-[11px] text-muted-foreground/80 truncate">{{ deptName ?? '未分配部门' }} · {{ scheduleLabel }}</p>
       </div>
       <span
-        class="flex items-center gap-[5px] rounded-full px-2.5 py-[3px] text-[11px] font-semibold"
-        :class="isRunning ? 'bg-[#ecfdf5] text-[#10b981]' : 'bg-muted text-muted-foreground'"
+        class="flex items-center gap-[5px] rounded-full px-2.5 py-[3px] text-[11px] font-semibold shadow-sm"
+        :class="isRunning ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/50' : 'bg-muted/80 text-muted-foreground ring-1 ring-border/40'"
       >
         <span
           class="h-[7px] w-[7px] rounded-full"
-          :class="isRunning ? 'bg-[#10b981] animate-pulse' : 'bg-muted-foreground/40'"
+          :class="isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30'"
         />
         {{ isRunning ? '运行中' : '空闲' }}
       </span>
@@ -84,28 +74,28 @@ function getSkillDisplayName(skillName: string): string {
       <span
         v-for="skill in employee.skills"
         :key="skill.skillName"
-        class="rounded-md bg-[#eef2ff] px-2.5 py-[3px] text-[11px] font-medium text-[#6366f1]"
+        class="rounded-md bg-indigo-50/80 px-2.5 py-[3px] text-[11px] font-medium text-indigo-600 ring-1 ring-indigo-100/80"
       >
         {{ getSkillDisplayName(skill.skillName) }}
       </span>
     </div>
 
     <div class="grid grid-cols-2 gap-2 mt-3">
-      <div class="rounded-lg bg-white border border-border/40 px-2.5 py-2">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mb-0.5">今日运行</p>
-        <p class="text-[13px] font-bold">{{ stats.todayRunCount }} 次</p>
+      <div class="rounded-lg bg-white/80 border border-border/30 px-2.5 py-2 backdrop-blur-sm">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-0.5">今日运行</p>
+        <p class="text-[14px] font-bold tabular-nums">{{ stats.todayRunCount }} <span class="text-[10px] font-medium text-muted-foreground">次</span></p>
       </div>
-      <div class="rounded-lg bg-white border border-border/40 px-2.5 py-2">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mb-0.5">累计运行</p>
-        <p class="text-[13px] font-bold">{{ stats.totalRunCount }} 次</p>
+      <div class="rounded-lg bg-white/80 border border-border/30 px-2.5 py-2 backdrop-blur-sm">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-0.5">累计运行</p>
+        <p class="text-[14px] font-bold tabular-nums">{{ stats.totalRunCount }} <span class="text-[10px] font-medium text-muted-foreground">次</span></p>
       </div>
-      <div class="rounded-lg bg-white border border-border/40 px-2.5 py-2">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mb-0.5">绑定技能</p>
-        <p class="text-[13px] font-bold">{{ employee.skills.length }} 个</p>
+      <div class="rounded-lg bg-white/80 border border-border/30 px-2.5 py-2 backdrop-blur-sm">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-0.5">绑定技能</p>
+        <p class="text-[14px] font-bold tabular-nums">{{ employee.skills.length }} <span class="text-[10px] font-medium text-muted-foreground">个</span></p>
       </div>
-      <div class="rounded-lg bg-white border border-border/40 px-2.5 py-2">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mb-0.5">成功率</p>
-        <p class="text-[13px] font-bold">{{ stats.todaySuccessRate }}%</p>
+      <div class="rounded-lg bg-white/80 border border-border/30 px-2.5 py-2 backdrop-blur-sm">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-0.5">成功率</p>
+        <p class="text-[14px] font-bold tabular-nums">{{ stats.todaySuccessRate }}<span class="text-[10px] font-medium text-muted-foreground">%</span></p>
       </div>
     </div>
   </div>

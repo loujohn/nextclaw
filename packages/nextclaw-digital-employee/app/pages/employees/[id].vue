@@ -1,17 +1,11 @@
 <script setup lang="ts">
-import { formatRunStatusLabel, formatDateTime, translateRunText } from "~~/shared/ui-models";
-import { CircleCheck, CircleAlert, MessageSquare } from "lucide-vue-next";
-
 const route = useRoute();
+const router = useRouter();
 const employeeId = computed(() => String(route.params.id));
 const { data } = await useEmployeeDetail(employeeId);
 const isOverviewTab = computed(() => route.path === `/employees/${employeeId.value}`);
 const employeeCenterLink = computed(() => ({
   path: "/employees",
-  query: route.query
-}));
-const employeeChatLink = computed(() => ({
-  path: `/employees/${employeeId.value}/chat`,
   query: route.query
 }));
 
@@ -37,9 +31,50 @@ const skillNameZhMap = computed(() => {
   }
   return map;
 });
-function getSkillDisplayName(skillName: string): string {
-  return skillNameZhMap.value.get(skillName) || skillName;
-}
+
+// Dashboard stats for this employee
+type DashboardStatsPayload = {
+  ok: boolean;
+  data: {
+    employeeStats: Array<{
+      employeeId: string;
+      todayRunCount: number;
+      totalRunCount: number;
+      todaySuccessRate: number;
+    }>;
+  };
+};
+
+const { data: dashStatsPayload } = await useFetch<DashboardStatsPayload>("/api/dashboard/stats");
+
+const employeeStats = computed(() => {
+  const stats = dashStatsPayload.value?.data.employeeStats ?? [];
+  return stats.find((s) => s.employeeId === employeeId.value) ?? { todayRunCount: 0, totalRunCount: 0, todaySuccessRate: 100 };
+});
+
+// Schedule jobs
+type ScheduleJob = {
+  id: string;
+  name: string;
+  scheduleKind: string;
+  cronExpr: string | null;
+  everyMs: number | null;
+  enabled: boolean;
+  nextRunAt: string | null;
+};
+const { data: jobsPayload } = await useFetch<{ ok: boolean; data: ScheduleJob[] }>(
+  () => `/api/employees/${employeeId.value}/jobs`
+);
+const jobs = computed(() => jobsPayload.value?.data ?? []);
+
+const nextJobRun = computed(() => {
+  const enabledJobs = jobs.value.filter((j) => j.enabled && j.nextRunAt);
+  if (enabledJobs.length === 0) return null;
+  enabledJobs.sort((a, b) => new Date(a.nextRunAt!).getTime() - new Date(b.nextRunAt!).getTime());
+  const first = enabledJobs[0];
+  if (!first?.nextRunAt) return null;
+  return { name: first.name, nextRunAt: first.nextRunAt };
+});
 
 const tabs = computed(() => [
   { label: "概览", to: { path: `/employees/${employeeId.value}`, query: route.query } },
@@ -114,111 +149,35 @@ function isTabActive(path: string): boolean {
       </NuxtLink>
     </nav>
 
-    <!-- Content -->
+    <!-- Overview Tab Content -->
     <div v-if="isOverviewTab" class="space-y-4">
-      <!-- Row 1: 状态检查 + 最近运行 (等高) -->
-      <div class="grid gap-4 lg:grid-cols-[3fr_7fr] items-stretch">
-        <!-- 状态检查 -->
-        <div class="flex flex-col rounded-xl border border-border bg-card p-4 shadow-sm">
-          <span class="section-label">状态检查</span>
-          <h3 class="mt-0.5 mb-3 text-sm font-semibold">工作台状态</h3>
-          <div class="space-y-3">
-            <div class="flex items-center gap-2">
-              <component
-                :is="data.data.health.hasPrompt ? CircleCheck : CircleAlert"
-                class="h-4 w-4"
-                :class="data.data.health.hasPrompt ? 'text-primary' : 'text-warning'"
-                :stroke-width="1.8"
-              />
-              <span class="text-sm">系统提示词 {{ data.data.health.hasPrompt ? "已配置" : "待补充" }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <component
-                :is="data.data.health.hasSkills ? CircleCheck : CircleAlert"
-                class="h-4 w-4"
-                :class="data.data.health.hasSkills ? 'text-primary' : 'text-warning'"
-                :stroke-width="1.8"
-              />
-              <span class="text-sm">技能 {{ data.data.health.hasSkills ? "就绪" : "待绑定" }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <component
-                :is="data.data.automationSummary.healthOk ? CircleCheck : CircleAlert"
-                class="h-4 w-4"
-                :class="{
-                  'text-primary': data.data.automationSummary.tone === 'teal',
-                  'text-warning': data.data.automationSummary.tone === 'amber',
-                  'text-destructive': data.data.automationSummary.tone === 'danger',
-                  'text-muted-foreground': data.data.automationSummary.tone === 'slate'
-                }"
-                :stroke-width="1.8"
-              />
-              <span class="text-sm">
-                定时任务 ·
-                <span class="font-medium">{{ data.data.automationSummary.countLabel }}</span>
-                · {{ data.data.automationSummary.statusLabel }}
-              </span>
-            </div>
-          </div>
-        </div>
+      <!-- Layer 1: Stats -->
+      <EmployeeOverviewStatsRow
+        :today-run-count="employeeStats.todayRunCount"
+        :total-run-count="employeeStats.totalRunCount"
+        :success-rate="employeeStats.todaySuccessRate"
+      />
 
-        <!-- 最近运行 -->
-        <div class="flex flex-col rounded-xl border border-border bg-card p-4 shadow-sm min-w-0 overflow-hidden">
-          <span class="section-label mb-3 block">最近运行</span>
-          <div class="space-y-2">
-            <NuxtLink
-              v-for="run in data.data.recentRuns.slice(0, 3)"
-              :key="run.id"
-              :to="`/runs?runId=${run.id}`"
-              class="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-            >
-              <span class="shrink-0 whitespace-nowrap font-medium">{{ formatRunStatusLabel(run.status) }}</span>
-              <span class="min-w-0 truncate text-xs text-muted-foreground">{{ translateRunText(run.summary) || formatDateTime(run.startedAt) }}</span>
-            </NuxtLink>
-            <p v-if="data.data.recentRuns.length === 0" class="text-xs text-muted-foreground">还没有运行记录</p>
-          </div>
-        </div>
+      <!-- Layer 2: Main Grid -->
+      <div class="grid gap-4" style="grid-template-columns: 340px 1fr;">
+        <EmployeeOverviewProfileCard
+          :employee="data.data"
+          :dept-name="deptName"
+          :skill-display-names="skillNameZhMap"
+          :next-job-run="nextJobRun"
+        />
+        <EmployeeOverviewRecentActivity
+          :runs="data.data.recentRuns"
+          @click-run="() => router.push({ path: `/employees/${employeeId}/runs`, query: route.query })"
+        />
       </div>
 
-      <!-- Row 2: 已绑定技能 + 角色定义 (自适应高度) -->
-      <div class="grid gap-4 lg:grid-cols-[3fr_7fr] items-start">
-        <!-- 已绑定技能 -->
-        <div class="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <div class="mb-3 flex items-center justify-between">
-            <span class="section-label">已绑定技能</span>
-            <NuxtLink to="/skills" class="text-xs text-muted-foreground hover:text-foreground">技能中心 →</NuxtLink>
-          </div>
-          <div class="flex flex-wrap gap-1.5">
-            <span v-for="skill in data.data.skills" :key="skill.id" class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-              {{ getSkillDisplayName(skill.skillName) }}
-            </span>
-            <span v-if="data.data.skills.length === 0" class="text-xs text-muted-foreground">还没有绑定技能</span>
-          </div>
-        </div>
-
-        <!-- 角色定义 -->
-        <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-border">
-            <div>
-              <span class="section-label">角色定义</span>
-              <h3 class="mt-0.5 text-sm font-semibold">职责与人设</h3>
-            </div>
-            <NuxtLink :to="employeeChatLink" class="btn-primary">
-              <MessageSquare class="h-3.5 w-3.5" :stroke-width="1.8" />
-              进入聊天
-            </NuxtLink>
-          </div>
-          <div class="p-4 space-y-3">
-            <p class="text-sm leading-relaxed text-muted-foreground">
-              {{ data.data.description || "未填写职责说明" }}
-            </p>
-            <div class="rounded-lg bg-muted/40 border border-border p-3">
-              <p class="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">系统提示词</p>
-              <pre class="font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">{{ data.data.systemPrompt || "尚未配置系统提示词" }}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- Layer 3: Jobs Strip -->
+      <EmployeeOverviewJobsStrip
+        v-if="jobs.length > 0"
+        :jobs="jobs"
+        @go-to-jobs="router.push({ path: `/employees/${employeeId}/jobs`, query: route.query })"
+      />
     </div>
 
     <!-- Non-overview tab content -->

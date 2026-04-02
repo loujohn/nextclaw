@@ -119,6 +119,7 @@ export type RunListInput = {
 
 export type RunListEntryView = {
   id: string;
+  employeeId: string | null;
   employeeName: string;
   statusLabel: string;
   triggerLabel: string;
@@ -461,6 +462,7 @@ export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
     const scheduleJobName = isScheduled ? (jobNameMap.get(run.triggerSource) ?? null) : null;
     return {
       id: run.id,
+      employeeId: run.employeeId,
       employeeName: employeeNameMap.get(run.employeeId ?? "") ?? "未关联员工",
       statusLabel: statusMeta.label,
       triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
