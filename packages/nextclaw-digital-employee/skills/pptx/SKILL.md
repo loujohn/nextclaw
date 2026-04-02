@@ -1,6 +1,7 @@
 ---
 name: pptx
-description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
+name_zh: PPT 演示文稿处理
+description: "当任务涉及 .pptx 文件（输入或输出）时使用，包括新建演示文稿、读取解析、编辑更新、模板套用、备注处理、合并拆分等场景。用户提到 deck/slides/presentation 或具体 .pptx 文件名时应触发。"
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

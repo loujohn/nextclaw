@@ -1,6 +1,7 @@
 ---
 name: theme-factory
-description: Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reportings, HTML landing pages, etc. There are 10 pre-set themes with colors/fonts that you can apply to any artifact that has been creating, or can generate a new theme on-the-fly.
+name_zh: 主题工厂
+description: 为文档、汇报、幻灯片、HTML 页面等内容快速套用统一主题风格，支持预置配色与字体组合，也可按需生成新主题。
 license: Complete terms in LICENSE.txt
 ---
 
