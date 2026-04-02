@@ -1,6 +1,9 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { getPlatformContext } from "../runtime/platform-context";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("SeedSkills");
 
 /**
  * 服务启动时自动将 skills/ 目录下的自定义技能安装到工作区。
@@ -31,9 +34,9 @@ export default defineNitroPlugin(async () => {
         mkdirSync(workspaceSkillsDir, { recursive: true });
         rmSync(installPath, { recursive: true, force: true });
         cpSync(srcPath, installPath, { recursive: true, force: true });
-        console.log(`[seed-skills] installed from source: ${skillName}`);
+        log.info(`installed from source: ${skillName}`);
       } catch (err) {
-        console.warn(`[seed-skills] failed to install ${skillName}:`, err);
+        log.warn(`failed to install ${skillName}:`, err);
       }
       continue;
     }
@@ -42,7 +45,7 @@ export default defineNitroPlugin(async () => {
       const storage = useStorage("assets:skills");
       const keys = await storage.getKeys(skillName);
       if (keys.length === 0) {
-        console.warn(`[seed-skills] no assets found for skill: ${skillName}`);
+        log.warn(`no assets found for skill: ${skillName}`);
         continue;
       }
       rmSync(installPath, { recursive: true, force: true });
@@ -55,9 +58,9 @@ export default defineNitroPlugin(async () => {
         mkdirSync(dirname(destFile), { recursive: true });
         writeFileSync(destFile, content as Buffer);
       }
-      console.log(`[seed-skills] installed from assets: ${skillName}`);
+      log.info(`installed from assets: ${skillName}`);
     } catch (err) {
-      console.warn(`[seed-skills] failed to install ${skillName} from assets:`, err);
+      log.warn(`failed to install ${skillName} from assets:`, err);
     }
   }
 });

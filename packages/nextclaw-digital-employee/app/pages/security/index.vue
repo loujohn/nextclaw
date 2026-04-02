@@ -16,7 +16,8 @@ import {
   Edit,
   ChevronRight,
   Trash2,
-  KeyRound
+  KeyRound,
+  Upload
 } from "lucide-vue-next";
 
 // ------------------- 类型定义 -------------------
@@ -168,6 +169,60 @@ const secretForm = reactive({
 });
 const showDeleteConfirm = ref(false);
 const deletingSecretKey = ref("");
+
+// ------------------- 批量导入 -------------------
+const showBulkImportModal = ref(false);
+const bulkImportText = ref("");
+const bulkImportScope = ref("global");
+const bulkImportLoading = ref(false);
+const bulkImportResult = ref<{ results: Array<{ key: string; status: string; error?: string }>; summary: { total: number; created: number; updated: number; skipped: number } } | null>(null);
+
+function openBulkImport() {
+  bulkImportText.value = "";
+  bulkImportScope.value = "global";
+  bulkImportLoading.value = false;
+  bulkImportResult.value = null;
+  showBulkImportModal.value = true;
+}
+
+const bulkImportParsed = computed(() => {
+  const lines = bulkImportText.value.split("\n");
+  const items: Array<{ key: string; value: string }> = [];
+  const errors: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = (lines[i] ?? "").trim();
+    if (!line || line.startsWith("#")) continue;
+    const eqIdx = line.indexOf("=");
+    if (eqIdx <= 0) {
+      errors.push(`第 ${i + 1} 行格式错误：${line.slice(0, 40)}`);
+      continue;
+    }
+    const key = line.slice(0, eqIdx).trim();
+    const value = line.slice(eqIdx + 1).trim();
+    if (!key || !value) {
+      errors.push(`第 ${i + 1} 行 key 或 value 为空`);
+      continue;
+    }
+    items.push({ key, value });
+  }
+  return { items, errors };
+});
+
+async function executeBulkImport() {
+  const { items } = bulkImportParsed.value;
+  if (items.length === 0) return;
+  bulkImportLoading.value = true;
+  try {
+    const res = await $fetch<{ ok: boolean; data: { results: Array<{ key: string; status: string; error?: string }>; summary: { total: number; created: number; updated: number; skipped: number } } }>("/api/secrets/bulk", {
+      method: "POST",
+      body: { items: items.map((item) => ({ ...item, scope: bulkImportScope.value })) }
+    });
+    bulkImportResult.value = res.data;
+    await fetchSecrets();
+  } finally {
+    bulkImportLoading.value = false;
+  }
+}
 
 async function fetchSecrets() {
   secretsLoading.value = true;
@@ -703,13 +758,22 @@ const levelLabels: Record<string, string> = {
           <h2 class="text-sm font-semibold text-foreground">密钥管理</h2>
           <p class="mt-0.5 text-xs text-muted-foreground">管理 Skill 脚本运行时所需的凭证与密钥，值以 AES-256 加密存储。</p>
         </div>
-        <button
-          class="btn-primary text-xs"
-          @click="openAddSecret"
-        >
-          <Plus class="h-3.5 w-3.5" />
-          添加密钥
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="btn-ghost text-xs"
+            @click="openBulkImport"
+          >
+            <Upload class="h-3.5 w-3.5" />
+            批量导入
+          </button>
+          <button
+            class="btn-primary text-xs"
+            @click="openAddSecret"
+          >
+            <Plus class="h-3.5 w-3.5" />
+            添加密钥
+          </button>
+        </div>
       </div>
 
       <div v-if="secretsLoading" class="py-12 text-center text-sm text-muted-foreground">加载中...</div>
@@ -821,6 +885,92 @@ const levelLabels: Record<string, string> = {
                 @click="saveSecret"
               >
                 {{ secretModalMode === 'add' ? '添加' : '保存' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 批量导入弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showBulkImportModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          @click.self="showBulkImportModal = false"
+        >
+          <div class="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h2 class="mb-1 text-base font-semibold text-foreground">批量导入密钥</h2>
+            <p class="mb-4 text-xs text-muted-foreground">每行一条，格式：<code class="rounded bg-muted px-1 py-0.5 font-mono">KEY=VALUE</code>，支持 <code class="rounded bg-muted px-1 py-0.5 font-mono">#</code> 注释行，已存在的 key 将更新值。</p>
+
+            <div v-if="!bulkImportResult" class="space-y-3">
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">粘贴密钥内容</label>
+                <textarea
+                  v-model="bulkImportText"
+                  class="input-field resize-none font-mono text-xs"
+                  rows="10"
+                  placeholder="# 示例（# 开头为注释）&#10;DINGTALK_APP_KEY=dingxxxxxx&#10;DINGTALK_APP_SECRET=xxxxxx&#10;OPENAI_API_KEY=sk-xxxxxx"
+                  :disabled="bulkImportLoading"
+                />
+              </div>
+              <div v-if="bulkImportParsed.errors.length > 0" class="rounded-lg bg-destructive/10 px-3 py-2">
+                <p class="mb-1 text-xs font-medium text-destructive">格式错误（{{ bulkImportParsed.errors.length }} 行将被跳过）</p>
+                <ul class="space-y-0.5">
+                  <li v-for="(e, i) in bulkImportParsed.errors" :key="i" class="text-xs text-destructive">{{ e }}</li>
+                </ul>
+              </div>
+              <div>
+                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">作用域</label>
+                <select v-model="bulkImportScope" class="input-field" :disabled="bulkImportLoading">
+                  <option value="global">全局（所有员工可用）</option>
+                </select>
+              </div>
+              <p class="text-xs text-muted-foreground">
+                解析到 <span class="font-semibold text-foreground">{{ bulkImportParsed.items.length }}</span> 条有效密钥
+              </p>
+            </div>
+
+            <!-- 导入结果 -->
+            <div v-else class="space-y-3">
+              <div class="grid grid-cols-3 gap-2 text-center">
+                <div class="rounded-lg bg-primary/10 p-3">
+                  <p class="text-lg font-bold text-primary">{{ bulkImportResult.summary.created }}</p>
+                  <p class="text-xs text-muted-foreground">新增</p>
+                </div>
+                <div class="rounded-lg bg-warning/10 p-3">
+                  <p class="text-lg font-bold text-warning-foreground">{{ bulkImportResult.summary.updated }}</p>
+                  <p class="text-xs text-muted-foreground">更新</p>
+                </div>
+                <div class="rounded-lg bg-muted p-3">
+                  <p class="text-lg font-bold text-muted-foreground">{{ bulkImportResult.summary.skipped }}</p>
+                  <p class="text-xs text-muted-foreground">跳过</p>
+                </div>
+              </div>
+              <div v-if="bulkImportResult.results.some(r => r.status === 'skipped')" class="max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/30 p-2">
+                <p class="mb-1 text-xs font-medium text-muted-foreground">跳过详情</p>
+                <ul class="space-y-0.5">
+                  <li
+                    v-for="r in bulkImportResult.results.filter(r => r.status === 'skipped')"
+                    :key="r.key"
+                    class="font-mono text-xs text-destructive"
+                  >
+                    {{ r.key }}{{ r.error ? ` — ${r.error}` : '' }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="mt-5 flex justify-end gap-2">
+              <button class="btn-ghost text-sm" @click="showBulkImportModal = false">{{ bulkImportResult ? '关闭' : '取消' }}</button>
+              <button
+                v-if="!bulkImportResult"
+                class="btn-primary text-sm"
+                :disabled="bulkImportParsed.items.length === 0 || bulkImportLoading"
+                @click="executeBulkImport"
+              >
+                {{ bulkImportLoading ? '导入中...' : `导入 ${bulkImportParsed.items.length} 条` }}
               </button>
             </div>
           </div>

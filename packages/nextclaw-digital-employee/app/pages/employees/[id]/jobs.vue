@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, Play, Pencil, Trash2, Clock, Zap, ToggleLeft, ToggleRight } from "lucide-vue-next";
+import { Plus, Play, Pencil, Trash2, Clock, Zap, ToggleLeft, ToggleRight, Loader2, CheckCircle, AlertCircle, X } from "lucide-vue-next";
 import { formatDateTime } from "~~/shared/ui-models";
 import {
   buildCronExpr,
@@ -44,7 +44,21 @@ const editingJobId = ref<string | null>(null);
 const saving = ref(false);
 const runningJobId = ref<string | null>(null);
 const cronInputMode = ref<"visual" | "raw">("visual");
+
+// ── Toast 通知 ────────────────────────────────────────────────────────────────
+type Toast = { id: number; type: "success" | "error"; message: string };
+const toasts = ref<Toast[]>([]);
+let _toastId = 0;
+function showToast(type: "success" | "error", message: string) {
+  const id = ++_toastId;
+  toasts.value.push({ id, type, message });
+  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3500);
+}
+function dismissToast(id: number) {
+  toasts.value = toasts.value.filter(t => t.id !== id);
+}
 const formError = ref<string | null>(null);
+const runDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const form = reactive({
   name: "",
@@ -187,10 +201,24 @@ async function deleteJob(jobId: string) {
 }
 
 async function runJobNow(jobId: string) {
+  // Debounce: ignore if a timer is already pending for this job
+  if (runDebounceTimers.has(jobId)) return;
+  // Also skip if already running
+  if (runningJobId.value === jobId) return;
+
+  // Set debounce lock for 2s
+  const timer = setTimeout(() => {
+    runDebounceTimers.delete(jobId);
+  }, 2000);
+  runDebounceTimers.set(jobId, timer);
+
   runningJobId.value = jobId;
   try {
     await $fetch(`/api/employees/${employeeId.value}/jobs/${jobId}/run`, { method: "POST" });
     await refresh();
+    showToast("success", "任务已触发，正在后台执行中");
+  } catch {
+    showToast("error", "触发失败，请稍后重试");
   } finally {
     runningJobId.value = null;
   }
@@ -288,11 +316,12 @@ function scheduleIcon(kind: string) {
             <!-- 立即执行 -->
             <span class="relative group/tip">
               <button
-                class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                :disabled="runningJobId === job.id"
+                class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="runningJobId === job.id || runDebounceTimers.has(job.id)"
                 @click="runJobNow(job.id)"
               >
-                <Play class="h-3.5 w-3.5" :class="runningJobId === job.id ? 'animate-pulse' : ''" :stroke-width="1.8" />
+                <Loader2 v-if="runningJobId === job.id" class="h-3.5 w-3.5 animate-spin" :stroke-width="1.8" />
+                <Play v-else class="h-3.5 w-3.5" :stroke-width="1.8" />
               </button>
               <span class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100 z-20">
                 立即执行
@@ -501,4 +530,40 @@ function scheduleIcon(kind: string) {
       </div>
     </Teleport>
   </div>
+
+  <!-- Toast Notifications -->
+  <Teleport to="body">
+    <div class="fixed top-0 inset-x-0 z-[60] flex flex-col items-center gap-2 pt-5 pointer-events-none">
+      <TransitionGroup name="toast">
+        <div
+          v-for="toast in toasts"
+          :key="toast.id"
+          class="pointer-events-auto flex items-center gap-3 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-sm min-w-[260px] max-w-sm"
+          :class="toast.type === 'success' ? 'bg-card border-primary/20 text-foreground' : 'bg-card border-destructive/20 text-foreground'"
+        >
+          <CheckCircle v-if="toast.type === 'success'" class="h-4 w-4 shrink-0 text-primary" :stroke-width="2" />
+          <AlertCircle v-else class="h-4 w-4 shrink-0 text-destructive" :stroke-width="2" />
+          <p class="flex-1 text-sm">{{ toast.message }}</p>
+          <button class="text-muted-foreground hover:text-foreground" @click="dismissToast(toast.id)">
+            <X class="h-3.5 w-3.5" :stroke-width="2" />
+          </button>
+        </div>
+      </TransitionGroup>
+    </div>
+  </Teleport>
 </template>
+
+<style scoped>
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.25s ease;
+}
+.toast-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+</style>

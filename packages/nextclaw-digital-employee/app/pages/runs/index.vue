@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Sparkles, X, Play, CheckCircle2, AlertTriangle, Clock, ChevronLeft, ChevronRight, CalendarClock } from "lucide-vue-next";
 import { renderMarkdown } from "~/lib/utils";
+import { formatDateTime } from "~~/shared/ui-models";
 
 type RunItem = {
   id: string;
@@ -352,7 +353,7 @@ const badgeClass: Record<string, string> = {
                     <div class="flex items-center gap-3">
                       <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{{ event.seq }}</span>
                       <span class="text-sm font-medium">{{ event.eventType }}</span>
-                      <span v-if="event.createdAt" class="ml-auto text-[11px] text-muted-foreground">{{ event.createdAt.replace('T', ' ').slice(0, 19) }}</span>
+                      <span v-if="event.createdAt" class="ml-auto text-[11px] text-muted-foreground">{{ formatDateTime(event.createdAt) }}</span>
                     </div>
                     <div v-if="event.payload && Object.keys(event.payload).length > 0" class="mt-1.5 ml-9">
                       <pre class="max-h-32 overflow-auto rounded bg-background/50 p-2 text-[11px] leading-relaxed text-muted-foreground">{{ JSON.stringify(event.payload, null, 2) }}</pre>
