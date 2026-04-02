@@ -182,6 +182,33 @@ export class RunRecordRepository {
     };
   }
 
+  async getTodayStats(): Promise<{ employeeId: string; total: number; succeeded: number }[]> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const rows = await this.db(PLATFORM_TABLES.runRecords)
+      .select("employee_id")
+      .count("* as total")
+      .select(this.db.raw("count(CASE WHEN status = 'completed' THEN 1 END) as succeeded"))
+      .where("started_at", ">=", todayStart.toISOString())
+      .groupBy("employee_id");
+    return (rows as Array<{ employee_id: string; total: number | string; succeeded: number | string | null }>).map((row) => ({
+      employeeId: row.employee_id,
+      total: Number(row.total),
+      succeeded: Number(row.succeeded ?? 0),
+    }));
+  }
+
+  async getTotalCountByEmployee(): Promise<{ employeeId: string; total: number }[]> {
+    const rows = await this.db(PLATFORM_TABLES.runRecords)
+      .select("employee_id")
+      .count("* as total")
+      .groupBy("employee_id");
+    return (rows as Array<{ employee_id: string; total: number | string }>).map((row) => ({
+      employeeId: row.employee_id,
+      total: Number(row.total),
+    }));
+  }
+
   async deleteByEmployeeId(employeeId: string): Promise<void> {
     await this.db<RunRecord>(PLATFORM_TABLES.runRecords).where({ employee_id: employeeId }).delete();
   }

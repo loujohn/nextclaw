@@ -119,6 +119,7 @@ export type RunListInput = {
 
 export type RunListEntryView = {
   id: string;
+  employeeId: string | null;
   employeeName: string;
   statusLabel: string;
   triggerLabel: string;
@@ -224,14 +225,7 @@ function inferSkillPurpose(name: string): string {
   return "用于扩展员工的任务执行能力。";
 }
 
-const SKILL_CATEGORY_SLUG_TO_LABEL: Record<string, string> = {
-  "project-management": "项目管理类",
-  "business-management": "经营管理类",
-  "product-rd": "产品研发类",
-  "marketing": "市场营销类",
-  "solutions": "解决方案类",
-  "general": "通用能力类",
-};
+import { SKILL_CATEGORY_SLUG_TO_LABEL } from "./skill-categories";
 
 function inferSkillCategory(category?: string): string {
   if (category && SKILL_CATEGORY_SLUG_TO_LABEL[category]) {
@@ -468,6 +462,7 @@ export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
     const scheduleJobName = isScheduled ? (jobNameMap.get(run.triggerSource) ?? null) : null;
     return {
       id: run.id,
+      employeeId: run.employeeId,
       employeeName: employeeNameMap.get(run.employeeId ?? "") ?? "未关联员工",
       statusLabel: statusMeta.label,
       triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
