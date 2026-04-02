@@ -235,7 +235,7 @@ zentaopms --json project info <project_id>
 ### 项目工时查询
 
 ```bash
-# 获取项目工时统计（总体和按执行）
+# 获取项目工时统计（总体和各执行/迭代的工时分布）
 zentaopms project hours <project_id>
 
 # JSON 格式
@@ -245,7 +245,7 @@ zentaopms --json project hours <project_id>
 ### 成员工时查询
 
 ```bash
-# 获取项目成员工时统计
+# 获取项目成员工时统计（按成员及执行维度）
 zentaopms project member-hours <project_id>
 
 # JSON 格式
@@ -254,57 +254,22 @@ zentaopms --json project member-hours <project_id>
 
 ### 工时返回字段说明
 
-| 字段                 | 说明          |
-| -------------------- | ------------- |
-| 预估                 | 预估工时      |
-| 已消耗               | 已消耗工时    |
-| 剩余                 | 剩余工时      |
-| 执行数               | 执行/迭代数量 |
-| 总预估/总消耗/总剩余 | 汇总工时      |
+#### project hours 返回字段
 
----
+| 字段       | 说明                                                     |
+| ---------- | -------------------------------------------------------- |
+| project    | 项目信息 (id, name, 状态, 进度)                          |
+| 总体       | 项目总体工时 (预估、已消耗、剩余)                        |
+| executions | 各执行/迭代工时明细 (id, name, 状态, 预估, 已消耗, 剩余) |
+| 统计       | 汇总 (执行数、总预估、总消耗、总剩余)                    |
 
-## 四、执行模块（迭代）
+#### project member-hours 返回字段
 
-### 执行列表
-
-```bash
-# 获取项目的执行列表
-zentaopms execution list -p <project_id>
-
-# JSON 格式
-zentaopms --json execution list -p <project_id>
-
-# 限制返回数量
-zentaopms execution list -p <project_id> -l 5
-
-# 按状态筛选（wait/done/doing）
-zentaopms execution list -p <project_id> --status doing
-```
-
-### 执行详情
-
-```bash
-# 获取执行详情
-zentaopms execution info <execution_id>
-
-# JSON 格式
-zentaopms --json execution info <execution_id>
-```
-
-### 返回字段说明
-
-| 字段          | 说明                    |
-| ------------- | ----------------------- |
-| id            | 执行ID                  |
-| name          | 执行名称                |
-| status        | 状态（wait/done/doing） |
-| begin         | 开始日期                |
-| end           | 结束日期                |
-| project       | 所属项目ID              |
-| totalHours    | 总工时                  |
-| consumedHours | 已消耗工时              |
-| progress      | 进度百分比              |
+| 字段 | 说明                                                                    |
+| ---- | ----------------------------------------------------------------------- |
+| 项目 | 项目信息 (id, 名称)                                                     |
+| 成员 | 成员工时明细 (账号、姓名、总预估、总已消耗、总剩余、总任务数、执行明细) |
+| 统计 | 汇总 (总人数、总消耗、总剩余)                                           |
 
 ---
 
