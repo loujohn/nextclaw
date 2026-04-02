@@ -483,14 +483,16 @@ export class NextclawEngineGateway {
   }
 
   // 获取会话历史，包含工具调用和推理过程等元数据
-  // skip: 从末尾跳过的条数（用于分页加载更早的消息）；limit: 每页条数（默认 50）
-  getSessionHistory(sessionKey: string, options?: { skip?: number; limit?: number }): { messages: SessionHistoryMessage[]; total: number } {
+  getSessionHistory(sessionKey: string): SessionHistoryMessage[] {
     const session = this.sessionManager.getIfExists(sessionKey);
     if (!session) {
-      return { messages: [], total: 0 };
+      return [];
     }
-    // 先映射全量消息以获取准确 total
-    const all = session.messages
+    const maxMessages = 50;
+    const recent = session.messages.length > maxMessages
+      ? session.messages.slice(-maxMessages)
+      : session.messages;
+    return recent
       .map((message) => {
         const role = String(message.role ?? "");
         const content = typeof message.content === "string" ? message.content : "";
@@ -534,13 +536,5 @@ export class NextclawEngineGateway {
         return null;
       })
       .filter((message): message is SessionHistoryMessage => Boolean(message));
-
-    const total = all.length;
-    const limit = Math.min(200, Math.max(1, options?.limit ?? 50));
-    const skip = Math.max(0, options?.skip ?? 0);
-    // skip 从末尾计算：skip=0 返回最新的 limit 条；skip=50 返回再往前的 limit 条
-    const end = Math.max(0, total - skip);
-    const start = Math.max(0, end - limit);
-    return { messages: all.slice(start, end), total };
   }
 }

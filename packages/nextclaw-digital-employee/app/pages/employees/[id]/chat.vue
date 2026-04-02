@@ -3,19 +3,9 @@ import type { ChatMessageView } from "~~/shared/ui-models";
 import { renderMarkdown, formatTime } from "~/lib/utils";
 import { Send, User, Bot, AlertCircle, MessageCircle, StopCircle, Wrench, Brain, ChevronDown, ChevronRight, Terminal } from "lucide-vue-next";
 
-const PAGE_SIZE = 50;
-
 const expandedToolCalls = ref<Set<number>>(new Set());
 const expandedReasoning = ref<Set<number>>(new Set());
 const expandedToolResults = ref<Set<number>>(new Set());
-
-const hasMore = ref(false);
-const loadingMore = ref(false);
-const loadedTotal = ref(0);
-
-function isDisplayable(m: ChatMessageView): boolean {
-  return Boolean(m.content?.trim()) || Boolean(m.toolCalls?.length) || m.role === "tool" || Boolean(m.reasoning?.trim());
-}
 
 function toggleToolCalls(index: number) {
   const s = new Set(expandedToolCalls.value);
@@ -55,8 +45,6 @@ const { data: history, refresh: refreshHistory } = await useFetch<{
   ok: boolean;
   data: {
     messages: ChatMessageView[];
-    total: number;
-    hasMore: boolean;
   };
 }>(
   `/api/employees/${employeeId.value}/chat/history`,
@@ -68,10 +56,7 @@ const { refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
 
 watchEffect(() => {
   const historyData = history.value?.data;
-  const msgs = (historyData?.messages ?? []).filter(isDisplayable);
-  messages.value = msgs;
-  hasMore.value = historyData?.hasMore ?? false;
-  loadedTotal.value = msgs.length;
+  messages.value = (historyData?.messages ?? []).filter(m => m.content?.trim() || m.toolCalls?.length || m.role === "tool");
 });
 
 function scrollToBottom() {
@@ -111,8 +96,7 @@ async function sendMessage(input = draft.value) {
       body: { message: input },
       signal: abortController.value.signal,
     });
-    messages.value = result.data.messages.filter(isDisplayable);
-    // hasMore / loadedTotal 由 watchEffect 在 refreshHistory 后统一重置
+    messages.value = result.data.messages.filter(m => m.content?.trim() || m.toolCalls?.length || m.role === "tool");
     await Promise.all([refresh(), refreshEmployee(), refreshHistory()]);
   } catch (error) {
     const e = error as Error & { cause?: Error };
@@ -134,44 +118,6 @@ async function sendMessage(input = draft.value) {
 
 function cancelMessage() {
   abortController.value?.abort();
-}
-
-async function loadMore() {
-  if (loadingMore.value || !hasMore.value) return;
-  loadingMore.value = true;
-  const container = threadEl.value;
-  const prevScrollHeight = container?.scrollHeight ?? 0;
-  try {
-    const result = await $fetch<{
-      ok: boolean;
-      data: { messages: ChatMessageView[]; total: number; hasMore: boolean };
-    }>(`/api/employees/${employeeId.value}/chat/history`, {
-      params: { skip: loadedTotal.value, limit: PAGE_SIZE }
-    });
-    const older = (result.data.messages ?? []).filter(isDisplayable);
-    if (older.length > 0) {
-      messages.value = [...older, ...messages.value];
-      loadedTotal.value += older.length;
-    }
-    hasMore.value = result.data.hasMore ?? false;
-    nextTick(() => {
-      if (container) {
-        // 保持滚动位置：新增内容高度 = scrollHeight 差值
-        container.scrollTop = container.scrollHeight - prevScrollHeight;
-      }
-    });
-  } catch {
-    // 加载更多失败静默处理，不影响当前展示
-  } finally {
-    loadingMore.value = false;
-  }
-}
-
-function handleThreadScroll(e: Event) {
-  const el = e.target as HTMLElement;
-  if (el.scrollTop < 80 && hasMore.value && !loadingMore.value) {
-    loadMore();
-  }
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -206,21 +152,7 @@ function autoResize(e: Event) {
         ref="threadEl"
         class="flex-1 space-y-4 overflow-y-auto rounded-2xl border border-border bg-muted/15 p-5"
         style="max-height: 560px; min-height: 320px;"
-        @scroll="handleThreadScroll"
       >
-        <!-- 加载更多历史消息指示器 -->
-        <div v-if="loadingMore" class="flex justify-center py-3">
-          <span class="text-xs text-muted-foreground animate-pulse">正在加载历史消息…</span>
-        </div>
-        <div v-else-if="hasMore" class="flex justify-center py-2">
-          <button
-            class="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            @click="loadMore"
-          >
-            上滑或点击加载更早的消息
-          </button>
-        </div>
-
         <template v-for="(msg, i) in messages" :key="`${msg.role}-${i}-${msg.timestamp ?? 'na'}`">
           <!-- User Message -->
           <div v-if="msg.role === 'user'" class="flex items-start justify-end gap-3 animate-fade-in">
