@@ -1,7 +1,7 @@
 ---
 name: work-time-query
 name_zh: 工时查询
-description: "查询项目工时数据，支持项目维度工时统计和详细的成员工时列表查询。当需要获取项目工时概况、成员工时明细、团队工时分布时使用。"
+description: "查询项目工时数据，支持项目列表查询和项目人员工时明细查询。当需要获取项目列表、查询指定项目成员工时时使用。"
 metadata:
   nextclaw:
     emoji: "⏱️"
@@ -12,137 +12,82 @@ metadata:
 
 查询项目工时数据，供分析统计使用。
 
-## ⚠️ 性能提示
-
-**接口耗时：请求工时数据接口可能较耗时，请耐心等待。**
-
 ## 使用方法
 
+### 列出所有项目
+
 ```bash
-# 项目工时查询（总体和各执行/迭代的工时分布）
-python skills/work-time-query/scripts/work-time-query.py project <project_id>
-
-# 成员工时查询（按成员及执行维度）
-python skills/work-time-query/scripts/work-time-query.py members <project_id>
+python skills/work-time-query/scripts/work-time-query.py list
 ```
 
-### 命令行选项
+### 查询项目人员工时
 
-| 选项                   | 说明                                        |
-| ---------------------- | ------------------------------------------- |
-| `project <project_id>` | 查询指定项目的工时统计（总体和各执行/迭代） |
-| `members <project_id>` | 查询指定项目的成员工时明细                  |
+```bash
+python skills/work-time-query/scripts/work-time-query.py query <projectCode> <startDay> <endDay>
+```
 
-### 环境变量
+示例：
 
-| 变量          | 说明                     |
-| ------------- | ------------------------ |
-| PM_BASE_URL   | 基础 URL                 |
-| PM_API        | 工时数据接口地址（可选） |
-| PM_TIMEOUT    | 请求超时时间（毫秒）     |
-| PM_BASIC_AUTH | Basic 认证凭证           |
-| PM_USERNAME   | API 用户名               |
-| PM_PASSWORD   | API 密码                 |
+```bash
+# 查询所有项目列表
+python skills/work-time-query/scripts/work-time-query.py list
 
-## 接口返回格式
+# 查询指定项目的人员工时
+python skills/work-time-query/scripts/work-time-query.py query XM202508125040 2026-04-01 2026-04-02
+```
 
-### 项目工时查询 (project)
+## 接口说明
+
+### 接口1：获取项目列表
+
+- **URL**: `GET {PM_BASE_URL}/admin/project/getProjectCodeNameList`
+- **认证**: Bearer Token
+
+返回示例：
 
 ```json
 {
   "code": 0,
-  "data": {
-    "project": {
-      "id": 1,
-      "name": "项目名称",
-      "状态": "进行中",
-      "进度": "95.20"
-    },
-    "总体": {
-      "预估": 9527,
-      "已消耗": 8027,
-      "剩余": 402
-    },
-    "executions": [
-      {
-        "id": 236,
-        "name": "第二十三个迭代开发、测试计划",
-        "状态": "进行中",
-        "预估": 800,
-        "已消耗": 662,
-        "剩余": 185
-      }
-    ],
-    "统计": {
-      "执行数": 23,
-      "总预估": 9527,
-      "总消耗": 8027,
-      "总剩余": 402
+  "data": [
+    {
+      "projectCode": "XM202508125040",
+      "projectName": "项目名称"
     }
-  }
+  ]
 }
 ```
 
-### 成员工时查询 (members)
+### 接口2：获取项目人员工时
+
+- **URL**: `POST {PM_BASE_URL}/admin/project/workHour/getProjectUserWorkHour`
+- **认证**: Bearer Token
+- **请求体**:
+
+```json
+{
+  "projectCode": "XM202508125040",
+  "startDay": "2026-04-01",
+  "endDay": "2026-04-02"
+}
+```
+
+返回示例：
 
 ```json
 {
   "code": 0,
-  "data": {
-    "项目": {
-      "id": 1,
-      "名称": "项目名称"
-    },
-    "成员": [
-      {
-        "账号": "wangzheng",
-        "姓名": "王正",
-        "总预估": 3368,
-        "总已消耗": 2937,
-        "总剩余": 0,
-        "总任务数": 65,
-        "执行明细": [
-          {
-            "执行ID": 127,
-            "执行名称": "第十七个迭代开发、测试计划",
-            "预估": 504,
-            "已消耗": 500,
-            "剩余": 0,
-            "任务数": 3
-          }
-        ]
-      }
-    ],
-    "统计": {
-      "总人数": 12,
-      "总消耗": 7987,
-      "总剩余": 554
+  "data": [
+    {
+      "userName": "张三",
+      "userAccount": "zhangsan",
+      "workHours": [
+        {
+          "date": "2026-04-01",
+          "hours": 8,
+          "taskName": "任务名称"
+        }
+      ]
     }
-  }
+  ]
 }
 ```
-
-## 返回字段说明
-
-### project 返回字段
-
-| 字段       | 说明                                                     |
-| ---------- | -------------------------------------------------------- |
-| project    | 项目信息 (id, name, 状态, 进度)                          |
-| 总体       | 项目总体工时 (预估、已消耗、剩余)                        |
-| executions | 各执行/迭代工时明细 (id, name, 状态, 预估, 已消耗, 剩余) |
-| 统计       | 汇总 (执行数、总预估、总消耗、总剩余)                    |
-
-### members 返回字段
-
-| 字段 | 说明                                                                    |
-| ---- | ----------------------------------------------------------------------- |
-| 项目 | 项目信息 (id, 名称)                                                     |
-| 成员 | 成员工时明细 (账号、姓名、总预估、总已消耗、总剩余、总任务数、执行明细) |
-| 统计 | 汇总 (总人数、总消耗、总剩余)                                           |
-
-## ⚠️ 待接口确认
-
-- 接口地址和请求方式待确认
-- 认证方式待确认
-- 是否有其他查询参数待确认
