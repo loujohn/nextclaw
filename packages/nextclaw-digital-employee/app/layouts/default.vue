@@ -3,7 +3,6 @@ import {
   Home,
   Users,
   Blocks,
-  Clock,
   Plug,
   PanelLeftClose,
   PanelLeftOpen,
@@ -19,7 +18,6 @@ const navItems = [
   { label: "组织架构", to: "/employees", icon: Users },
   { label: "工作中心", to: "/dashboard", icon: Home },
   { label: "技能中心", to: "/skills", icon: Blocks },
-  { label: "运行中心", to: "/runs", icon: Clock },
   { label: "集成中心", to: "/integrations", icon: Plug },
   { label: "安全中心", to: "/security", icon: ShieldCheck }
 ];

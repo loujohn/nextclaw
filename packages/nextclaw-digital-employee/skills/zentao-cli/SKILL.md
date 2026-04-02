@@ -43,30 +43,33 @@ zentaopms auth setup --url <禅道地址> --username <账号> --password <密码
 ### 标准流程
 
 1. **检查认证状态**
+
    ```bash
    zentaopms auth status
    ```
 
 2. **执行目标命令**
+
    ```bash
    zentaopms --json project list
    ```
 
 3. **如果返回401未认证**
+
    ```bash
    # 调用认证脚本
    python skills/zentao-cli/scripts/auth.py
-   
+
    # 然后重试目标命令
    zentaopms --json project list
    ```
 
 ### 认证状态判断
 
-| 状态码 | 说明 | 操作 |
-|--------|------|------|
-| 200 | 已认证 | 继续执行目标命令 |
-| 401 | 未认证 | 调用认证脚本，再重试 |
+| 状态码 | 说明   | 操作                 |
+| ------ | ------ | -------------------- |
+| 200    | 已认证 | 继续执行目标命令     |
+| 401    | 未认证 | 调用认证脚本，再重试 |
 
 ### 认证脚本
 
@@ -78,6 +81,7 @@ python skills/zentao-cli/scripts/auth.py
 ```
 
 此脚本会自动完成以下操作：
+
 1. 检查当前认证状态
 2. 如未认证，使用预设的禅道地址、账号、密码进行认证
 3. 验证认证成功
@@ -96,15 +100,16 @@ python skills/zentao-cli/scripts/auth.py
 
 ## 命令总览
 
-| 模块 | 命令 | 说明 |
-|------|------|------|
-| 认证 | `zentaopms auth` | 认证相关操作 |
-| 项目 | `zentaopms project` | 项目管理 |
-| 执行 | `zentaopms execution` | 迭代/执行管理 |
-| 任务 | `zentaopms task` | 任务管理 |
-| Bug | `zentaopms bug` | Bug 管理 |
-| 产品 | `zentaopms product` | 产品管理 |
-| 用户 | `zentaopms user` | 用户管理 |
+| 模块   | 命令                  | 说明          |
+| ------ | --------------------- | ------------- |
+| 认证   | `zentaopms auth`      | 认证相关操作  |
+| 项目集 | `zentaopms program`   | 项目集管理    |
+| 项目   | `zentaopms project`   | 项目管理      |
+| 执行   | `zentaopms execution` | 迭代/执行管理 |
+| 任务   | `zentaopms task`      | 任务管理      |
+| Bug    | `zentaopms bug`       | Bug 管理      |
+| 产品   | `zentaopms product`   | 产品管理      |
+| 用户   | `zentaopms user`      | 用户管理      |
 
 ---
 
@@ -130,7 +135,59 @@ zentaopms auth clear
 
 ---
 
-## 二、项目模块
+## 二、项目集模块（Program）
+
+### 项目集列表
+
+```bash
+# 获取项目集列表
+zentaopms program list
+
+# 获取项目集列表（JSON格式）
+zentaopms --json program list
+
+# 限制返回数量
+zentaopms program list -l 10
+
+# 按状态筛选（wait/doing）
+zentaopms program list --status doing
+```
+
+### 项目集详情
+
+```bash
+# 获取项目集详情
+zentaopms program info <program_id>
+
+# JSON 格式
+zentaopms --json program info <program_id>
+```
+
+### 项目集下的项目列表
+
+```bash
+# 获取项目集下的项目列表
+zentaopms program projects -p <program_id>
+
+# JSON 格式
+zentaopms --json program projects -p <program_id>
+```
+
+### 返回字段说明
+
+| 字段      | 说明                    |
+| --------- | ----------------------- |
+| id        | 项目集ID                |
+| name      | 项目集名称              |
+| type      | 类型（program/project） |
+| status    | 状态                    |
+| progress  | 进度百分比              |
+| PM        | 项目经理                |
+| teamCount | 团队成员数              |
+
+---
+
+## 三、项目模块
 
 ### 项目列表
 
@@ -160,22 +217,52 @@ zentaopms --json project info <project_id>
 
 ### 返回字段说明
 
-| 字段 | 说明 |
-|------|------|
-| id | 项目ID |
-| name | 项目名称 |
-| code | 项目代号 |
-| status | 项目状态 |
-| begin | 开始日期 |
-| end | 结束日期 |
-| manager | 项目经理 |
-| totalHours | 总工时 |
-| consumedHours | 已消耗工时 |
-| remainingHours | 剩余工时 |
+| 字段           | 说明       |
+| -------------- | ---------- |
+| id             | 项目ID     |
+| name           | 项目名称   |
+| code           | 项目代号   |
+| status         | 项目状态   |
+| begin          | 开始日期   |
+| end            | 结束日期   |
+| manager        | 项目经理   |
+| totalHours     | 总工时     |
+| consumedHours  | 已消耗工时 |
+| remainingHours | 剩余工时   |
+
+### 项目工时查询
+
+```bash
+# 获取项目工时统计（总体和按执行）
+zentaopms project hours <project_id>
+
+# JSON 格式
+zentaopms --json project hours <project_id>
+```
+
+### 成员工时查询
+
+```bash
+# 获取项目成员工时统计
+zentaopms project member-hours <project_id>
+
+# JSON 格式
+zentaopms --json project member-hours <project_id>
+```
+
+### 工时返回字段说明
+
+| 字段                 | 说明          |
+| -------------------- | ------------- |
+| 预估                 | 预估工时      |
+| 已消耗               | 已消耗工时    |
+| 剩余                 | 剩余工时      |
+| 执行数               | 执行/迭代数量 |
+| 总预估/总消耗/总剩余 | 汇总工时      |
 
 ---
 
-## 三、执行模块（迭代）
+## 四、执行模块（迭代）
 
 ### 执行列表
 
@@ -205,21 +292,65 @@ zentaopms --json execution info <execution_id>
 
 ### 返回字段说明
 
-| 字段 | 说明 |
-|------|------|
-| id | 执行ID |
-| name | 执行名称 |
-| status | 状态（wait/done/doing） |
-| begin | 开始日期 |
-| end | 结束日期 |
-| project | 所属项目ID |
-| totalHours | 总工时 |
-| consumedHours | 已消耗工时 |
-| progress | 进度百分比 |
+| 字段          | 说明                    |
+| ------------- | ----------------------- |
+| id            | 执行ID                  |
+| name          | 执行名称                |
+| status        | 状态（wait/done/doing） |
+| begin         | 开始日期                |
+| end           | 结束日期                |
+| project       | 所属项目ID              |
+| totalHours    | 总工时                  |
+| consumedHours | 已消耗工时              |
+| progress      | 进度百分比              |
 
 ---
 
-## 四、任务模块
+## 四、执行模块（迭代）
+
+### 执行列表
+
+```bash
+# 获取项目的执行列表
+zentaopms execution list -p <project_id>
+
+# JSON 格式
+zentaopms --json execution list -p <project_id>
+
+# 限制返回数量
+zentaopms execution list -p <project_id> -l 5
+
+# 按状态筛选（wait/done/doing）
+zentaopms execution list -p <project_id> --status doing
+```
+
+### 执行详情
+
+```bash
+# 获取执行详情
+zentaopms execution info <execution_id>
+
+# JSON 格式
+zentaopms --json execution info <execution_id>
+```
+
+### 返回字段说明
+
+| 字段          | 说明                    |
+| ------------- | ----------------------- |
+| id            | 执行ID                  |
+| name          | 执行名称                |
+| status        | 状态（wait/done/doing） |
+| begin         | 开始日期                |
+| end           | 结束日期                |
+| project       | 所属项目ID              |
+| totalHours    | 总工时                  |
+| consumedHours | 已消耗工时              |
+| progress      | 进度百分比              |
+
+---
+
+## 五、任务模块
 
 ### 任务列表
 
@@ -255,24 +386,24 @@ zentaopms --json task info <task_id>
 
 ### 返回字段说明
 
-| 字段 | 说明 |
-|------|------|
-| id | 任务ID |
-| name | 任务名称 |
-| status | 状态 |
-| execution | 所属执行ID |
-| project | 所属项目ID |
-| assignedTo | 指派人 |
-| estimate | 预计工时 |
-| consumed | 已消耗工时 |
-| left | 剩余工时 |
-| deadline | 截止日期 |
-| priority | 优先级 |
-| story | 关联需求ID |
+| 字段       | 说明       |
+| ---------- | ---------- |
+| id         | 任务ID     |
+| name       | 任务名称   |
+| status     | 状态       |
+| execution  | 所属执行ID |
+| project    | 所属项目ID |
+| assignedTo | 指派人     |
+| estimate   | 预计工时   |
+| consumed   | 已消耗工时 |
+| left       | 剩余工时   |
+| deadline   | 截止日期   |
+| priority   | 优先级     |
+| story      | 关联需求ID |
 
 ---
 
-## 五、Bug 模块
+## 六、Bug 模块
 
 ### Bug 列表
 
@@ -305,23 +436,23 @@ zentaopms --json bug info <bug_id>
 
 ### 返回字段说明
 
-| 字段 | 说明 |
-|------|------|
-| id | Bug ID |
-| title | Bug 标题 |
-| status | 状态 |
-| severity | 严重程度 |
-| priority | 优先级 |
-| project | 所属项目 |
-| execution | 所属执行 |
-| assignedTo | 指派人 |
-| openedBy | 创建人 |
-| resolvedBy | 解决人 |
+| 字段       | 说明     |
+| ---------- | -------- |
+| id         | Bug ID   |
+| title      | Bug 标题 |
+| status     | 状态     |
+| severity   | 严重程度 |
+| priority   | 优先级   |
+| project    | 所属项目 |
+| execution  | 所属执行 |
+| assignedTo | 指派人   |
+| openedBy   | 创建人   |
+| resolvedBy | 解决人   |
 | resolution | 解决方案 |
 
 ---
 
-## 六、产品模块
+## 七、产品模块
 
 ### 产品列表
 
@@ -361,7 +492,7 @@ zentaopms story list --product <product_id> --status active
 
 ---
 
-## 七、团队模块
+## 八、团队模块
 
 ### 团队成员
 
@@ -375,37 +506,37 @@ zentaopms --json team list -p <project_id>
 
 ### 返回字段说明
 
-| 字段 | 说明 |
-|------|------|
-| id | 成员ID |
-| account | 用户账号 |
-| role | 角色 |
-| team | 团队角色 |
-| hours | 每日工时 |
+| 字段       | 说明     |
+| ---------- | -------- |
+| id         | 成员ID   |
+| account    | 用户账号 |
+| role       | 角色     |
+| team       | 团队角色 |
+| hours      | 每日工时 |
 | joinedDate | 加入日期 |
 
 ---
 
-## 八、通用参数
+## 九、通用参数
 
 ### 输出控制
 
-| 参数 | 说明 |
-|------|------|
-| `--json` | 输出 JSON 格式 |
-| `-l <数量>` | 限制返回结果数量 |
-| `--status <状态>` | 按状态筛选 |
-| `--help` | 查看帮助信息 |
+| 参数              | 说明             |
+| ----------------- | ---------------- |
+| `--json`          | 输出 JSON 格式   |
+| `-l <数量>`       | 限制返回结果数量 |
+| `--status <状态>` | 按状态筛选       |
+| `--help`          | 查看帮助信息     |
 
 ### 状态值参考
 
-| 模块 | 状态值 |
-|------|--------|
+| 模块 | 状态值                           |
+| ---- | -------------------------------- |
 | 项目 | wait/doing/done/suspended/closed |
-| 执行 | wait/doing/done |
-| 任务 | wait/doing/done/cancel/closed |
-| Bug | active/resolved/closed |
-| 需求 | draft/active/closed |
+| 执行 | wait/doing/done                  |
+| 任务 | wait/doing/done/cancel/closed    |
+| Bug  | active/resolved/closed           |
+| 需求 | draft/active/closed              |
 
 ---
 
