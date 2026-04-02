@@ -447,6 +447,9 @@ function formatRunStatus(status: string): { label: string; tone: RunListEntryVie
   if (status === "running") {
     return { label: "执行中", tone: "amber" };
   }
+  if (status === "interrupted") {
+    return { label: "已中断", tone: "slate" };
+  }
   return { label: "等待中", tone: "slate" };
 }
 

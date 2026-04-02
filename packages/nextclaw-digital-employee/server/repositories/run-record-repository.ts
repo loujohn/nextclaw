@@ -108,6 +108,19 @@ export class RunRecordRepository {
     return toRunRecordView(record as RunRecord);
   }
 
+  /**
+   * On server startup, mark all stuck "running" runs as "interrupted".
+   * These are runs that were in-flight when the server crashed or restarted.
+   * Returns the number of runs recovered.
+   */
+  async recoverRunningRuns(): Promise<number> {
+    const finishedAt = new Date().toISOString();
+    const count = await this.db<RunRecord>(PLATFORM_TABLES.runRecords)
+      .where({ status: RunStatus.Running })
+      .update({ status: RunStatus.Interrupted, finished_at: finishedAt });
+    return count;
+  }
+
   async listByEmployeeId(employeeId: string): Promise<RunRecordView[]> {
     const rows = await this.db<RunRecord>(PLATFORM_TABLES.runRecords)
       .where({ employee_id: employeeId })

@@ -320,7 +320,6 @@ async function saveEmployeeEdit() {
       method: "PATCH",
       body: {
         name: editForm.name,
-        code: editForm.code,
         description: editForm.description,
         systemPrompt: editForm.systemPrompt,
         model: editForm.model || undefined,
@@ -389,6 +388,19 @@ function getDeptName(deptId: string | null): string | null {
   if (!deptId) return null;
   return departments.value.find(d => d.id === deptId)?.name ?? null;
 }
+
+// Auto-refresh employee list every 30 seconds so activity status stays up to date
+// without requiring manual navigation.
+let _refreshTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  // _refreshTimer = setInterval(() => { void refresh(); }, 30_000);
+});
+onUnmounted(() => {
+  if (_refreshTimer !== null) {
+    clearInterval(_refreshTimer);
+    _refreshTimer = null;
+  }
+});
 
 
 </script>
