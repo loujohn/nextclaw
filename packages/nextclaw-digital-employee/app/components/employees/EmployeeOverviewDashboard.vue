@@ -111,7 +111,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
       <div class="overview-stats__body">
         <div class="overview-stats__value">{{ employeeCount }} <span class="overview-stats__unit">数字员工</span></div>
         <div class="overview-stats__meta">
-          <span>数字化率 {{ digitalEmployeeCoverage }}%</span>
+          <!-- <span>数字化率 {{ digitalEmployeeCoverage }}%</span> -->
           <span>今日活跃 {{ activeDigitalEmployees }}</span>
         </div>
       </div>
@@ -126,7 +126,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
       </svg>
       <div class="overview-stats__body">
         <div class="overview-stats__value overview-stats__value--dark">{{ totalHumanCount }} <span class="overview-stats__unit">实体员工</span></div>
-        <div class="overview-stats__meta overview-stats__meta--muted">分布在 {{ departments.length }} 个部门</div>
+        <!-- <div class="overview-stats__meta overview-stats__meta--muted">分布在 {{ departments.length }} 个部门</div> -->
       </div>
     </div>
 
@@ -233,7 +233,7 @@ const orgChartTree = computed<OrgChartNode[]>(() => {
               <div class="org-dept-stat org-dept-stat--digital">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /></svg>
                 <span class="org-dept-stat__value">{{ node.digitalCount }}</span>
-                <span class="org-dept-stat__label">数字</span>
+                <span class="org-dept-stat__label">数字员工</span>
               </div>
             </div>
             <div class="org-dept-card__ratio">

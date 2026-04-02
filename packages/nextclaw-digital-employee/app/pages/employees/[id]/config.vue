@@ -142,11 +142,28 @@ watchEffect(() => {
     if (first) selectedFilename.value = first.filename;
   }
 });
+
+const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div class="space-y-4">
+    <!-- ── Tab 导航 ──────────────────────────────────────────────────── -->
+    <nav class="flex gap-2">
+      <button
+        class="rounded-full px-4 py-2 text-sm font-medium transition-colors"
+        :class="configTab === 'dingtalk' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:text-foreground'"
+        @click="configTab = 'dingtalk'"
+      >钉钉入口</button>
+      <button
+        class="rounded-full px-4 py-2 text-sm font-medium transition-colors"
+        :class="configTab === 'workspace' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:text-foreground'"
+        @click="configTab = 'workspace'"
+      >工作空间</button>
+    </nav>
+
     <!-- ── 钉钉配置 ──────────────────────────────────────────────────── -->
+    <template v-if="configTab === 'dingtalk'">
     <section v-if="dingtalkConfig?.data && dingtalkBinding?.data" class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
@@ -209,9 +226,13 @@ watchEffect(() => {
         </div>
       </div>
     </section>
+    <div v-else class="rounded-xl border border-border bg-card shadow-sm px-6 py-10 text-center text-sm text-muted-foreground">
+      钉钉渠道未配置，请先在集成中心启用钉钉机器人。
+    </div>
+    </template>
 
     <!-- ── 工作空间文件 ──────────────────────────────────────────────── -->
-    <section class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <section v-if="configTab === 'workspace'" class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
           <span class="section-label">工作空间</span>
