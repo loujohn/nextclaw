@@ -74,13 +74,15 @@ def list_projects(token):
     return fetch(url, token, TIMEOUT)
 
 
-def query_work_hours(token, project_code, start_day, end_day):
+def query_work_hours(token, project_code=None, start_day=None, end_day=None):
     url = f"{PM_BASE_URL}/admin/project/workHour/getProjectUserWorkHour"
-    form_data = {
-        "projectCode": project_code,
-        "startDay": start_day,
-        "endDay": end_day,
-    }
+    form_data = {}
+    if project_code:
+        form_data["projectCode"] = project_code
+    if start_day:
+        form_data["startDay"] = start_day
+    if end_day:
+        form_data["endDay"] = end_day
     return post_form(url, form_data, TIMEOUT, token)
 
 
@@ -93,9 +95,9 @@ def main():
     subparsers.add_parser("list", help="列出所有项目")
 
     query_parser = subparsers.add_parser("query", help="查询项目人员工时")
-    query_parser.add_argument("projectCode", help="项目编号")
-    query_parser.add_argument("startDay", help="开始日期 (YYYY-MM-DD)")
-    query_parser.add_argument("endDay", help="结束日期 (YYYY-MM-DD)")
+    query_parser.add_argument("projectCode", nargs="?", help="项目编号 (可选)")
+    query_parser.add_argument("startDay", nargs="?", help="开始日期 (YYYY-MM-DD, 可选)")
+    query_parser.add_argument("endDay", nargs="?", help="结束日期 (YYYY-MM-DD, 可选)")
 
     args = parser.parse_args()
 

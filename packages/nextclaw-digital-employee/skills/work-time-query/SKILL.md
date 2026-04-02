@@ -23,7 +23,20 @@ python skills/work-time-query/scripts/work-time-query.py list
 ### 查询项目人员工时
 
 ```bash
-python skills/work-time-query/scripts/work-time-query.py query <projectCode> <startDay> <endDay>
+python skills/work-time-query/scripts/work-time-query.py query [projectCode] [startDay] [endDay]
+```
+
+示例：
+
+```bash
+# 查询所有项目列表
+python skills/work-time-query/scripts/work-time-query.py list
+
+# 查询指定项目的人员工时
+python skills/work-time-query/scripts/work-time-query.py query XM202508125040 2026-04-01 2026-04-02
+
+# 不填参数则查询全部
+python skills/work-time-query/scripts/work-time-query.py query
 ```
 
 示例：
@@ -61,7 +74,7 @@ python skills/work-time-query/scripts/work-time-query.py query XM202508125040 20
 
 - **URL**: `POST {PM_BASE_URL}/admin/project/workHour/getProjectUserWorkHour`
 - **认证**: Bearer Token
-- **请求体**:
+- **请求体** (所有字段可选):
 
 ```json
 {
