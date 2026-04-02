@@ -16,36 +16,15 @@ metadata:
 
 **必须先阅读 [mcporter 技能](../mcporter/SKILL.md)，确保 mcporter 已安装。**
 
-## 环境变量
-
-| 变量          | 说明                       | 示例                                                              |
-| ------------- | -------------------------- | ----------------------------------------------------------------- |
-| PM_MCP_URL    | MCP 服务 SSE 端点地址      | `http://mcp.business-management-assistant.dev.dcginner:10003/sse` |
-| PM_BASE_URL   | 基础 URL（用于获取 Token） | `http://shangji.dcg-internal-services.dev.dcginner:10003/api`     |
-| PM_USERNAME   | API 用户名                 | `admin`                                                           |
-| PM_PASSWORD   | API 密码                   | `Dcg@123456`                                                      |
-| PM_BASIC_AUTH | Basic 认证凭证             | `Basic dGVzdDp0ZXN0`                                              |
-
 ## 使用方法
 
-### 1. 设置环境变量
-
-```bash
-# Windows
-set PM_MCP_URL=http://mcp.business-management-assistant.dev.dcginner:10003/sse
-set PM_BASE_URL=http://shangji.dcg-internal-services.dev.dcginner:10003/api
-set PM_USERNAME=admin
-set PM_PASSWORD=Dcg@123456
-set PM_BASIC_AUTH=Basic dGVzdDp0ZXN0
-```
-
-### 2. 列出可用工具
+### 列出可用工具
 
 ```bash
 python skills/business-management-analysis/scripts/bm-query.py list
 ```
 
-### 3. 调用 MCP 工具
+### 调用 MCP 工具
 
 ```bash
 python skills/business-management-analysis/scripts/bm-query.py call <工具名> [参数]
