@@ -67,6 +67,23 @@ def post_json(url, json_data, token, timeout):
         raise Exception(f"请求失败: {e}")
 
 
+def post_json(url, json_data, token, timeout):
+    """发送POST JSON请求"""
+    data = json.dumps(json_data).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "nextclaw-work-time-query/1.0",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        raise Exception(f"请求失败: {e}")
+
+
 def get_token():
     if not PM_BASE_URL:
         raise Exception("PM_BASE_URL 环境变量未设置")
@@ -99,7 +116,21 @@ def query_work_hours(token, project_code=None, start_day=None, end_day=None):
         form_data["startDay"] = start_day
     if end_day:
         form_data["endDay"] = end_day
-    return post_form(url, form_data, TIMEOUT, token)
+
+    # 需要带 token 的 POST 请求
+    data = json.dumps(form_data).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "nextclaw-work-time-query/1.0",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT / 1000) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        raise Exception(f"请求失败：{e}")
 
 
 def main():
