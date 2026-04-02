@@ -207,6 +207,13 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         automationService,
         gateway
       );
+      // Recover stuck "running" runs from before this server session.
+      // Without this, employees whose last run was in-flight during a crash/restart
+      // would show "离线" forever (finishedAt stays null).
+      const recoveredRuns = await runRepo.recoverRunningRuns();
+      if (recoveredRuns > 0) {
+        logger.info(`Recovered ${recoveredRuns} interrupted run(s) from previous session`);
+      }
       await channelRuntime.start();
       await automationService.start();
       return {

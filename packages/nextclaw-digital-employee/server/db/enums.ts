@@ -10,6 +10,7 @@ export const RunStatus = {
   Running: "running",
   Completed: "completed",
   Failed: "failed",
+  Interrupted: "interrupted",
 } as const;
 export type RunStatus = (typeof RunStatus)[keyof typeof RunStatus];
 

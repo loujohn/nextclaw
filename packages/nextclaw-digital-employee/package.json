@@ -26,6 +26,7 @@
     "https-proxy-agent": "^8.0.0",
     "knex": "^3.1.0",
     "lucide-vue-next": "^0.577.0",
+    "markdown-it": "^14.1.1",
     "minipass": "^7.0.0",
     "node-cron": "^3.0.3",
     "nuxt": "^4.3.1",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^20.17.6",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",

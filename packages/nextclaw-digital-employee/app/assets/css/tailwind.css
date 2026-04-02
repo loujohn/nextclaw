@@ -134,6 +134,81 @@
     @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
   }
 
+  .chat-bubble-assistant pre {
+    @apply my-2 overflow-x-auto rounded-lg bg-foreground/5 p-3;
+  }
+
+  .chat-bubble-assistant pre code {
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  .chat-bubble-assistant :not(pre) > code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  }
+
+  .chat-bubble-assistant ul {
+    @apply my-1.5 space-y-1 pl-4;
+  }
+
+  .chat-bubble-assistant ul li {
+    @apply list-disc text-sm text-foreground;
+  }
+
+  .chat-bubble-assistant ol {
+    @apply my-1.5 space-y-1 pl-5;
+  }
+
+  .chat-bubble-assistant ol li {
+    @apply list-decimal text-sm text-foreground;
+  }
+
+  .chat-bubble-assistant p {
+    @apply my-1.5;
+  }
+
+  .chat-bubble-assistant blockquote {
+    @apply my-2 border-l-2 border-primary/30 pl-3 text-muted-foreground;
+  }
+
+  .chat-bubble-assistant h1 {
+    @apply my-2 text-lg font-semibold;
+  }
+
+  .chat-bubble-assistant h2 {
+    @apply my-2 text-base font-semibold;
+  }
+
+  .chat-bubble-assistant h3,
+  .chat-bubble-assistant h4,
+  .chat-bubble-assistant h5,
+  .chat-bubble-assistant h6 {
+    @apply my-1.5 text-sm font-semibold;
+  }
+
+  .chat-bubble-assistant a {
+    @apply underline decoration-primary/40 underline-offset-2 hover:text-primary;
+  }
+
+  .chat-bubble-assistant table {
+    @apply my-2 min-w-full border-collapse overflow-hidden rounded-lg text-xs;
+  }
+
+  .chat-bubble-assistant thead {
+    @apply bg-muted/50;
+  }
+
+  .chat-bubble-assistant th {
+    @apply border-b border-border px-3 py-2 font-semibold;
+  }
+
+  .chat-bubble-assistant td {
+    @apply border-t border-border px-3 py-2;
+  }
+
+  .chat-bubble-assistant hr {
+    @apply my-3 border-border;
+  }
+
   .chat-bubble-assistant .code-block .code-lang {
     @apply absolute right-2 top-1.5 text-[10px] font-medium uppercase text-muted-foreground;
   }
@@ -164,6 +239,81 @@
 
   .result-card-md .code-block {
     @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
+  }
+
+  .result-card-md pre {
+    @apply my-2 overflow-x-auto rounded-lg bg-foreground/5 p-3;
+  }
+
+  .result-card-md pre code {
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  .result-card-md :not(pre) > code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  }
+
+  .result-card-md ul {
+    @apply my-1.5 space-y-1 pl-4;
+  }
+
+  .result-card-md ul li {
+    @apply list-disc text-sm;
+  }
+
+  .result-card-md ol {
+    @apply my-1.5 space-y-1 pl-5;
+  }
+
+  .result-card-md ol li {
+    @apply list-decimal text-sm;
+  }
+
+  .result-card-md p {
+    @apply my-1.5;
+  }
+
+  .result-card-md blockquote {
+    @apply my-2 border-l-2 border-primary/30 pl-3 text-muted-foreground;
+  }
+
+  .result-card-md h1 {
+    @apply my-2 text-lg font-semibold;
+  }
+
+  .result-card-md h2 {
+    @apply my-2 text-base font-semibold;
+  }
+
+  .result-card-md h3,
+  .result-card-md h4,
+  .result-card-md h5,
+  .result-card-md h6 {
+    @apply my-1.5 text-sm font-semibold;
+  }
+
+  .result-card-md a {
+    @apply underline decoration-primary/40 underline-offset-2 hover:text-primary;
+  }
+
+  .result-card-md table {
+    @apply my-2 min-w-full border-collapse overflow-hidden rounded-lg text-xs;
+  }
+
+  .result-card-md thead {
+    @apply bg-muted/50;
+  }
+
+  .result-card-md th {
+    @apply border-b border-border px-3 py-2 font-semibold;
+  }
+
+  .result-card-md td {
+    @apply border-t border-border px-3 py-2;
+  }
+
+  .result-card-md hr {
+    @apply my-3 border-border;
   }
 
   .result-card-md .code-block .code-lang {
@@ -198,6 +348,81 @@
     @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
   }
 
+  .run-detail-md pre {
+    @apply my-2 overflow-x-auto rounded-lg bg-foreground/5 p-3;
+  }
+
+  .run-detail-md pre code {
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  .run-detail-md :not(pre) > code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground;
+  }
+
+  .run-detail-md ul {
+    @apply my-1.5 space-y-1 pl-4;
+  }
+
+  .run-detail-md ul li {
+    @apply list-disc text-sm;
+  }
+
+  .run-detail-md ol {
+    @apply my-1.5 space-y-1 pl-5;
+  }
+
+  .run-detail-md ol li {
+    @apply list-decimal text-sm;
+  }
+
+  .run-detail-md p {
+    @apply my-1.5;
+  }
+
+  .run-detail-md blockquote {
+    @apply my-2 border-l-2 border-primary/30 pl-3 text-muted-foreground;
+  }
+
+  .run-detail-md h1 {
+    @apply my-2 text-lg font-semibold;
+  }
+
+  .run-detail-md h2 {
+    @apply my-2 text-base font-semibold;
+  }
+
+  .run-detail-md h3,
+  .run-detail-md h4,
+  .run-detail-md h5,
+  .run-detail-md h6 {
+    @apply my-1.5 text-sm font-semibold;
+  }
+
+  .run-detail-md a {
+    @apply underline decoration-primary/40 underline-offset-2 hover:text-primary;
+  }
+
+  .run-detail-md table {
+    @apply my-2 min-w-full border-collapse overflow-hidden rounded-lg text-xs;
+  }
+
+  .run-detail-md thead {
+    @apply bg-muted/50;
+  }
+
+  .run-detail-md th {
+    @apply border-b border-border px-3 py-2 font-semibold;
+  }
+
+  .run-detail-md td {
+    @apply border-t border-border px-3 py-2;
+  }
+
+  .run-detail-md hr {
+    @apply my-3 border-border;
+  }
+
   .run-detail-md .code-block .code-lang {
     @apply absolute right-2 top-1.5 text-[10px] font-medium uppercase text-muted-foreground;
   }
@@ -224,6 +449,105 @@
 
   .run-detail-md strong {
     @apply font-semibold;
+  }
+
+  .chat-bubble-assistant .md-ol,
+  .result-card-md .md-ol,
+  .run-detail-md .md-ol {
+    @apply my-1.5 space-y-1 pl-5;
+  }
+
+  .chat-bubble-assistant .md-oli,
+  .result-card-md .md-oli,
+  .run-detail-md .md-oli {
+    @apply list-decimal text-sm;
+  }
+
+  .chat-bubble-assistant .md-link,
+  .result-card-md .md-link,
+  .run-detail-md .md-link {
+    @apply underline decoration-primary/40 underline-offset-2 hover:text-primary;
+  }
+
+  .chat-bubble-assistant .md-p,
+  .result-card-md .md-p,
+  .run-detail-md .md-p {
+    @apply my-1.5;
+  }
+
+  .chat-bubble-assistant .md-blockquote,
+  .result-card-md .md-blockquote,
+  .run-detail-md .md-blockquote {
+    @apply my-2 border-l-2 border-primary/30 pl-3 text-muted-foreground;
+  }
+
+  .chat-bubble-assistant .md-h1,
+  .result-card-md .md-h1,
+  .run-detail-md .md-h1 {
+    @apply my-2 text-lg font-semibold;
+  }
+
+  .chat-bubble-assistant .md-h2,
+  .result-card-md .md-h2,
+  .run-detail-md .md-h2 {
+    @apply my-2 text-base font-semibold;
+  }
+
+  .chat-bubble-assistant .md-h3,
+  .result-card-md .md-h3,
+  .run-detail-md .md-h3,
+  .chat-bubble-assistant .md-h4,
+  .result-card-md .md-h4,
+  .run-detail-md .md-h4,
+  .chat-bubble-assistant .md-h5,
+  .result-card-md .md-h5,
+  .run-detail-md .md-h5,
+  .chat-bubble-assistant .md-h6,
+  .result-card-md .md-h6,
+  .run-detail-md .md-h6 {
+    @apply my-1.5 text-sm font-semibold;
+  }
+
+  .chat-bubble-assistant .md-table-wrap,
+  .result-card-md .md-table-wrap,
+  .run-detail-md .md-table-wrap {
+    @apply my-2 overflow-x-auto rounded-lg border border-border;
+  }
+
+  .chat-bubble-assistant .md-table,
+  .result-card-md .md-table,
+  .run-detail-md .md-table {
+    @apply min-w-full border-collapse text-xs;
+  }
+
+  .chat-bubble-assistant .md-th,
+  .result-card-md .md-th,
+  .run-detail-md .md-th {
+    @apply border-b border-border bg-muted/50 px-3 py-2 font-semibold;
+  }
+
+  .chat-bubble-assistant .md-td,
+  .result-card-md .md-td,
+  .run-detail-md .md-td {
+    @apply border-t border-border px-3 py-2;
+  }
+
+  .chat-bubble-assistant .md-align-left,
+  .result-card-md .md-align-left,
+  .run-detail-md .md-align-left {
+    @apply text-left;
+  }
+
+  .chat-bubble-assistant .md-align-center,
+  .result-card-md .md-align-center,
+  .run-detail-md .md-align-center {
+    @apply text-center;
+  }
+
+  .chat-bubble-assistant .md-align-right,
+  .result-card-md .md-align-right,
+  .run-detail-md .md-align-right {
+    @apply text-right;
   }
 
   .typing-dots span {

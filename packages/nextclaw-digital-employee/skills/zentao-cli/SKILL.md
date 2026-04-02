@@ -1,6 +1,6 @@
 ---
 name: zentao-cli
-name_zh: 禅道 CLI
+name_zh: 禅道基础工具
 description: "禅道项目管理系统的命令行工具使用指南，支持项目、执行/迭代、任务、Bug、产品、团队等模块的查询操作。当需要从禅道获取项目数据、任务列表、Bug 统计或团队信息时使用。"
 metadata:
   nextclaw:
@@ -8,9 +8,9 @@ metadata:
     category: "project-management"
 ---
 
-# 禅道 CLI 技能
+# 禅道基础工具
 
-禅道 CLI（zentaopms）命令行工具的使用指南，支持项目、执行、任务、Bug 等数据的查询操作。
+禅道基础工具（zentaopms）命令行工具的使用指南，支持项目、执行、任务、Bug 等数据的查询操作。
 
 ## 快速开始
 
@@ -22,12 +22,14 @@ metadata:
 
 ### 认证配置
 
+> ⚠️ **注意**：密码中如有特殊字符（如 `$`、`&`、`*` 等），必须用单引号 `''` 包裹，否则会被 shell 解析导致认证失败。
+
 ```bash
 # 检查认证状态
 zentaopms auth status
 
 # 设置认证（URL需包含协议，如 https://xxx.com）
-zentaopms auth setup --url <禅道地址> --username <账号> --password <密码>
+zentaopms auth setup --url <禅道地址> --username <账号> --password '<密码>'
 ```
 
 ### 输出格式
@@ -73,7 +75,7 @@ zentaopms auth setup --url <禅道地址> --username <账号> --password <密码
 
 ### 认证脚本
 
-禅道CLI技能中包含认证脚本，可自动使用预设的禅道地址、账号、密码进行认证：
+禅道基础工具中包含认证脚本，可自动使用预设的禅道地址、账号、密码进行认证：
 
 ```bash
 # 认证脚本位置
@@ -122,7 +124,7 @@ python skills/zentao-cli/scripts/auth.py
 zentaopms auth status
 
 # 设置认证信息
-zentaopms auth setup --url <禅道地址> --username <账号> --password <密码>
+zentaopms auth setup --url <禅道地址> --username <账号> --password '<密码>'
 
 # 清除认证
 zentaopms auth clear
@@ -594,7 +596,7 @@ zentaopms --json bug list -p 1 --status resolved
 
 ```bash
 # 解决方案：先进行认证设置
-zentaopms auth setup --url https://your-zentao.com --username your-account --password your-password
+zentaopms auth setup --url https://your-zentao.com --username your-account --password 'your-password'
 ```
 
 ### Q: 输出结果太多，如何只获取前几条？
@@ -622,7 +624,7 @@ zentaopms task --help
 ```bash
 # 方案一：设置环境变量跳过SSL验证（不推荐用于生产环境）
 set NODE_TLS_REJECT_UNAUTHORIZED=0
-zentaopms auth setup --url https://your-zentao.com --username your-account --password your-password
+zentaopms auth setup --url https://your-zentao.com --username your-account --password 'your-password'
 
 # 方案二：Windows系统设置持久环境变量
 setx NODE_TLS_REJECT_UNAUTHORIZED=0
@@ -633,5 +635,5 @@ setx NODE_TLS_REJECT_UNAUTHORIZED=0
 ```bash
 # 如果禅道使用自签名证书，可通过设置CA证书解决
 set NODE_EXTRA_CA_CERTS=/path/to/ca-cert.pem
-zentaopms auth setup --url https://your-zentao.com --username your-account --password your-password
+zentaopms auth setup --url https://your-zentao.com --username your-account --password 'your-password'
 ```

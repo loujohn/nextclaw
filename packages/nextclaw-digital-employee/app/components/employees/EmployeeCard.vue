@@ -5,7 +5,7 @@ type EmployeeCardData = {
   name: string;
   description: string;
   enabledJobsCount: number;
-  latestRun?: { finishedAt: string | null } | null;
+  latestRun?: { status?: string; finishedAt: string | null } | null;
 };
 
 const props = defineProps<{
@@ -42,6 +42,9 @@ function getAvatarGradient(name: string): string {
 type ActivityStatus = { text: string; color: string; dotColor: string };
 
 function getActivityStatus(emp: EmployeeCardData): ActivityStatus {
+  if (emp.latestRun?.status === "running") {
+    return { text: "运行中", color: "#6366f1", dotColor: "#6366f1" };
+  }
   const finishedAt = emp.latestRun?.finishedAt;
   if (!finishedAt) {
     return { text: "离线", color: "#94a3b8", dotColor: "#94a3b8" };
