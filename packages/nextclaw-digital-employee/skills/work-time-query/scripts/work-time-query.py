@@ -4,6 +4,7 @@ import sys
 import io
 import os
 import json
+import argparse
 import urllib.request
 import urllib.parse
 
@@ -11,24 +12,21 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 PM_BASE_URL = os.environ.get("PM_BASE_URL", "")
+TIMEOUT = int(os.environ.get("PM_TIMEOUT", "600000"))
+BASIC_AUTH = os.environ.get("PM_BASIC_AUTH", "")
 API_USERNAME = os.environ.get("PM_USERNAME", "admin")
 API_PASSWORD = os.environ.get("PM_PASSWORD", "")
-BASIC_AUTH = os.environ.get("PM_BASIC_AUTH", "")
-TIMEOUT = int(os.environ.get("PM_TIMEOUT", "120000"))
 
 
-def post_form(url, form_data, timeout, token=None):
-    data = urllib.parse.urlencode(form_data).encode("utf-8") if form_data else None
+def post_form(url, form_data, timeout):
+    """发送POST表单请求"""
+    data = urllib.parse.urlencode(form_data).encode("utf-8")
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": BASIC_AUTH,
         "Accept": "application/json",
         "User-Agent": "nextclaw-work-time-query/1.0",
     }
-    if BASIC_AUTH:
-        headers["Authorization"] = BASIC_AUTH
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
     req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
@@ -38,12 +36,30 @@ def post_form(url, form_data, timeout, token=None):
 
 
 def fetch(url, token, timeout):
+    """发送GET请求"""
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {token}",
         "User-Agent": "nextclaw-work-time-query/1.0",
     }
     req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        raise Exception(f"请求失败: {e}")
+
+
+def post_json(url, json_data, token, timeout):
+    """发送POST JSON请求"""
+    data = json.dumps(json_data).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "nextclaw-work-time-query/1.0",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -87,8 +103,6 @@ def query_work_hours(token, project_code=None, start_day=None, end_day=None):
 
 
 def main():
-    import argparse
-
     parser = argparse.ArgumentParser(description="工时查询")
     subparsers = parser.add_subparsers(dest="command")
 
