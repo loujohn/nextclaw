@@ -121,7 +121,28 @@
 
   **收益**：3 次 SQL → 2 次 SQL（1 JOIN + 1 count），消除全量查询。
 
-### 6. `/api/employees` 无分页
+### 6. `/api/skills` 全量加载 — 技能页和创建页均存在
+
+- **现状**：`server/api/skills/index.get.ts` 每次请求执行 4 次查询：
+  1. `gateway.listAvailableSkills()` — 扫描全部可用技能
+  2. `skillInstallationRepo.list()` — 查全部安装记录
+  3. `employeeRepo.list()` — 查全部员工（仅为了名称映射）
+  4. `employeeSkillRepo.listAll()` — 查全部技能绑定关系
+
+  然后通过 `buildSkillCatalogEntries` 在应用层做交叉映射，返回完整的技能目录（包含 `usedBy`、`statusLabel`、`purpose`、`categoryLabel` 等衍生字段）。
+
+  技能列表页（`skills/index.vue`、`skills/[category].vue`）和员工创建/编辑表单（`EmployeeFormSlideOver.vue`）都调用此接口。
+- **影响**：
+  - 每次打开技能页或创建员工都执行 4 次全量查询 + 应用层拼装
+  - 技能列表页其实只需要 `name`、`nameZh`、`categoryLabel`、`enabled`、`usageCount`
+  - 员工创建表单只需要 `name`、`nameZh`、`enabled`
+  - `usedBy`（使用该技能的员工名称列表）在列表页不展示，仅详情/分类页用到
+- **建议**：
+  - 方案 A：分层接口 — 新增轻量 `/api/skills/summary` 返回列表页所需最小字段，完整数据保留在 `/api/skills`
+  - 方案 B：服务端缓存 — 技能变化低频，可加 TTL 缓存（类似 human-employees 的方案）
+  - 方案 C：去掉 employeeRepo.list() 调用 — 在 skill bindings 查询中 JOIN employees 表直接取 name，避免全量员工查询
+
+### 7. `/api/employees` 无分页
 
 - **现状**：列表接口返回全部数字员工数据，无分页支持。
 - **影响**：短期内数字员工数量有限（通常 < 50），暂无影响；但随规模增长会成为瓶颈。
@@ -131,7 +152,7 @@
 
 ## P2 — 代码质量
 
-### 7. TypeScript 检查关闭 + 4 个预存类型错误
+### 8. TypeScript 检查关闭 + 4 个预存类型错误
 
 - **现状**：`nuxt.config.ts` 中 `typeCheck: false`，存在 4 个未修复的类型错误：
   - 3 个 `LocationQueryValue` 错误（`employees/index.vue`）— `route.query` 值类型不匹配
@@ -139,7 +160,7 @@
 - **影响**：新引入的类型错误无法在开发阶段被发现，需依赖构建阶段报错。
 - **建议**：修复这 4 个错误并开启 `typeCheck: true`。
 
-### 8. 死代码
+### 9. 死代码
 
 - **现状**：`employees/index.vue` 中存在被注释掉的定时刷新逻辑 + 空的 onMounted/onUnmounted 钩子：
   ```
@@ -179,12 +200,13 @@
 5. 提取 API payload 类型到 shared/api-types.ts
 6. 拆分 dingtalk-config.ts
 7. `/api/runs` JOIN 优化（方案已在上方第 5 点详细列出）
+8. `/api/skills` 优化：缓存或分层接口（方案已在上方第 6 点详细列出）
 
 ### 长期规划
 
-8. Pinia store 管理共享状态
-9. 核心服务层单元测试
-10. security 页面接入真实后端
+9. Pinia store 管理共享状态
+10. 核心服务层单元测试
+11. security 页面接入真实后端
 
 ---
 
