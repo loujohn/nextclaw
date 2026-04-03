@@ -95,7 +95,10 @@ function onFormSubmit() {
     return;
   }
   touched.departmentId = true;
-  if (!props.form.departmentId) return;
+  if (!props.form.departmentId) {
+    currentStep.value = 0;
+    return;
+  }
   emit("submit");
 }
 </script>

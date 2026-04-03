@@ -328,7 +328,7 @@ async function saveEmployeeEdit() {
         name: editForm.name,
         description: editForm.description,
         systemPrompt: editForm.systemPrompt,
-        model: editForm.model || undefined,
+        model: editForm.model,
         departmentId: editForm.departmentId,
         skillNames: editForm.skillNames,
         scheduleKind: editForm.scheduleKind,
