@@ -111,6 +111,44 @@ def call_tool(tool_name, args=None):
         print(result.stdout)
 
 
+def call_all():
+    if not PM_MCP_URL:
+        print("错误: PM_MCP_URL 环境变量未设置", file=sys.stderr)
+        sys.exit(1)
+
+    token = get_token()
+    tools = [
+        ("stageCount", "token=" + token),
+        ("forewarn", "token=" + token),
+        ("businessDataStatistics", "token=" + token),
+        ("allCollect", "timeFlag=4 token=" + token),
+        ("payCondition", "timeFlag=4 token=" + token),
+        ("chanceStatistics", "timeFlag=1 token=" + token),
+        ("selfBuildYear", "timeFlag=1 token=" + token),
+    ]
+
+    results = {}
+    for tool_name, args in tools:
+        cmd = f"mcporter call {tool_name} {args} --http-url {PM_MCP_URL} --allow-http"
+        result = subprocess.run(
+            cmd,
+            shell=_is_windows,
+            capture_output=True,
+            text=True,
+            encoding="utf-8" if _is_windows else None,
+            errors="replace" if _is_windows else None,
+        )
+        if result.returncode == 0:
+            try:
+                results[tool_name] = json.loads(result.stdout)
+            except:
+                results[tool_name] = result.stdout
+        else:
+            results[tool_name] = {"error": result.stderr}
+
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+
+
 def main():
     import argparse
 
@@ -123,6 +161,8 @@ def main():
     call_parser.add_argument("tool", help="工具名称")
     call_parser.add_argument("args", nargs="?", help="参数(可选)")
 
+    subparsers.add_parser("all", help="一次性获取所有经营数据")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -132,6 +172,7 @@ def main():
         print("  python bm-query.py call businessDataStatistics")
         print("  python bm-query.py call allCollect timeFlag=4")
         print("  python bm-query.py call forewarn")
+        print("  python bm-query.py all")
         sys.exit(0)
 
     try:
@@ -139,6 +180,8 @@ def main():
             list_tools()
         elif args.command == "call":
             call_tool(args.tool, args.args)
+        elif args.command == "all":
+            call_all()
     except Exception as e:
         print(f"失败: {e}", file=sys.stderr)
         sys.exit(1)
