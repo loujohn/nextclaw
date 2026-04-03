@@ -16,6 +16,10 @@ API_PASSWORD = os.environ.get("PM_PASSWORD", "")
 BASIC_AUTH = os.environ.get("PM_BASIC_AUTH", "")
 TIMEOUT = int(os.environ.get("PM_TIMEOUT", "120000"))
 
+import platform
+
+_is_windows = platform.system() == "Windows"
+
 
 def post_form(url, form_data, timeout):
     import urllib.request
@@ -59,9 +63,12 @@ def list_tools():
         sys.exit(1)
 
     result = subprocess.run(
-        ["mcporter", "list", "--http-url", PM_MCP_URL, "--allow-http"],
+        "mcporter list --http-url " + PM_MCP_URL + " --allow-http",
+        shell=_is_windows,
         capture_output=True,
         text=True,
+        encoding="utf-8" if _is_windows else None,
+        errors="replace" if _is_windows else None,
     )
     if result.returncode != 0:
         print(f"错误: {result.stderr}", file=sys.stderr)
@@ -77,14 +84,21 @@ def call_tool(tool_name, args=None):
     token = get_token()
 
     # 构建参数
-    params = f"token: '{token}'"
+    params = f"token={token}"
     if args:
-        params = f"{args}, {params}"
+        params = f"{args} {params}"
 
-    # 使用 URL 格式调用
-    cmd = f'mcporter call "{PM_MCP_URL}.{tool_name}({params})" --allow-http'
+    # 使用 server.tool 格式 + --http-url
+    cmd = f"mcporter call {tool_name} {params} --http-url {PM_MCP_URL} --allow-http"
 
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        shell=_is_windows,
+        capture_output=True,
+        text=True,
+        encoding="utf-8" if _is_windows else None,
+        errors="replace" if _is_windows else None,
+    )
 
     if result.returncode != 0:
         print(f"调用失败: {result.stderr}", file=sys.stderr)

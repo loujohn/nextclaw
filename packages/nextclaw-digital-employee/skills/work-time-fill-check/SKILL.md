@@ -1,6 +1,6 @@
 ---
-name: work-time-check
-name_zh: 工时检查
+name: work-time-fill-check
+name_zh: 工时填报检查
 description: "获取团队成员工时填写情况，识别未填工时人员并生成通知内容。当需要检查工时填报情况、催促填写工时、或生成工时统计报告时使用。"
 metadata:
   nextclaw:
@@ -8,7 +8,7 @@ metadata:
     category: "project-management"
 ---
 
-# 工时检查技能
+# 工时填报检查技能
 
 获取团队成员工时填写情况数据，供 Agent 分析和通知使用。
 
@@ -19,7 +19,7 @@ metadata:
 ## 使用方法
 
 ```bash
-python skills/work-time-check/scripts/work-time-check.py --output --per-user --per-leader
+python skills/work-time-fill-check/scripts/work-time-fill-check.py --output --per-user --per-leader
 ```
 
 ### 命令行选项
@@ -89,21 +89,21 @@ Agent 执行工时检查任务的完整流程：
 
 2. **生成所有通知文件（推荐）**
 
+   ```bash
+   python work-time-check/scripts/work-time-check.py --output --per-user --per-leader
+   ```
 
-    ```bash
-    python work-time-check/scripts/work-time-check.py --output --per-user --per-leader
-    ```
+   脚本会输出：
 
-    脚本会输出：
-    ```
-    [工时检查] 临时文件目录：C:\Users\用户名\nextclaw-temp
-    [工时检查] 已生成群通知：C:\Users\用户名\nextclaw-temp\group_xxx.md
-    [工时检查] 已生成个人通知文件
-    [工时检查] 已生成负责人通知文件
-    [工时检查] 已生成通知清单：C:\Users\用户名\nextclaw-temp\notify_list_xxx.txt
-    ```
+   ```
+   [工时检查] 临时文件目录：C:\Users\用户名\nextclaw-temp
+   [工时检查] 已生成群通知：C:\Users\用户名\nextclaw-temp\group_xxx.md
+   [工时检查] 已生成个人通知文件
+   [工时检查] 已生成负责人通知文件
+   [工时检查] 已生成通知清单：C:\Users\用户名\nextclaw-temp\notify_list_xxx.txt
+   ```
 
-    **直接复制输出的路径使用即可。**
+   **直接复制输出的路径使用即可。**
 
 3. **查看通知清单**
    - 脚本会输出临时文件目录的绝对路径
