@@ -12,9 +12,42 @@ metadata:
 
 利用 mcporter 连接经营管理 MCP 服务，进行数据分析和查询。
 
+## ⚠️ 警告：禁止直接使用 mcporter 命令！
+
+**请通过 Python 脚本执行，不要直接使用 mcporter 命令！**
+
+直接使用 mcporter 会导致以下错误：
+
+- 缺少 OAuth2 Token
+- 参数格式错误
+- 无法获取数据
+
+**正确方式：**
+
+```bash
+python skills/business-management-analysis/scripts/bm-query.py call forewarn
+```
+
+**错误方式（禁止）：**
+
+```bash
+mcporter call server_name1.forewarn  # ❌ 错误！
+mcporter call business-mgmt.forewarn  # ❌ 错误！
+```
+
 ## 前置要求
 
 **必须先阅读 [mcporter 技能](../mcporter/SKILL.md)，确保 mcporter 已安装。**
+
+## 环境变量
+
+| 变量          | 说明                       |
+| ------------- | -------------------------- |
+| PM_MCP_URL    | MCP 服务端点地址           |
+| PM_BASE_URL   | 基础 URL（用于获取 Token） |
+| PM_USERNAME   | API 用户名                 |
+| PM_PASSWORD   | API 密码                   |
+| PM_BASIC_AUTH | Basic 认证凭证             |
 
 ## 使用方法
 
