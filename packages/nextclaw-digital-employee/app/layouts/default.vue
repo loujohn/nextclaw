@@ -103,9 +103,7 @@ function isActive(path: string): boolean {
     </nav>
 
     <main class="flex-1 min-w-0 pb-20 lg:pb-0">
-      <Transition name="page" mode="out-in">
-        <slot />
-      </Transition>
+      <slot />
     </main>
   </div>
 </template>

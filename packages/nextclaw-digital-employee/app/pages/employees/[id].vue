@@ -2,7 +2,7 @@
 const route = useRoute();
 const router = useRouter();
 const employeeId = computed(() => String(route.params.id));
-const { data } = await useEmployeeDetail(employeeId);
+const { data } = useEmployeeDetail(employeeId);
 const isOverviewTab = computed(() => route.path === `/employees/${employeeId.value}`);
 const employeeCenterLink = computed(() => ({
   path: "/employees",
@@ -10,7 +10,7 @@ const employeeCenterLink = computed(() => ({
 }));
 
 // Department info for breadcrumb
-const { data: departmentsData } = await useFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
+const { data: departmentsData } = useLazyFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
 const deptName = computed(() => {
   const deptId = data.value?.data?.departmentId;
   if (!deptId) return null;
@@ -23,7 +23,7 @@ const deptLink = computed(() => {
 });
 
 // Skills catalog for Chinese name display
-const { data: skillsData } = await useFetch<{ ok: boolean; data: Array<{ name: string; nameZh?: string }> }>("/api/skills");
+const { data: skillsData } = useLazyFetch<{ ok: boolean; data: Array<{ name: string; nameZh?: string }> }>("/api/skills");
 const skillNameZhMap = computed(() => {
   const map = new Map<string, string>();
   for (const skill of skillsData.value?.data ?? []) {
@@ -45,7 +45,7 @@ type DashboardStatsPayload = {
   };
 };
 
-const { data: dashStatsPayload } = await useFetch<DashboardStatsPayload>("/api/dashboard/stats");
+const { data: dashStatsPayload } = useLazyFetch<DashboardStatsPayload>("/api/dashboard/stats");
 
 const employeeStats = computed(() => {
   const stats = dashStatsPayload.value?.data.employeeStats ?? [];
@@ -62,7 +62,7 @@ type ScheduleJob = {
   enabled: boolean;
   nextRunAt: string | null;
 };
-const { data: jobsPayload } = await useFetch<{ ok: boolean; data: ScheduleJob[] }>(
+const { data: jobsPayload } = useLazyFetch<{ ok: boolean; data: ScheduleJob[] }>(
   () => `/api/employees/${employeeId.value}/jobs`
 );
 const jobs = computed(() => jobsPayload.value?.data ?? []);
@@ -90,7 +90,8 @@ function isTabActive(path: string): boolean {
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8" v-if="data?.data">
+  <PageSkeleton v-if="!data?.data" />
+  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8" v-else>
     <Breadcrumb :items="[
       { label: '组织架构', to: employeeCenterLink },
       ...(deptName ? [{ label: deptName, to: deptLink ?? undefined }] : []),

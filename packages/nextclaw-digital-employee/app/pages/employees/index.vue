@@ -33,10 +33,16 @@ type EmployeeDetailPayload = {
   };
 };
 
-const { data: employeePayload, refresh } = await useFetch<EmployeeListPayload>("/api/employees");
-const { data: skillPayload } = await useFetch<SkillListPayload>("/api/skills");
-const { data: departmentPayload, refresh: refreshDepts } = await useFetch<{ ok: boolean; data: DepartmentView[] }>("/api/departments");
-const { data: humanEmployeePayload, refresh: refreshHumanEmployees } = await useFetch<{ ok: boolean; data: HumanEmployeeApiItem[] }>("/api/org/human-employees");
+const cachedDataOption = <T,>(key: string) => ({
+  key,
+  getCachedData: (k: string) => useNuxtData<T>(k).data.value ?? undefined,
+});
+const { data: employeePayload, refresh } = useLazyFetch<EmployeeListPayload>("/api/employees", cachedDataOption("employees-list"));
+const { data: skillPayload } = useLazyFetch<SkillListPayload>("/api/skills", cachedDataOption("skills-list"));
+const { data: departmentPayload, refresh: refreshDepts } = useLazyFetch<{ ok: boolean; data: DepartmentView[] }>("/api/departments", cachedDataOption("departments-list"));
+const { data: humanEmployeePayload, refresh: refreshHumanEmployees } = useLazyFetch<{ ok: boolean; data: HumanEmployeeApiItem[] }>("/api/org/human-employees", cachedDataOption("human-employees-list"));
+
+const pageReady = computed(() => !!employeePayload.value && !!departmentPayload.value);
 
 const { employees } = useEmployeeList(employeePayload);
 const {
@@ -406,7 +412,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="employees-page">
+  <PageSkeleton v-if="!pageReady" />
+  <div v-else class="employees-page">
     <!-- 背景装饰 -->
     <div class="page-bg">
       <div class="page-bg__gradient-1" />

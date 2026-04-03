@@ -40,8 +40,8 @@ const messages = ref<ChatMessageView[]>([]);
 const threadEl = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const abortController = ref<AbortController | null>(null);
-const { data: employee, refresh: refreshEmployee } = await useEmployeeDetail(employeeId);
-const { data: history, refresh: refreshHistory } = await useFetch<{
+const { data: employee, refresh: refreshEmployee } = useEmployeeDetail(employeeId);
+const { data: history, refresh: refreshHistory } = useLazyFetch<{
   ok: boolean;
   data: {
     messages: ChatMessageView[];
@@ -50,7 +50,7 @@ const { data: history, refresh: refreshHistory } = await useFetch<{
   `/api/employees/${employeeId.value}/chat/history`,
   { key: computed(() => `employee-chat-history:${employeeId.value}`) }
 );
-const { refresh } = await useFetch(`/api/employees/${employeeId.value}/runs`, {
+const { refresh } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
   key: computed(() => `employee-runs:${employeeId.value}`)
 });
 

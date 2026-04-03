@@ -66,8 +66,8 @@ type EditableAccount = DingTalkAccountView & {
   clientSecret: string;
 };
 
-const { data, refresh } = await useFetch<IntegrationPayload>("/api/integrations");
-const { data: employeeData } = await useFetch<EmployeeListPayload>("/api/employees");
+const { data, refresh } = useLazyFetch<IntegrationPayload>("/api/integrations");
+const employeeData = ref<EmployeeListPayload | null>(null);
 
 const integrations = computed(() => data.value?.data ?? []);
 const employees = computed(() => employeeData.value?.data ?? []);
@@ -161,7 +161,11 @@ async function openDingTalkEditor() {
   editorLoading.value = true;
   resetEditorError();
   try {
-    const response = await $fetch<DingTalkConfigPayload>("/api/integrations/dingtalk");
+    const [response, empResponse] = await Promise.all([
+      $fetch<DingTalkConfigPayload>("/api/integrations/dingtalk"),
+      employeeData.value ? Promise.resolve(employeeData.value) : $fetch<EmployeeListPayload>("/api/employees"),
+    ]);
+    employeeData.value = empResponse;
     openEditorWithPayload(response.data);
   } catch (error) {
     editorError.value = error instanceof Error ? error.message : String(error);

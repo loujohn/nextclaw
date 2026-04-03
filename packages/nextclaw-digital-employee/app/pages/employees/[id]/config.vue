@@ -6,7 +6,7 @@ const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 
 // ── DingTalk Config ───────────────────────────────────────────────────────────
-const { data: dingtalkConfig, refresh: refreshDingTalkConfig } = await useFetch<{
+const { data: dingtalkConfig, refresh: refreshDingTalkConfig } = useLazyFetch<{
   ok: boolean;
   data: {
     channel: {
@@ -17,7 +17,7 @@ const { data: dingtalkConfig, refresh: refreshDingTalkConfig } = await useFetch<
   };
 }>("/api/integrations/dingtalk");
 
-const { data: dingtalkBinding, refresh: refreshDingTalkBinding } = await useFetch<{
+const { data: dingtalkBinding, refresh: refreshDingTalkBinding } = useLazyFetch<{
   ok: boolean;
   data: {
     employeeCode: string;
@@ -60,7 +60,7 @@ type WorkspaceFile = {
 type FileListPayload = { ok: boolean; data: { files: WorkspaceFile[] } };
 type FileContentPayload = { ok: boolean; data: { filename: string; content: string } };
 
-const { data: listData, refresh: refreshList, pending: listPending } = await useFetch<FileListPayload>(
+const { data: listData, refresh: refreshList, pending: listPending } = useLazyFetch<FileListPayload>(
   () => `/api/employees/${employeeId.value}/workspace`,
   { key: computed(() => `employee-workspace-list:${employeeId.value}`) }
 );
@@ -74,11 +74,17 @@ const saving = ref(false);
 const saveError = ref<string | null>(null);
 const saveSuccess = ref(false);
 
-const { data: fileData, refresh: refreshFile, pending: filePending } = await useFetch<FileContentPayload>(
-  () => selectedFilename.value ? `/api/employees/${employeeId.value}/workspace/${selectedFilename.value}` : null,
+const fileUrl = computed(() =>
+  selectedFilename.value
+    ? `/api/employees/${employeeId.value}/workspace/${selectedFilename.value}`
+    : `/api/employees/${employeeId.value}/workspace/_`
+);
+const { data: fileData, refresh: refreshFile, pending: filePending } = useLazyFetch<FileContentPayload>(
+  fileUrl,
   {
     key: computed(() => `employee-workspace-file:${employeeId.value}:${selectedFilename.value ?? ""}`),
-    watch: [selectedFilename]
+    watch: false,
+    immediate: false,
   }
 );
 
@@ -87,10 +93,11 @@ const selectedFile = computed(() => files.value.find((f) => f.filename === selec
 const isEditable = computed(() => selectedFile.value?.writable ?? false);
 
 watch(fileContent, (val) => { editorContent.value = val; });
-watch(selectedFilename, () => {
+watch(selectedFilename, (val) => {
   mode.value = "preview";
   saveError.value = null;
   saveSuccess.value = false;
+  if (val) refreshFile();
 });
 
 function selectFile(filename: string) {

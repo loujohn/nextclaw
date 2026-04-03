@@ -23,7 +23,7 @@ type FileContentPayload = {
 };
 
 // ── File list ──────────────────────────────────────────────────────────────────
-const { data: listData, refresh: refreshList, pending: listPending } = await useFetch<FileListPayload>(
+const { data: listData, refresh: refreshList, pending: listPending } = useLazyFetch<FileListPayload>(
   () => `/api/employees/${employeeId.value}/workspace`,
   { key: computed(() => `employee-workspace-list:${employeeId.value}`) }
 );
@@ -38,11 +38,17 @@ const saving = ref(false);
 const saveError = ref<string | null>(null);
 const saveSuccess = ref(false);
 
-const { data: fileData, refresh: refreshFile, pending: filePending } = await useFetch<FileContentPayload>(
-  () => selectedFilename.value ? `/api/employees/${employeeId.value}/workspace/${selectedFilename.value}` : null,
+const fileUrl = computed(() =>
+  selectedFilename.value
+    ? `/api/employees/${employeeId.value}/workspace/${selectedFilename.value}`
+    : `/api/employees/${employeeId.value}/workspace/_`
+);
+const { data: fileData, refresh: refreshFile, pending: filePending } = useLazyFetch<FileContentPayload>(
+  fileUrl,
   {
     key: computed(() => `employee-workspace-file:${employeeId.value}:${selectedFilename.value ?? ""}`),
-    watch: [selectedFilename]
+    watch: false,
+    immediate: false,
   }
 );
 
@@ -54,10 +60,11 @@ watch(fileContent, (val) => {
   editorContent.value = val;
 });
 
-watch(selectedFilename, () => {
+watch(selectedFilename, (val) => {
   mode.value = "preview";
   saveError.value = null;
   saveSuccess.value = false;
+  if (val) refreshFile();
 });
 
 function selectFile(filename: string) {

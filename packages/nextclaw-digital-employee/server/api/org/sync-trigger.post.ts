@@ -1,6 +1,7 @@
 import { createError } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
 import { getOrgSyncConfig, runOrgSync } from "../../services/org-sync-service";
+import { invalidateHumanEmployeeCache } from "./human-employees.get";
 
 export default defineEventHandler(async (event) => {
   const ctx = await getPlatformContext();
@@ -14,6 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const result = await runOrgSync(ctx.db);
+  invalidateHumanEmployeeCache();
 
   if (!result.ok) {
     throw createError({ statusCode: 500, statusMessage: result.summary });

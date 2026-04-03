@@ -114,6 +114,17 @@ export class EmployeeScheduleRepository {
     return records.map(toView);
   }
 
+  async listByEmployeeIds(employeeIds: string[]): Promise<Map<string, EmployeeScheduleView>> {
+    if (employeeIds.length === 0) return new Map();
+    const rows = await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules)
+      .whereIn("employee_id", employeeIds);
+    const map = new Map<string, EmployeeScheduleView>();
+    for (const row of rows) {
+      map.set(row.employee_id, toView(row));
+    }
+    return map;
+  }
+
   async deleteByEmployeeId(employeeId: string): Promise<void> {
     await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules).where({ employee_id: employeeId }).delete();
   }

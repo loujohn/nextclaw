@@ -128,6 +128,53 @@ export class RunRecordRepository {
     return rows.map(toRunRecordView);
   }
 
+  async getLatestRunSummaryByEmployeeIds(
+    employeeIds: string[]
+  ): Promise<Map<string, { status: string; summary: string; finishedAt: string | null }>> {
+    if (employeeIds.length === 0) return new Map();
+    const subquery = this.db(PLATFORM_TABLES.runRecords)
+      .select("employee_id")
+      .max("started_at as max_started_at")
+      .whereIn("employee_id", employeeIds)
+      .groupBy("employee_id")
+      .as("latest");
+    const rows = await this.db(PLATFORM_TABLES.runRecords)
+      .select(
+        `${PLATFORM_TABLES.runRecords}.employee_id`,
+        `${PLATFORM_TABLES.runRecords}.status`,
+        `${PLATFORM_TABLES.runRecords}.summary`,
+        `${PLATFORM_TABLES.runRecords}.finished_at`
+      )
+      .join(subquery, function () {
+        this.on(`${PLATFORM_TABLES.runRecords}.employee_id`, "=", "latest.employee_id")
+          .andOn(`${PLATFORM_TABLES.runRecords}.started_at`, "=", "latest.max_started_at");
+      });
+    const map = new Map<string, { status: string; summary: string; finishedAt: string | null }>();
+    for (const row of rows as Array<{ employee_id: string; status: string; summary: string; finished_at: string | null }>) {
+      if (row.employee_id && !map.has(row.employee_id)) {
+        map.set(row.employee_id, {
+          status: row.status,
+          summary: row.summary,
+          finishedAt: row.finished_at,
+        });
+      }
+    }
+    return map;
+  }
+
+  async hasRecentFailureByEmployeeIds(employeeIds: string[]): Promise<Set<string>> {
+    if (employeeIds.length === 0) return new Set();
+    const rows = await this.db(PLATFORM_TABLES.runRecords)
+      .select("employee_id")
+      .whereIn("employee_id", employeeIds)
+      .andWhere({ status: "failed" })
+      .andWhere("started_at", ">=", this.db.raw(
+        `datetime('now', '-24 hours')`
+      ))
+      .groupBy("employee_id");
+    return new Set((rows as Array<{ employee_id: string }>).map(r => r.employee_id));
+  }
+
   async listPagedByEmployeeId(params: { employeeId: string; page: number; pageSize: number; scheduleJobId?: string }): Promise<{ items: RunRecordView[]; total: number }> {
     const offset = (params.page - 1) * params.pageSize;
     const applyFilter = (q: Knex.QueryBuilder) => {

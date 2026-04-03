@@ -47,7 +47,7 @@ const PAGE_SIZE = 10;
 const currentPage = ref(1);
 const jobFilter = ref<string | null>(null);
 
-const { data: jobPayload } = await useFetch<JobListPayload>(
+const { data: jobPayload } = useLazyFetch<JobListPayload>(
   () => `/api/employees/${employeeId.value}/jobs`,
   { key: computed(() => `employee-jobs:${employeeId.value}`) }
 );
@@ -59,7 +59,7 @@ function buildApiUrl() {
   return `/api/employees/${employeeId.value}/runs?${params.toString()}`;
 }
 
-const { data, pending } = await useFetch<RunListPayload>(() => buildApiUrl(), {
+const { data, pending } = useLazyFetch<RunListPayload>(() => buildApiUrl(), {
   key: computed(() => `employee-runs:${employeeId.value}:history:${currentPage.value}:${jobFilter.value ?? "all"}`)
 });
 
