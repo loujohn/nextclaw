@@ -6,6 +6,7 @@
   "scripts": {
     "preflight:deps": "pnpm -C ../nextclaw-core build && pnpm -C ../nextclaw-runtime build && pnpm -C ../extensions/nextclaw-channel-runtime build && pnpm -C ../nextclaw-openclaw-compat build",
     "dev": "pnpm preflight:deps && nuxt dev",
+    "dev:dm": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider\" && pnpm dev",
     "build": "pnpm preflight:deps && nuxt build",
     "lint": "eslint . --ext .ts,.vue --max-warnings=0",
     "tsc": "pnpm preflight:deps && nuxt typecheck",
@@ -26,8 +27,10 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "consola": "^3.4.2",
+    "dmdb": "^1.0.48286",
     "https-proxy-agent": "^8.0.0",
     "knex": "^3.1.0",
+    "knex-dm": "^1.0.48662",
     "lucide-vue-next": "^0.577.0",
     "markdown-it": "^14.1.1",
     "minipass": "^7.0.0",

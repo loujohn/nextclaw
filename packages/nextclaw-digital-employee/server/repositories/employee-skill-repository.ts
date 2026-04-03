@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 type EmployeeSkillRecord = {
   id: string;
@@ -42,7 +43,7 @@ export class EmployeeSkillRepository {
     if (skillNames.length === 0) {
       return [];
     }
-    const now = new Date().toISOString();
+    const now = dbNow();
     const rows: EmployeeSkillRecord[] = skillNames.map((skillName) => ({
       id: randomUUID(),
       employee_id: employeeId,

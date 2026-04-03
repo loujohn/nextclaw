@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type OrgSyncConfigRecord } from "../db/schema";
+import { dbNow } from "../db/knex";
 import { DingTalkOrgClient } from "../integrations/dingtalk-org-client";
 import { DepartmentRepository } from "../repositories/department-repository";
 import { createLogger } from "../utils/logger";
@@ -94,7 +95,7 @@ export async function performOrgSync(db: Knex, orgData: OrgSyncBody): Promise<Or
   const manualDeptIds = manualDepts.map((d) => d.id);
   const allRemovedDeptIds = [...removedDeptIds, ...manualDeptIds];
 
-  const now = new Date().toISOString();
+  const now = dbNow();
   let deptCreated = 0;
   let deptUpdated = 0;
   let humanCreated = 0;
