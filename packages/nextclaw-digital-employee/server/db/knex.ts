@@ -107,7 +107,7 @@ export function createPlatformKnex(pathOrConfig: string | PlatformDbConfig): Kne
             return;
           }
           conn.execute(`SET SCHEMA "${schema}"`, [], (err: unknown) => {
-            cb(err ? null : null, conn);
+            cb(err, conn);
           });
         },
       },
@@ -464,22 +464,28 @@ async function migrateLegacySchedulesToJobs(db: Knex): Promise<void> {
 }
 
 /**
- * 确保达梦 Schema 存在。使用当前连接用户作为 AUTHORIZATION owner。
- * 必须在所有其他数据库操作之前调用。
+ * 切换达梦当前会话的 Schema。
+ * 若未配置 DB_SCHEMA 或 schema 参数，则使用连接用户的默认 Schema（无需切换）。
+ * Schema 需由 DBA 预先创建，应用层不自动 CREATE。
  */
 export async function ensureDmSchema(db: Knex, schema?: string): Promise<void> {
   if (!isDm()) return;
   const targetSchema = (schema ?? _dmSchema).toUpperCase();
   const user = (process.env.DB_USER ?? "SYSDBA").toUpperCase();
-  try {
-    await db.raw(`CREATE SCHEMA "${targetSchema}" AUTHORIZATION "${user}"`);
-  } catch (createErr: unknown) {
-    const msg = createErr instanceof Error ? createErr.message : String(createErr);
-    if (!msg.includes("已存在") && !msg.includes("already exists") && !msg.includes("-2007") && !msg.includes("4703")) {
-      throw createErr;
-    }
+  if (targetSchema === user) {
+    _dmSchemaReady = true;
+    return;
   }
-  await db.raw(`SET SCHEMA "${targetSchema}"`);
+  try {
+    await db.raw(`SET SCHEMA "${targetSchema}"`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `无法切换到达梦 Schema "${targetSchema}"。` +
+      `请确认 DBA 已创建该 Schema/User，或将 DB_SCHEMA 设为连接用户名 "${user}"。` +
+      `\n原始错误: ${msg}`
+    );
+  }
   _dmSchemaReady = true;
 }
 

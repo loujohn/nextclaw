@@ -29,7 +29,7 @@ function buildDmConfig(): Knex.Config {
       max: 10,
       afterCreate(conn: { execute: (sql: string, params: unknown[], cb: (err: unknown) => void) => void }, cb: (err: unknown, conn: unknown) => void) {
         conn.execute(`SET SCHEMA "${schema}"`, [], (err: unknown) => {
-          cb(err ? null : null, conn);
+          cb(err, conn);
         });
       },
     },
