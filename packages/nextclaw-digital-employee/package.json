@@ -15,6 +15,9 @@
     "migrate:make": "knex migrate:make --knexfile knexfile.ts"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/outfit": "^5.2.6",
     "@nextclaw/core": "workspace:*",
     "@nextclaw/openclaw-compat": "workspace:*",
     "@nextclaw/runtime": "workspace:*",
