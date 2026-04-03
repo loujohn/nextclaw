@@ -121,10 +121,12 @@ export class RunRecordRepository {
     return count;
   }
 
-  async listByEmployeeId(employeeId: string): Promise<RunRecordView[]> {
-    const rows = await this.db<RunRecord>(PLATFORM_TABLES.runRecords)
+  async listByEmployeeId(employeeId: string, limit?: number): Promise<RunRecordView[]> {
+    let query = this.db<RunRecord>(PLATFORM_TABLES.runRecords)
       .where({ employee_id: employeeId })
       .orderBy("started_at", "desc");
+    if (limit) query = query.limit(limit);
+    const rows = await query;
     return rows.map(toRunRecordView);
   }
 
