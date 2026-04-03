@@ -103,7 +103,7 @@ const togglingSkill = ref("");
 const uploadingDir = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
-const { data, refresh } = await useFetch<SkillListPayload>("/api/skills");
+const { data, refresh } = useLazyFetch<SkillListPayload>("/api/skills");
 const allSkills = computed(() => data.value?.data ?? []);
 
 const categorySkills = computed(() => {

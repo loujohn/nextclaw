@@ -60,7 +60,7 @@ const SKILL_CATEGORIES = [
 
 type SkillListPayload = { ok: boolean; data: Array<{ categoryLabel: string; enabled: boolean }> };
 
-const { data } = await useFetch<SkillListPayload>("/api/skills");
+const { data, pending } = useLazyFetch<SkillListPayload>("/api/skills");
 const allSkills = computed(() => data.value?.data ?? []);
 
 const countByLabel = computed(() => {
@@ -77,7 +77,8 @@ const enabledSkills = computed(() => allSkills.value.filter((s) => s.enabled).le
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-8 p-6 lg:p-8">
+  <PageSkeleton v-if="pending && !data" />
+  <div v-else class="mx-auto max-w-6xl space-y-8 p-6 lg:p-8">
     <!-- Header -->
     <div class="space-y-1">
       <span class="section-label">能力管理</span>

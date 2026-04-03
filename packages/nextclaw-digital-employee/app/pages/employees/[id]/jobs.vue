@@ -34,7 +34,7 @@ type ScheduleJob = {
 
 type JobsPayload = { ok: boolean; data: ScheduleJob[] };
 
-const { data, refresh } = await useFetch<JobsPayload>(() => `/api/employees/${employeeId.value}/jobs`);
+const { data, refresh } = useLazyFetch<JobsPayload>(() => `/api/employees/${employeeId.value}/jobs`);
 
 const jobs = computed(() => data.value?.data ?? []);
 

@@ -22,11 +22,13 @@ export default defineEventHandler(async (event) => {
 
   const enriched = employees.map((employee) => {
     const jobs = jobsMap.get(employee.id) ?? [];
+    const latestRun = latestRunMap.get(employee.id);
+    const { systemPrompt: _sp, ...employeeSlim } = employee;
     return {
-      ...employee,
-      skills: skillsMap.get(employee.id) ?? [],
+      ...employeeSlim,
+      skills: (skillsMap.get(employee.id) ?? []).map(s => ({ skillName: s.skillName })),
       schedule: scheduleMap.get(employee.id) ?? null,
-      latestRun: latestRunMap.get(employee.id) ?? null,
+      latestRun: latestRun ? { status: latestRun.status, finishedAt: latestRun.finishedAt } : null,
       jobsCount: jobs.length,
       enabledJobsCount: jobs.filter((j) => j.enabled).length,
       healthStatus: healthMap.get(employee.id)?.status ?? "healthy",

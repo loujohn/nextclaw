@@ -19,6 +19,7 @@ export type EmployeeDetailPayload = {
     code: string;
     description: string;
     systemPrompt: string;
+    departmentId: string | null;
     skills: Array<{ id: string; skillName: string }>;
     schedule: {
       id: string;
@@ -40,5 +41,5 @@ export type EmployeeDetailPayload = {
 };
 
 export function useEmployeeDetail(employeeId: Ref<string> | ComputedRef<string>) {
-  return useFetch<EmployeeDetailPayload>(() => `/api/employees/${employeeId.value}`);
+  return useLazyFetch<EmployeeDetailPayload>(() => `/api/employees/${employeeId.value}`);
 }

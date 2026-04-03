@@ -67,12 +67,12 @@ type SkillOption = {
 
 const router = useRouter();
 
-const { data: statsPayload, refresh: refreshStats } = await useFetch<DashboardStatsPayload>("/api/dashboard/stats");
-const { data: employeePayload, refresh: refreshEmployees } = await useFetch<EmployeeListPayload>("/api/employees");
-const { data: runsPayload, refresh: refreshRuns } = await useFetch<RunListPayload>("/api/runs?page=1&pageSize=10");
-const { data: integrationPayload, refresh: refreshIntegrations } = await useFetch<{ ok: boolean; data: IntegrationItem[] }>("/api/integrations");
-const { data: skillPayload } = await useFetch<{ ok: boolean; data: SkillOption[] }>("/api/skills");
-const { data: departmentPayload } = await useFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
+const { data: statsPayload, refresh: refreshStats } = useLazyFetch<DashboardStatsPayload>("/api/dashboard/stats");
+const { data: employeePayload, refresh: refreshEmployees } = useLazyFetch<EmployeeListPayload>("/api/employees");
+const { data: runsPayload, refresh: refreshRuns } = useLazyFetch<RunListPayload>("/api/runs?page=1&pageSize=10");
+const { data: integrationPayload, refresh: refreshIntegrations } = useLazyFetch<{ ok: boolean; data: IntegrationItem[] }>("/api/integrations");
+const { data: skillPayload } = useLazyFetch<{ ok: boolean; data: SkillOption[] }>("/api/skills");
+const { data: departmentPayload } = useLazyFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
 
 const stats = computed(() => statsPayload.value?.data);
 const employees = computed(() => employeePayload.value?.data ?? []);
