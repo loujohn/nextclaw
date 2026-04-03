@@ -1,6 +1,6 @@
 ---
-name: work-time-query
-name_zh: 工时查询
+name: work-time-statistics
+name_zh: 工时统计分析
 description: "查询项目工时数据，支持项目列表查询和项目人员工时明细查询。当需要获取项目列表、查询指定项目成员工时时使用。"
 metadata:
   nextclaw:
@@ -8,7 +8,7 @@ metadata:
     category: "project-management"
 ---
 
-# 工时查询技能
+# 工时统计分析技能
 
 查询项目工时数据，供分析统计使用。
 
@@ -17,26 +17,26 @@ metadata:
 ### 列出所有项目
 
 ```bash
-python skills/work-time-query/scripts/work-time-query.py list
+python skills/work-time-statistics/scripts/work-time-statistics.py list
 ```
 
 ### 查询项目人员工时
 
 ```bash
-python skills/work-time-query/scripts/work-time-query.py query [projectCode] [startDay] [endDay]
+python skills/work-time-statistics/scripts/work-time-statistics.py query [projectCode] [startDay] [endDay]
 ```
 
 示例：
 
 ```bash
 # 查询所有项目列表
-python skills/work-time-query/scripts/work-time-query.py list
+python skills/work-time-statistics/scripts/work-time-statistics.py list
 
 # 查询指定项目的人员工时
-python skills/work-time-query/scripts/work-time-query.py query XM202508125040 2026-04-01 2026-04-02
+python skills/work-time-statistics/scripts/work-time-statistics.py query XM202508125040 2026-04-01 2026-04-02
 
 # 不填参数则查询全部
-python skills/work-time-query/scripts/work-time-query.py query
+python skills/work-time-statistics/scripts/work-time-statistics.py query
 ```
 
 示例：
