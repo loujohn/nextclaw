@@ -16,6 +16,8 @@ import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
+import { RunRecordRepository } from "../repositories/run-record-repository";
+import { RunStatus } from "../db/enums";
 import { prepareEmployeeRuntime } from "../services/employee-runtime-preparation";
 import { createLogger } from "../utils/logger";
 
@@ -46,6 +48,7 @@ export class DigitalEmployeeChannelRuntime {
       employeeRepo: EmployeeRepository;
       employeeSkillRepo: EmployeeSkillRepository;
       skillInstallationRepo?: SkillInstallationRepository;
+      runRepo?: RunRecordRepository;
       loadState: RuntimeStateLoader;
     }
   ) {
@@ -168,12 +171,40 @@ export class DigitalEmployeeChannelRuntime {
       homeDir: this.gateway.homeDir,
       workspaceDir: this.gateway.workspaceDir
     });
-    const engine = this.gateway.getOrCreateEngine(employee.code, workspace, employee.model || undefined);
-    await engine.handleInbound({
-      message,
-      sessionKey: route.sessionKey,
-      publishResponse: true
-    });
+
+    const runRepo = this.options.runRepo;
+    const run = runRepo
+      ? await runRepo.create({
+          employeeId: employee.id,
+          triggerType: "channel",
+          triggerSource: `${message.channel}:${route.accountId}`
+        })
+      : null;
+
+    try {
+      const engine = this.gateway.getOrCreateEngine(employee.code, workspace, employee.model || undefined);
+      const response = await engine.handleInbound({
+        message,
+        sessionKey: route.sessionKey,
+        publishResponse: true
+      });
+      if (run && runRepo) {
+        await runRepo.complete(run.id, {
+          status: RunStatus.Completed,
+          summary: response?.content?.slice(0, 500) || message.content.slice(0, 200),
+          result: { channel: message.channel, sessionKey: route.sessionKey }
+        });
+      }
+    } catch (error) {
+      if (run && runRepo) {
+        await runRepo.complete(run.id, {
+          status: RunStatus.Failed,
+          summary: String(error).slice(0, 500),
+          result: { error: String(error), channel: message.channel }
+        });
+      }
+      throw error;
+    }
     log.info(`handleInbound done agentId=${route.agentId} session=${route.sessionKey}`);
   }
 }
