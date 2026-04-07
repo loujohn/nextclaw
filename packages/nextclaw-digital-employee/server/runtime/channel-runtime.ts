@@ -182,7 +182,12 @@ export class DigitalEmployeeChannelRuntime {
       : null;
 
     try {
-      const engine = this.gateway.getOrCreateEngine(employee.code, workspace, employee.model || undefined);
+      const engine = await this.gateway.getOrCreateEngineWithSecrets({
+        agentId: employee.code,
+        employeeId: employee.id,
+        workspace,
+        model: employee.model || undefined
+      });
       const response = await engine.handleInbound({
         message,
         sessionKey: route.sessionKey,

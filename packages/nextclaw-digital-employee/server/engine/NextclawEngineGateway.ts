@@ -310,6 +310,40 @@ export class NextclawEngineGateway {
     return engine;
   }
 
+  async getOrCreateEngineWithSecrets(params: {
+    agentId: string;
+    employeeId: string;
+    workspace?: string;
+    model?: string;
+    disableCronTool?: boolean;
+  }): Promise<AgentEngine> {
+    let envOverlay: Record<string, string> | undefined;
+    if (this.secretsRepo) {
+      const secrets = await this.secretsRepo.getDecryptedForScope(params.employeeId);
+      if (secrets.size > 0) {
+        envOverlay = Object.fromEntries(secrets);
+      }
+    }
+    if (params.disableCronTool) {
+      return this.createEngineForWorkspace(
+        params.agentId,
+        params.workspace ?? this.workspaceDir,
+        params.model,
+        envOverlay,
+        null
+      );
+    }
+    if (envOverlay) {
+      return this.createEngineForWorkspace(
+        params.agentId,
+        params.workspace ?? this.workspaceDir,
+        params.model,
+        envOverlay
+      );
+    }
+    return this.getOrCreateEngine(params.agentId, params.workspace, params.model);
+  }
+
   private createEngine(context: AgentEngineFactoryContext): AgentEngine {
     const engineKind = this.config.agents.defaults.engine?.trim().toLowerCase() || "native";
     if (engineKind === "native") {
@@ -435,20 +469,13 @@ export class NextclawEngineGateway {
     const sessionKey = params.sessionKey ?? `employee:${params.employeeId}:ui:direct:web`;
     const agentId = params.agentId ?? "main";
 
-    let envOverlay: Record<string, string> | undefined;
-    if (this.secretsRepo) {
-      const secrets = await this.secretsRepo.getDecryptedForScope(params.employeeId);
-      if (secrets.size > 0) {
-        envOverlay = Object.fromEntries(secrets);
-      }
-    }
-
-    const engine = params.disableCronTool
-      // 定时任务执行：创建不含 CronTool 的临时引擎，防止 AI 在执行期间重复创建调度任务
-      ? this.createEngineForWorkspace(agentId, params.workspace ?? this.workspaceDir, params.model, envOverlay, null)
-      : (envOverlay
-        ? this.createEngineForWorkspace(agentId, params.workspace ?? this.workspaceDir, params.model, envOverlay)
-        : this.getOrCreateEngine(agentId, params.workspace, params.model));
+    const engine = await this.getOrCreateEngineWithSecrets({
+      agentId,
+      employeeId: params.employeeId,
+      workspace: params.workspace,
+      model: params.model,
+      disableCronTool: params.disableCronTool
+    });
     const session = this.sessionManager.getOrCreate(sessionKey);
     const historyCountBefore = this.sessionManager.getHistory(session).length;
     const metadata: Record<string, unknown> = {};
