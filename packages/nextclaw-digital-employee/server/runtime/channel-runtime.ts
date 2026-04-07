@@ -19,6 +19,7 @@ import { SkillInstallationRepository } from "../repositories/skill-installation-
 import { RunRecordRepository } from "../repositories/run-record-repository";
 import { RunStatus } from "../db/enums";
 import { prepareEmployeeRuntime } from "../services/employee-runtime-preparation";
+import { buildChatResultCards } from "../../shared/ui-models";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("ChannelRuntime");
@@ -132,15 +133,16 @@ export class DigitalEmployeeChannelRuntime {
       if (isShutdownMessage(message)) {
         continue;
       }
-      log.info(`inbound channel=${message.channel} sender=${message.senderId} chat=${message.chatId} contentLen=${message.content.length}`);
+      const preview = message.content.slice(0, 60).replace(/\n/g, " ");
+      log.info(`收到消息 渠道=${message.channel} 发送者=${message.senderId} 会话=${message.chatId} 长度=${message.content.length} 预览="${preview}"`);
       try {
         await this.handleInbound(message);
       } catch (error) {
-        log.error(`handleInbound error channel=${message.channel} sender=${message.senderId} chat=${message.chatId}`, error);
+        log.error(`处理消息失败 渠道=${message.channel} 发送者=${message.senderId} 会话=${message.chatId}`, error);
         await this.gateway.messageBus.publishOutbound({
           channel: message.channel,
           chatId: message.chatId,
-          content: `Sorry, I encountered an error: ${String(error)}`,
+          content: `处理消息时遇到错误：${String(error)}`,
           media: [],
           metadata: message.metadata ?? {}
         });
@@ -151,26 +153,30 @@ export class DigitalEmployeeChannelRuntime {
   private async handleInbound(message: InboundMessage): Promise<void> {
     const route = this.routeResolver.resolveInbound({ message });
     if (route.matchedBy === "default") {
-      log.warn(`no binding channel=${message.channel} account=${route.accountId} ${route.peer.kind}:${route.peer.id}`);
+      log.warn(`未找到绑定 渠道=${message.channel} 账号=${route.accountId} ${route.peer.kind}:${route.peer.id}`);
       throw new Error(
-        `No employee binding configured for ${message.channel} account ${route.accountId} ${route.peer.kind}:${route.peer.id}`
+        `未配置员工绑定：渠道 ${message.channel} 账号 ${route.accountId} ${route.peer.kind}:${route.peer.id}`
       );
     }
-    log.info(`route matched agentId=${route.agentId} account=${route.accountId} session=${route.sessionKey} matchedBy=${route.matchedBy}`);
+    log.info(`路由匹配 员工=${route.agentId} 账号=${route.accountId} 会话=${route.sessionKey} 匹配方式=${route.matchedBy}`);
     const employee = await this.options.employeeRepo.getByCode(route.agentId);
     if (!employee) {
-      log.warn(`employee not found agentId=${route.agentId}`);
-      throw new Error(`Bound employee not found for agentId: ${route.agentId}`);
+      log.warn(`员工未找到 agentId=${route.agentId}`);
+      throw new Error(`绑定的员工不存在：agentId=${route.agentId}`);
     }
-    log.info(`dispatching to employee code=${employee.code} name=${employee.name} session=${route.sessionKey}`);
+    log.info(`分派给员工 code=${employee.code} name=${employee.name} 会话=${route.sessionKey}`);
 
-    const { workspace } = await prepareEmployeeRuntime({
+    const { workspace, skillNames } = await prepareEmployeeRuntime({
       employee,
       employeeSkillRepo: this.options.employeeSkillRepo,
       skillInstallationRepo: this.options.skillInstallationRepo,
       homeDir: this.gateway.homeDir,
       workspaceDir: this.gateway.workspaceDir
     });
+
+    const enrichedMessage: InboundMessage = skillNames.length > 0
+      ? { ...message, metadata: { ...message.metadata, requested_skills: skillNames } }
+      : message;
 
     const runRepo = this.options.runRepo;
     const run = runRepo
@@ -189,15 +195,25 @@ export class DigitalEmployeeChannelRuntime {
         model: employee.model || undefined
       });
       const response = await engine.handleInbound({
-        message,
+        message: enrichedMessage,
         sessionKey: route.sessionKey,
         publishResponse: true
       });
       if (run && runRepo) {
+        const reply = response?.content ?? "";
+        const messages = this.gateway.getSessionHistory(route.sessionKey);
+        const resultCards = buildChatResultCards(reply);
         await runRepo.complete(run.id, {
           status: RunStatus.Completed,
-          summary: response?.content?.slice(0, 500) || message.content.slice(0, 200),
-          result: { channel: message.channel, sessionKey: route.sessionKey }
+          summary: reply.slice(0, 500) || message.content.slice(0, 200),
+          result: {
+            reply,
+            channel: message.channel,
+            sessionKey: route.sessionKey,
+            messages,
+            resultCards,
+            runSummary: reply
+          }
         });
       }
     } catch (error) {
@@ -210,6 +226,6 @@ export class DigitalEmployeeChannelRuntime {
       }
       throw error;
     }
-    log.info(`handleInbound done agentId=${route.agentId} session=${route.sessionKey}`);
+    log.info(`处理完成 员工=${route.agentId} 会话=${route.sessionKey}`);
   }
 }

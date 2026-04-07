@@ -421,12 +421,23 @@ function readFirstCardContent(result: Record<string, unknown>): string {
   return "";
 }
 
-function formatTriggerLabel(triggerType: string, triggerSource: string): string {
+const CHANNEL_DISPLAY_NAMES: Record<string, string> = {
+  dingtalk: "钉钉",
+  qq: "QQ",
+  discord: "Discord",
+  wechat: "微信",
+};
+
+export function formatTriggerLabel(triggerType: string, triggerSource: string): string {
   if (triggerSource === "chat" || triggerType === "manual") {
     return "聊天触发";
   }
   if (triggerType === "scheduled") {
     return "自动运行";
+  }
+  if (triggerType === "channel") {
+    const channelName = triggerSource.split(":")[0] ?? "";
+    return CHANNEL_DISPLAY_NAMES[channelName] ?? (channelName || "渠道消息");
   }
   return "手动触发";
 }
