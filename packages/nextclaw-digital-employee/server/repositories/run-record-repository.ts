@@ -220,6 +220,46 @@ export class RunRecordRepository {
     return { items: (rows as RunRecord[]).map(toRunRecordView), total };
   }
 
+  async listPagedWithNames(params: {
+    page: number;
+    pageSize: number;
+    status?: string;
+  }): Promise<{
+    items: (RunRecordView & { employeeName: string; triggerJobName: string | null })[];
+    total: number;
+  }> {
+    const offset = (params.page - 1) * params.pageSize;
+    const r = PLATFORM_TABLES.runRecords;
+    const e = PLATFORM_TABLES.employees;
+    const j = PLATFORM_TABLES.employeeScheduleJobs;
+
+    const applyStatus = (q: Knex.QueryBuilder) =>
+      params.status ? q.where(`${r}.status`, params.status) : q;
+
+    const [rows, countResult] = await Promise.all([
+      applyStatus(
+        this.db(r)
+          .leftJoin(e, `${r}.employee_id`, `${e}.id`)
+          .leftJoin(j, `${r}.trigger_source`, `${j}.id`)
+          .select(`${r}.*`, `${e}.name as employee_name`, `${j}.name as job_name`)
+          .orderBy(`${r}.started_at`, "desc")
+      )
+        .limit(params.pageSize)
+        .offset(offset),
+      applyStatus(this.db(r)).count({ count: "id" }).first()
+    ]);
+
+    const total = Number((countResult as { count?: number | string } | undefined)?.count ?? 0);
+    return {
+      items: (rows as Array<RunRecord & { employee_name?: string; job_name?: string }>).map((row) => ({
+        ...toRunRecordView(row),
+        employeeName: row.employee_name ?? "未关联员工",
+        triggerJobName: row.job_name ?? null
+      })),
+      total
+    };
+  }
+
   async getById(runId: string): Promise<(RunRecordView & { events: RunEventView[] }) | null> {
     const record = await this.db<RunRecord>(PLATFORM_TABLES.runRecords).where({ id: runId }).first();
     if (!record) {

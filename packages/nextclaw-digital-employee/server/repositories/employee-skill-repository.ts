@@ -83,4 +83,18 @@ export class EmployeeSkillRepository {
     const rows = await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills).orderBy("created_at", "asc");
     return rows.map(toView);
   }
+
+  async listAllWithEmployeeNames(): Promise<Array<{ employeeId: string; employeeName: string; skillName: string }>> {
+    const es = PLATFORM_TABLES.employeeSkills;
+    const e = PLATFORM_TABLES.employees;
+    const rows = await this.db(es)
+      .leftJoin(e, `${es}.employee_id`, `${e}.id`)
+      .select(`${es}.employee_id`, `${e}.name as employee_name`, `${es}.skill_name`)
+      .orderBy(`${es}.created_at`, "asc");
+    return (rows as Array<{ employee_id: string; employee_name?: string; skill_name: string }>).map((row) => ({
+      employeeId: row.employee_id,
+      employeeName: row.employee_name ?? row.employee_id,
+      skillName: row.skill_name
+    }));
+  }
 }

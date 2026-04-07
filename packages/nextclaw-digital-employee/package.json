@@ -22,6 +22,7 @@
     "@nextclaw/core": "workspace:*",
     "@nextclaw/openclaw-compat": "workspace:*",
     "@nextclaw/runtime": "workspace:*",
+    "@pinia/nuxt": "^0.11.3",
     "@types/node-cron": "^3.0.11",
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
@@ -36,6 +37,7 @@
     "minipass": "^7.0.0",
     "node-cron": "^3.0.3",
     "nuxt": "^4.3.1",
+    "pinia": "^3.0.4",
     "radix-vue": "^1.9.17",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"
@@ -55,6 +57,7 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.6.3",
     "vitest": "^2.1.2",
-    "vue-eslint-parser": "^10.4.0"
+    "vue-eslint-parser": "^10.4.0",
+    "vue-tsc": "^3.2.6"
   }
 }

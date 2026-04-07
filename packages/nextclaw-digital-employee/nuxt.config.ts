@@ -1,6 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-03-11",
   devtools: { enabled: true },
+  modules: ["@pinia/nuxt"],
   css: [
     "@fontsource/inter/400.css",
     "@fontsource/inter/500.css",
@@ -39,6 +40,6 @@ export default defineNuxtConfig({
   },
   typescript: {
     strict: true,
-    typeCheck: false
+    typeCheck: true
   }
 });
