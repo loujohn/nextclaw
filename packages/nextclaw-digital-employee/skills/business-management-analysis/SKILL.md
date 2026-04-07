@@ -57,7 +57,7 @@ mcporter call business-mgmt.forewarn  # ❌ 错误！
 python skills/business-management-analysis/scripts/bm-query.py list
 ```
 
-### 调用 MCP 工具
+### 调用单个工具
 
 ```bash
 python skills/business-management-analysis/scripts/bm-query.py call <工具名> [参数]
@@ -78,6 +78,18 @@ python skills/business-management-analysis/scripts/bm-query.py call allCollect t
 # 预警情况
 python skills/business-management-analysis/scripts/bm-query.py call forewarn
 ```
+
+### 全面分析（获取所有数据）
+
+当用户要求**全面分析**经营管理情况时，一次性获取所有关键数据：
+
+```bash
+python skills/business-management-analysis/scripts/bm-query.py all
+```
+
+这会同时获取：项目推进情况、预警情况、整体收款、整体付款、签约金额、年度自建。
+
+**注意**：如果用户只是问某个具体问题，不要使用 `all`，只调用对应的单个工具。
 
 ## 可用工具
 

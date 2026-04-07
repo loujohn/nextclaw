@@ -150,6 +150,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeRepo,
         employeeSkillRepo,
         skillInstallationRepo,
+        runRepo,
         loadState: async () =>
           loadPlatformRuntimeState({
             workspaceDir,
