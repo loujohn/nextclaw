@@ -241,7 +241,7 @@ export class DingTalkOrgClient {
     for (const dept of allDepts) {
       let cursor = 0;
 
-      while (true) {
+      for (;;) {
         const page = await this.getDepartmentUsers(dept.dept_id, cursor);
         const userItems = page.list ?? [];
 

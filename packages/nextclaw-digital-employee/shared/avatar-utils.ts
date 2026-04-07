@@ -9,5 +9,5 @@ export const AVATAR_GRADIENTS = [
 
 export function pickAvatarGradient(id: string): string {
   const hash = id.charCodeAt(0) + id.charCodeAt(id.length - 1);
-  return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length];
+  return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]!;
 }

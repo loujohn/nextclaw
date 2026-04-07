@@ -35,19 +35,28 @@ python skills/work-time-statistics/scripts/work-time-statistics.py list
 # 查询指定项目的人员工时
 python skills/work-time-statistics/scripts/work-time-statistics.py query XM202508125040 2026-04-01 2026-04-02
 
-# 不填参数则查询全部
+# 查询所有项目人员工时
 python skills/work-time-statistics/scripts/work-time-statistics.py query
 ```
 
-示例：
+## ⚠️ 时间参数处理说明
 
-```bash
-# 查询所有项目列表
-python skills/work-time-query/scripts/work-time-query.py list
+当用户询问**本周、本月、上周、上月**等相对时间时，必须**先获取当前日期**，然后计算对应的日期范围：
 
-# 查询指定项目的人员工时
-python skills/work-time-query/scripts/work-time-query.py query XM202508125040 2026-04-01 2026-04-02
-```
+1. **先获取当前日期**：使用 Python 的 datetime 获取今天的日期
+2. **根据当前日期计算周期**：
+   - 本周：当前日期所在的周一到周日（本周一 ~ 本周日）
+   - 上周：本周一往前7天（上周一 ~ 上周日）
+   - 本月：当前月份1号到月末（1号 ~ 月最后一天）
+   - 上月：上个月1号到月末
+3. **将计算后的日期传入**：`query startDay endDay`
+
+**示例**：
+
+- 用户问"本周工时" → 计算本周日期范围 → `query 2026-04-07 2026-04-13`
+- 用户问"上月工时" → 计算上月日期范围 → `query 2026-03-01 2026-03-31`
+
+**禁止**：直接使用用户说的"本周"、"上月"而不进行日期转换。
 
 ## 接口说明
 

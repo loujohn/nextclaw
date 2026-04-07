@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 type EmployeeSkillRecord = {
   id: string;
@@ -42,7 +43,7 @@ export class EmployeeSkillRepository {
     if (skillNames.length === 0) {
       return [];
     }
-    const now = new Date().toISOString();
+    const now = dbNow();
     const rows: EmployeeSkillRecord[] = skillNames.map((skillName) => ({
       id: randomUUID(),
       employee_id: employeeId,
@@ -81,5 +82,19 @@ export class EmployeeSkillRepository {
   async listAll(): Promise<EmployeeSkillView[]> {
     const rows = await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills).orderBy("created_at", "asc");
     return rows.map(toView);
+  }
+
+  async listAllWithEmployeeNames(): Promise<Array<{ employeeId: string; employeeName: string; skillName: string }>> {
+    const es = PLATFORM_TABLES.employeeSkills;
+    const e = PLATFORM_TABLES.employees;
+    const rows = await this.db(es)
+      .leftJoin(e, `${es}.employee_id`, `${e}.id`)
+      .select(`${es}.employee_id`, `${e}.name as employee_name`, `${es}.skill_name`)
+      .orderBy(`${es}.created_at`, "asc");
+    return (rows as Array<{ employee_id: string; employee_name?: string; skill_name: string }>).map((row) => ({
+      employeeId: row.employee_id,
+      employeeName: row.employee_name ?? row.employee_id,
+      skillName: row.skill_name
+    }));
   }
 }

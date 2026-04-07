@@ -1,62 +1,30 @@
 <script setup lang="ts">
-import { Plus, Play, Pencil, Trash2, Clock, Zap, ToggleLeft, ToggleRight, Loader2, CheckCircle, AlertCircle, X } from "lucide-vue-next";
+import { Plus, Play, Pencil, Trash2, Clock, Zap, ToggleLeft, ToggleRight, Loader2 } from "lucide-vue-next";
 import { formatDateTime } from "~~/shared/ui-models";
 import {
   buildCronExpr,
   parseCronToVisual,
   cronHumanLabel,
   everyMsHumanLabel,
-  validateCronVisual,
-  WEEKDAY_LABELS,
-  WEEKDAY_OPTIONS,
   type RepeatType
 } from "~~/shared/cron-utils";
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 
-type ScheduleJob = {
-  id: string;
-  employeeId: string;
-  name: string;
-  description: string;
-  scheduleKind: string;
-  cronExpr: string | null;
-  everyMs: number | null;
-  heartbeatIntervalS: number | null;
-  taskPrompt: string;
-  enabled: boolean;
-  runtimeJobId: string | null;
-  nextRunAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type JobsPayload = { ok: boolean; data: ScheduleJob[] };
+import type { ScheduleJob, JobsPayload } from "~~/shared/api-types";
 
 const { data, refresh } = useLazyFetch<JobsPayload>(() => `/api/employees/${employeeId.value}/jobs`);
 
 const jobs = computed(() => data.value?.data ?? []);
 
-// ── Dialog state ──────────────────────────────────────────────────────────────
 const showDialog = ref(false);
 const editingJobId = ref<string | null>(null);
 const saving = ref(false);
 const runningJobId = ref<string | null>(null);
 const cronInputMode = ref<"visual" | "raw">("visual");
 
-// ── Toast 通知 ────────────────────────────────────────────────────────────────
-type Toast = { id: number; type: "success" | "error"; message: string };
-const toasts = ref<Toast[]>([]);
-let _toastId = 0;
-function showToast(type: "success" | "error", message: string) {
-  const id = ++_toastId;
-  toasts.value.push({ id, type, message });
-  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3500);
-}
-function dismissToast(id: number) {
-  toasts.value = toasts.value.filter(t => t.id !== id);
-}
+const { toasts, showToast, dismissToast } = useToast();
 const formError = ref<string | null>(null);
 const runDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -64,52 +32,27 @@ const form = reactive({
   name: "",
   description: "",
   scheduleKind: "cron" as "cron" | "every",
-  // cron visual
   repeatType: "daily" as RepeatType,
   date: "",
   weekday: "1",
   dayOfMonth: "1",
   time: "09:00",
-  // cron raw
   cronExpr: "0 9 * * *",
-  // every
   everyHours: 0,
   everyMins: 30,
-  // common
   taskPrompt: "",
   enabled: true
 });
 
-// ── Cron utilities (delegated to shared/cron-utils) ──────────────────────────
-const previewCronExpr = computed(() => {
-  if (form.scheduleKind !== "cron" || cronInputMode.value !== "visual") return "";
-  return buildCronExpr(form.repeatType, {
-    date: form.date,
-    weekday: form.weekday,
-    dayOfMonth: form.dayOfMonth,
-    time: form.time
-  });
-});
-
-const todayStr = computed(() => new Date().toISOString().slice(0, 10));
-
-// ── Dialog open/close ─────────────────────────────────────────────────────────
 function openCreate() {
   editingJobId.value = null;
   formError.value = null;
-  form.name = "";
-  form.description = "";
-  form.scheduleKind = "cron";
-  form.repeatType = "daily";
-  form.date = "";
-  form.weekday = "1";
-  form.dayOfMonth = "1";
-  form.time = "09:00";
-  form.cronExpr = "0 9 * * *";
-  form.everyHours = 0;
-  form.everyMins = 30;
-  form.taskPrompt = "";
-  form.enabled = true;
+  Object.assign(form, {
+    name: "", description: "", scheduleKind: "cron",
+    repeatType: "daily", date: "", weekday: "1", dayOfMonth: "1",
+    time: "09:00", cronExpr: "0 9 * * *",
+    everyHours: 0, everyMins: 30, taskPrompt: "", enabled: true
+  });
   cronInputMode.value = "visual";
   showDialog.value = true;
 }
@@ -146,23 +89,7 @@ function closeDialog() {
 }
 
 async function saveJob() {
-  if (!form.name.trim()) return;
-
-  // Validate cron visual before save
-  if (form.scheduleKind === "cron" && cronInputMode.value === "visual") {
-    const validation = validateCronVisual(form.repeatType, { time: form.time, date: form.date });
-    if (!validation.ok) {
-      formError.value = validation.error ?? "配置有误";
-      return;
-    }
-  }
-  // Validate every: at least 1 min
-  if (form.scheduleKind === "every" && form.everyHours === 0 && form.everyMins === 0) {
-    formError.value = "间隔时间不能为 0，最短 1 分钟";
-    return;
-  }
-
-  formError.value = null;
+  if (!form.name.trim() || formError.value) return;
   saving.value = true;
   try {
     const cronExpr = form.scheduleKind === "cron"
@@ -177,8 +104,7 @@ async function saveJob() {
       name: form.name.trim(),
       description: form.description.trim(),
       scheduleKind: form.scheduleKind,
-      cronExpr,
-      everyMs,
+      cronExpr, everyMs,
       taskPrompt: form.taskPrompt.trim(),
       enabled: form.enabled
     };
@@ -201,17 +127,10 @@ async function deleteJob(jobId: string) {
 }
 
 async function runJobNow(jobId: string) {
-  // Debounce: ignore if a timer is already pending for this job
   if (runDebounceTimers.has(jobId)) return;
-  // Also skip if already running
   if (runningJobId.value === jobId) return;
-
-  // Set debounce lock for 2s
-  const timer = setTimeout(() => {
-    runDebounceTimers.delete(jobId);
-  }, 2000);
+  const timer = setTimeout(() => { runDebounceTimers.delete(jobId); }, 2000);
   runDebounceTimers.set(jobId, timer);
-
   runningJobId.value = jobId;
   try {
     await $fetch(`/api/employees/${employeeId.value}/jobs/${jobId}/run`, { method: "POST" });
@@ -232,7 +151,6 @@ async function toggleEnabled(job: ScheduleJob) {
   await refresh();
 }
 
-// ── Display helpers ───────────────────────────────────────────────────────────
 function scheduleKindLabel(kind: string) {
   return kind === "every" ? "固定间隔" : "按时间表";
 }
@@ -250,7 +168,6 @@ function scheduleIcon(kind: string) {
 
 <template>
   <div class="space-y-5">
-    <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
         <span class="section-label">多任务调度</span>
@@ -263,7 +180,6 @@ function scheduleIcon(kind: string) {
       </button>
     </div>
 
-    <!-- Empty state -->
     <div
       v-if="jobs.length === 0"
       class="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card py-14 text-center"
@@ -273,7 +189,6 @@ function scheduleIcon(kind: string) {
       <p class="mt-1 text-xs text-muted-foreground/70">点击右上角"新增任务"创建第一个独立定时任务</p>
     </div>
 
-    <!-- Job list -->
     <div v-else class="space-y-3">
       <div
         v-for="job in jobs"
@@ -282,7 +197,6 @@ function scheduleIcon(kind: string) {
         :class="!job.enabled ? 'opacity-55' : ''"
       >
         <div class="flex items-start justify-between gap-4">
-          <!-- Left: info -->
           <div class="min-w-0 flex-1 space-y-1.5">
             <div class="flex items-center gap-2">
               <component :is="scheduleIcon(job.scheduleKind)" class="h-4 w-4 shrink-0 text-primary" :stroke-width="1.8" />
@@ -311,9 +225,7 @@ function scheduleIcon(kind: string) {
             </p>
           </div>
 
-          <!-- Right: actions -->
           <div class="flex shrink-0 items-center gap-1.5">
-            <!-- 立即执行 -->
             <span class="relative group/tip">
               <button
                 class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
@@ -327,7 +239,6 @@ function scheduleIcon(kind: string) {
                 立即执行
               </span>
             </span>
-            <!-- 启用 / 停用 -->
             <span class="relative group/tip">
               <button
                 class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -339,7 +250,6 @@ function scheduleIcon(kind: string) {
                 {{ job.enabled ? '停用任务' : '启用任务' }}
               </span>
             </span>
-            <!-- 编辑 -->
             <span class="relative group/tip">
               <button
                 class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -351,7 +261,6 @@ function scheduleIcon(kind: string) {
                 编辑任务
               </span>
             </span>
-            <!-- 删除 -->
             <span class="relative group/tip">
               <button
                 class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
@@ -368,189 +277,21 @@ function scheduleIcon(kind: string) {
       </div>
     </div>
 
-    <!-- Create / Edit dialog -->
-    <Teleport to="body">
-      <div
-        v-if="showDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
-        @click.self="closeDialog"
-      >
-        <div class="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl max-h-[90vh] overflow-y-auto">
-          <div class="flex items-center justify-between border-b border-border px-5 py-4">
-            <h3 class="text-base font-semibold">{{ editingJobId ? "编辑定时任务" : "新增定时任务" }}</h3>
-            <button class="rounded-lg p-1 text-muted-foreground hover:text-foreground" @click="closeDialog">✕</button>
-          </div>
+    <EmployeesJobFormDialog
+      :visible="showDialog"
+      :form="form"
+      :editing-job-id="editingJobId"
+      :saving="saving"
+      :error="formError"
+      :cron-input-mode="cronInputMode"
+      @save="saveJob"
+      @close="closeDialog"
+      @update:cron-input-mode="cronInputMode = $event"
+      @update:error="formError = $event"
+    />
 
-          <form class="space-y-4 p-5" @submit.prevent="saveJob">
-            <label class="block space-y-1.5">
-              <span class="text-sm font-medium">任务名称 <span class="text-destructive">*</span></span>
-              <input
-                v-model="form.name"
-                class="input-field"
-                placeholder="例如：每日工时提醒"
-                required
-              />
-            </label>
-
-            <label class="block space-y-1.5">
-              <span class="text-sm font-medium">描述（可选）</span>
-              <input
-                v-model="form.description"
-                class="input-field"
-                placeholder="简短说明这个任务的用途"
-              />
-            </label>
-
-            <!-- 运行方式 -->
-            <label class="block space-y-1.5">
-              <span class="text-sm font-medium">运行方式</span>
-              <select v-model="form.scheduleKind" class="input-field">
-                <option value="cron">按时间表</option>
-                <option value="every">固定间隔</option>
-              </select>
-            </label>
-
-            <!-- 按时间表：可视化 or 填 Cron -->
-            <div v-if="form.scheduleKind === 'cron'" class="space-y-3">
-              <!-- 模式切换 -->
-              <div class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-1 w-fit">
-                <button
-                  type="button"
-                  class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                  :class="cronInputMode === 'visual' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
-                  @click="cronInputMode = 'visual'"
-                >可视化配置</button>
-                <button
-                  type="button"
-                  class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                  :class="cronInputMode === 'raw' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
-                  @click="cronInputMode = 'raw'"
-                >Cron 表达式</button>
-              </div>
-
-              <!-- 可视化时间选择器 -->
-              <div v-if="cronInputMode === 'visual'" class="space-y-2">
-                <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">计划</span>
-                <div class="flex flex-wrap items-center gap-2">
-                  <!-- 重复类型 -->
-                  <select v-model="form.repeatType" class="input-field flex-1 min-w-[110px]">
-                    <option value="none">不重复</option>
-                    <option value="daily">每天</option>
-                    <option value="weekly">每周</option>
-                    <option value="monthly">每月</option>
-                  </select>
-                  <!-- 日期（不重复） -->
-                  <input
-                    v-if="form.repeatType === 'none'"
-                    v-model="form.date"
-                    type="date"
-                    :min="todayStr"
-                    class="input-field flex-1 min-w-[140px]"
-                  />
-                  <!-- 星期（每周） -->
-                  <select
-                    v-else-if="form.repeatType === 'weekly'"
-                    v-model="form.weekday"
-                    class="input-field flex-1 min-w-[100px]"
-                  >
-                    <option v-for="d in WEEKDAY_OPTIONS" :key="d" :value="String(d)">{{ WEEKDAY_LABELS[d] }}</option>
-                  </select>
-                  <!-- 几号（每月） -->
-                  <select
-                    v-else-if="form.repeatType === 'monthly'"
-                    v-model="form.dayOfMonth"
-                    class="input-field flex-1 min-w-[100px]"
-                  >
-                    <option v-for="d in 31" :key="d" :value="String(d)">{{ d }}日</option>
-                  </select>
-                  <!-- 时间 -->
-                  <input
-                    v-model="form.time"
-                    type="time"
-                    class="input-field flex-1 min-w-[110px]"
-                  />
-                </div>
-                <p class="text-xs text-muted-foreground">
-                  Cron：<code class="font-mono">{{ previewCronExpr }}</code>
-                </p>
-              </div>
-
-              <!-- 直填 Cron 表达式 -->
-              <div v-else class="space-y-1.5">
-                <span class="text-sm font-medium">Cron 表达式</span>
-                <input v-model="form.cronExpr" class="input-field font-mono" placeholder="0 9 * * 1-5" />
-                <p class="text-xs text-muted-foreground">
-                  工作日 9:00 &rarr; <code class="font-mono">0 9 * * 1-5</code>&ensp;
-                  每天 18:00 &rarr; <code class="font-mono">0 18 * * *</code>&ensp;
-                  每月 1 日 &rarr; <code class="font-mono">0 9 1 * *</code>
-                </p>
-              </div>
-            </div>
-
-            <!-- 固定间隔 -->
-            <div v-else class="space-y-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">计划</span>
-              <div class="flex items-center gap-2">
-                <input v-model.number="form.everyHours" type="number" min="0" max="23" class="input-field w-20 text-center" />
-                <span class="text-sm text-muted-foreground shrink-0">小时</span>
-                <input v-model.number="form.everyMins" type="number" min="0" max="59" class="input-field w-20 text-center" />
-                <span class="text-sm text-muted-foreground shrink-0">分钟</span>
-              </div>
-              <p class="text-xs text-muted-foreground">最短间隔 1 分钟</p>
-            </div>
-
-            <label class="block space-y-1.5">
-              <span class="text-sm font-medium">任务 Prompt（可选）</span>
-              <textarea
-                v-model="form.taskPrompt"
-                class="input-field min-h-[90px] resize-y font-mono text-xs"
-                placeholder="留空则使用员工 systemPrompt + 默认定时提示语。&#10;填写后将作为本次定时触发的专属消息，覆盖默认 prompt。"
-              />
-            </label>
-
-            <div class="flex items-center gap-2">
-              <input
-                id="job-enabled"
-                v-model="form.enabled"
-                type="checkbox"
-                class="h-4 w-4 rounded accent-primary"
-              />
-              <label for="job-enabled" class="text-sm font-medium cursor-pointer select-none">启用（保存后立即生效）</label>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-1">
-              <p v-if="formError" class="mr-auto text-xs text-destructive self-center">{{ formError }}</p>
-              <button type="button" class="btn-ghost" @click="closeDialog">取消</button>
-              <button type="submit" class="btn-primary" :disabled="saving">
-                {{ saving ? "保存中…" : "保存" }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
+    <SharedToastContainer :toasts="toasts" @dismiss="dismissToast" />
   </div>
-
-  <!-- Toast Notifications -->
-  <Teleport to="body">
-    <div class="fixed top-0 inset-x-0 z-[60] flex flex-col items-center gap-2 pt-5 pointer-events-none">
-      <TransitionGroup name="toast">
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto flex items-center gap-3 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-sm min-w-[260px] max-w-sm"
-          :class="toast.type === 'success' ? 'bg-card border-primary/20 text-foreground' : 'bg-card border-destructive/20 text-foreground'"
-        >
-          <CheckCircle v-if="toast.type === 'success'" class="h-4 w-4 shrink-0 text-primary" :stroke-width="2" />
-          <AlertCircle v-else class="h-4 w-4 shrink-0 text-destructive" :stroke-width="2" />
-          <p class="flex-1 text-sm">{{ toast.message }}</p>
-          <button class="text-muted-foreground hover:text-foreground" @click="dismissToast(toast.id)">
-            <X class="h-3.5 w-3.5" :stroke-width="2" />
-          </button>
-        </div>
-      </TransitionGroup>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>

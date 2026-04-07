@@ -1,23 +1,8 @@
 <script setup lang="ts">
-import { Building2, RefreshCcw, X, Check, LayoutGrid, Users, Bot, Network } from "lucide-vue-next";
+import { Building2, RefreshCcw, X, Check, LayoutGrid } from "lucide-vue-next";
+import type { DepartmentView, DepartmentTreeNode, HumanMemberBrief, DigitalMemberBrief } from "~~/shared/department-types";
 
-export type DepartmentView = {
-  id: string;
-  name: string;
-  description: string;
-  parentId: string | null;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DepartmentTreeNode = DepartmentView & {
-  children: DepartmentTreeNode[];
-  employeeCount: number;
-};
-
-export type HumanMemberBrief = { id: string; name: string; title?: string | null };
-export type DigitalMemberBrief = { id: string; name: string };
+export type { DepartmentView, DepartmentTreeNode, HumanMemberBrief, DigitalMemberBrief };
 
 const props = defineProps<{
   departments: DepartmentView[];
@@ -63,15 +48,7 @@ function toggleExpand(id: string) {
   }
 }
 
-// ---- Toast ----
-type Toast = { id: number; type: "success" | "error"; message: string };
-const toasts = ref<Toast[]>([]);
-let _toastId = 0;
-function showToast(type: "success" | "error", message: string) {
-  const id = ++_toastId;
-  toasts.value.push({ id, type, message });
-  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3500);
-}
+const { toasts, showToast } = useToast();
 
 // ---- 同步组织 ----
 const showSyncConfirm = ref(false);
@@ -84,8 +61,9 @@ async function runSync() {
     await $fetch("/api/org/sync-trigger", { method: "POST" });
     emit("refresh");
     showToast("success", "组织同步成功");
-  } catch (err: any) {
-    const msg = err?.data?.statusMessage ?? err?.message ?? "同步失败";
+  } catch (err: unknown) {
+    const e = err as { data?: { statusMessage?: string }; message?: string };
+    const msg = e?.data?.statusMessage ?? e?.message ?? "同步失败";
     showToast("error", msg);
   } finally {
     syncing.value = false;

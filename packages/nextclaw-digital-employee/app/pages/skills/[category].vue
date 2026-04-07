@@ -69,22 +69,6 @@ const SKILL_CATEGORIES = [
   },
 ];
 
-type SkillItem = {
-  name: string;
-  nameZh?: string;
-  source: string;
-  sourceType: string;
-  sourceUri: string | null;
-  enabled: boolean;
-  usageCount: number;
-  usedBy: string[];
-  statusLabel: string;
-  purpose: string;
-  categoryLabel: string;
-};
-
-type SkillListPayload = { ok: boolean; data: SkillItem[] };
-
 const route = useRoute();
 const categorySlug = computed(() => route.params.category as string);
 const currentCat = computed(() => SKILL_CATEGORIES.find((c) => c.slug === categorySlug.value));
@@ -103,8 +87,9 @@ const togglingSkill = ref("");
 const uploadingDir = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
-const { data, refresh } = useLazyFetch<SkillListPayload>("/api/skills");
-const allSkills = computed(() => data.value?.data ?? []);
+const skillsStore = useSkillsStore();
+const refresh = () => skillsStore.refresh();
+const allSkills = computed(() => skillsStore.list);
 
 const categorySkills = computed(() => {
   const cat = currentCat.value;

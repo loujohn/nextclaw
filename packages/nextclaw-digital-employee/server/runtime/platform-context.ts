@@ -6,7 +6,7 @@ import { createLogger } from "../utils/logger";
 const logger = createLogger("platform-context");
 import { CronService, MessageBus, SessionManager } from "@nextclaw/core";
 import { findBuiltinProviderByName } from "@nextclaw/runtime";
-import { createPlatformKnex, ensurePlatformDatabase, platformMigrationSource } from "../db/knex";
+import { createPlatformKnex, ensureDmSchema, ensurePlatformDatabase, platformMigrationSource, resolveDbConfigFromEnv } from "../db/knex";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { AutomationService } from "../services/automation-service";
 import { EmployeeHealthService } from "../services/employee-health-service";
@@ -111,7 +111,12 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       if (!existsSync(homePkg)) {
         writeFileSync(homePkg, '{ "private": true, "type": "commonjs" }\n', "utf-8");
       }
-      const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+      const dbConfig = resolveDbConfigFromEnv();
+      if (dbConfig.client === "sqlite" && !dbConfig.sqlitePath) {
+        dbConfig.sqlitePath = join(homeDir, "platform.sqlite");
+      }
+      const db = createPlatformKnex(dbConfig);
+      await ensureDmSchema(db);
       await ensurePlatformDatabase(db);
       await db.migrate.latest({ migrationSource: platformMigrationSource });
       const integrationConnectionRepo = new IntegrationConnectionRepository(db);
@@ -167,7 +172,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         gateway
       );
       // 当 Agent 通过对话创建定时任务时，同步写入数据库以便 UI 显示。
-      // SQLite 在并发异步操作时可能出现 SQLITE_BUSY，因此保留单次重试作为防御。
+      // SQLite 在并发异步操作时可能出现 SQLITE_BUSY；达梦可能出现锁等待——保留单次重试作为防御。
       cronService.onJobAdded = (job) => {
         if (!job.agentId) return;
         const agentCode = job.agentId;

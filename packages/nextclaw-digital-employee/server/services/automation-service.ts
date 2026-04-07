@@ -1,4 +1,5 @@
 import { CronService, HeartbeatService, type CronJob } from "@nextclaw/core";
+import { formatTimestamp } from "../db/knex";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger("AutomationService");
@@ -139,7 +140,7 @@ export class AutomationService {
         deliver: false
       });
       await this.jobRepo.patchRuntimeJobId(job.id, cronJob.id);
-      const nextRunAt = cronJob.state.nextRunAtMs ? new Date(cronJob.state.nextRunAtMs).toISOString() : null;
+      const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
       await this.jobRepo.patchNextRunAt(job.id, nextRunAt);
     }
   }
@@ -275,7 +276,7 @@ export class AutomationService {
       enabled: input.enabled ?? true,
       runtimeJobId: job.id,
       scheduleMessage,
-      nextRunAt: job.state.nextRunAtMs ? new Date(job.state.nextRunAtMs).toISOString() : null
+      nextRunAt: job.state.nextRunAtMs ? formatTimestamp(new Date(job.state.nextRunAtMs)) : null
     });
   }
 
@@ -366,7 +367,7 @@ export class AutomationService {
         message: input.taskPrompt ?? "",
         deliver: false
       });
-      const nextRunAt = cronJob.state.nextRunAtMs ? new Date(cronJob.state.nextRunAtMs).toISOString() : null;
+      const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
       return (await this.jobRepo.update(job.id, { runtimeJobId: cronJob.id, nextRunAt })) ?? job;
     }
     return job;
@@ -434,7 +435,7 @@ export class AutomationService {
       message: input.taskPrompt ?? existing.taskPrompt,
       deliver: false
     });
-    const nextRunAt = cronJob.state.nextRunAtMs ? new Date(cronJob.state.nextRunAtMs).toISOString() : null;
+    const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
     return (await this.jobRepo.update(jobId, { runtimeJobId: cronJob.id, nextRunAt })) ?? updated;
   }
 
@@ -476,7 +477,7 @@ export class AutomationService {
   /** Sync nextRunAtMs from CronService into DB after automatic execution. */
   private async syncNextRunForJobs(executedJobs: CronJob[]): Promise<void> {
     for (const job of executedJobs) {
-      const nextRunAt = job.state.nextRunAtMs ? new Date(job.state.nextRunAtMs).toISOString() : null;
+      const nextRunAt = job.state.nextRunAtMs ? formatTimestamp(new Date(job.state.nextRunAtMs)) : null;
       if (job.name.startsWith("ejob:")) {
         const jobId = job.name.slice("ejob:".length);
         await this.jobRepo.patchNextRunAt(jobId, nextRunAt);

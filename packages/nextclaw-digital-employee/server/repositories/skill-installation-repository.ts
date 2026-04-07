@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type SkillInstallationRecord } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 export type SkillInstallationView = {
   id: string;
@@ -47,7 +48,7 @@ export class SkillInstallationRepository {
     const existing = await this.db<SkillInstallationRecord>(PLATFORM_TABLES.skillInstallations)
       .where({ skill_name: input.skillName })
       .first();
-    const now = new Date().toISOString();
+    const now = dbNow();
     const payload = {
       skill_name: input.skillName,
       source_type: input.sourceType,
@@ -99,7 +100,7 @@ export class SkillInstallationRepository {
       .where({ id: existing.id })
       .update({
         enabled,
-        updated_at: new Date().toISOString()
+        updated_at: dbNow()
       });
     const updated = await this.db<SkillInstallationRecord>(PLATFORM_TABLES.skillInstallations)
       .where({ id: existing.id })

@@ -1,6 +1,6 @@
 import { createError, getRouterParam } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { translateRunText } from "../../../shared/ui-models";
+import { translateRunText, formatTriggerLabel } from "../../../shared/ui-models";
 
 export default defineEventHandler(async (event) => {
   const runId = getRouterParam(event, "id") ?? "";
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
       summary: translateRunText(run.summary ?? ""),
       employeeName: employee?.name ?? "未关联员工",
       statusLabel: run.status === "completed" ? "已完成" : run.status === "failed" ? "执行失败" : "执行中",
-      triggerLabel: run.triggerSource === "chat" || run.triggerType === "manual" ? "聊天触发" : "自动运行",
+      triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
       scheduleJobName: scheduleJob?.name ?? null
     }
   };

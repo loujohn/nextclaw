@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 type EmployeeScheduleJobRecord = {
   id: string;
@@ -75,7 +76,7 @@ export class EmployeeScheduleJobRepository {
   constructor(private readonly db: Knex) {}
 
   async create(input: CreateEmployeeScheduleJobInput): Promise<EmployeeScheduleJobView> {
-    const now = new Date().toISOString();
+    const now = dbNow();
     const record: EmployeeScheduleJobRecord = {
       id: randomUUID(),
       employee_id: input.employeeId,
@@ -97,7 +98,7 @@ export class EmployeeScheduleJobRepository {
   }
 
   async update(jobId: string, input: UpdateEmployeeScheduleJobInput): Promise<EmployeeScheduleJobView | null> {
-    const now = new Date().toISOString();
+    const now = dbNow();
     const payload: Partial<EmployeeScheduleJobRecord> = { updated_at: now };
     if (input.name !== undefined) payload.name = input.name;
     if (input.description !== undefined) payload.description = input.description;
@@ -159,12 +160,12 @@ export class EmployeeScheduleJobRepository {
   async patchNextRunAt(jobId: string, nextRunAt: string | null): Promise<void> {
     await this.db<EmployeeScheduleJobRecord>(PLATFORM_TABLES.employeeScheduleJobs)
       .where({ id: jobId })
-      .update({ next_run_at: nextRunAt, updated_at: new Date().toISOString() });
+      .update({ next_run_at: nextRunAt, updated_at: dbNow() });
   }
 
   async patchRuntimeJobId(jobId: string, runtimeJobId: string | null): Promise<void> {
     await this.db<EmployeeScheduleJobRecord>(PLATFORM_TABLES.employeeScheduleJobs)
       .where({ id: jobId })
-      .update({ runtime_job_id: runtimeJobId, updated_at: new Date().toISOString() });
+      .update({ runtime_job_id: runtimeJobId, updated_at: dbNow() });
   }
 }

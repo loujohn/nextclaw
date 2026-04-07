@@ -3,7 +3,7 @@ import { getPlatformContext } from "../../runtime/platform-context";
 import { getOrgSyncConfig, runOrgSync } from "../../services/org-sync-service";
 import { invalidateHumanEmployeeCache } from "./human-employees.get";
 
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async () => {
   const ctx = await getPlatformContext();
   const config = await getOrgSyncConfig(ctx.db);
 

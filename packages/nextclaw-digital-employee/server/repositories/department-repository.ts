@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type DepartmentRecord } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 export type CreateDepartmentInput = {
   name: string;
@@ -47,7 +48,7 @@ export class DepartmentRepository {
   constructor(private readonly db: Knex) {}
 
   async create(input: CreateDepartmentInput): Promise<DepartmentView> {
-    const now = new Date().toISOString();
+    const now = dbNow();
     const record: DepartmentRecord = {
       id: randomUUID(),
       name: input.name.trim(),
@@ -79,7 +80,7 @@ export class DepartmentRepository {
     const existing = await this.db<DepartmentRecord>(PLATFORM_TABLES.departments).where({ id }).first();
     if (!existing) return null;
 
-    const updatedAt = new Date().toISOString();
+    const updatedAt = dbNow();
     const patch: Partial<DepartmentRecord> & { updated_at: string } = { updated_at: updatedAt };
     if (typeof input.name === "string") patch.name = input.name.trim();
     if (typeof input.description === "string") patch.description = input.description.trim();

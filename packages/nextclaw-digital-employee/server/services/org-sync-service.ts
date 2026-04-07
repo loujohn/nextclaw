@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
-import { PLATFORM_TABLES, type OrgSyncConfigRecord } from "../db/schema";
+import { PLATFORM_TABLES } from "../db/schema";
+import { dbNow } from "../db/knex";
 import { DingTalkOrgClient } from "../integrations/dingtalk-org-client";
 import { DepartmentRepository } from "../repositories/department-repository";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("OrgSync");
 
-const CONFIG_ID = "default";
 
 export type OrgSyncConfigView = {
   appKey: string;
@@ -94,7 +94,7 @@ export async function performOrgSync(db: Knex, orgData: OrgSyncBody): Promise<Or
   const manualDeptIds = manualDepts.map((d) => d.id);
   const allRemovedDeptIds = [...removedDeptIds, ...manualDeptIds];
 
-  const now = new Date().toISOString();
+  const now = dbNow();
   let deptCreated = 0;
   let deptUpdated = 0;
   let humanCreated = 0;
@@ -217,13 +217,11 @@ function getEnvOrgSyncConfig(): OrgSyncConfigView {
   };
 }
 
-export async function getOrgSyncConfig(db: Knex): Promise<OrgSyncConfigView> {
-  // 只从环境变量读取
+export async function getOrgSyncConfig(_db: Knex): Promise<OrgSyncConfigView> {
   return getEnvOrgSyncConfig();
 }
 
-export async function updateOrgSyncConfig(db: Knex, patch: OrgSyncConfigUpdate): Promise<OrgSyncConfigView> {
-  // 仅支持从环境变量读取，不再支持更新
+export async function updateOrgSyncConfig(_db: Knex, _patch: OrgSyncConfigUpdate): Promise<OrgSyncConfigView> {
   return getEnvOrgSyncConfig();
 }
 

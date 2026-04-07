@@ -34,3 +34,4 @@ packages/nextclaw-digital-employee/dist/_compat-deploy/
 
 .github/
 .dockerignore
+.gstack/

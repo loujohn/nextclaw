@@ -1,148 +1,19 @@
 <script setup lang="ts">
 import {
-  ShieldCheck,
-  Users,
-  Lock,
-  Key,
-  FileText,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Activity,
-  Database,
-  Download,
-  Plus,
-  Edit,
-  ChevronRight,
-  Trash2,
-  KeyRound,
-  Upload
+  ShieldCheck, Users, Key, FileText, AlertTriangle,
+  Clock, Activity, Database, Download, Plus, Edit, ChevronRight,
+  Trash2, KeyRound, Upload
 } from "lucide-vue-next";
+import {
+  type RoleItem, type PermissionGroup, type AuditLogItem, type DataPolicyItem,
+  INITIAL_ROLES, INITIAL_PERMISSION_GROUPS, INITIAL_AUDIT_LOGS, INITIAL_DATA_POLICIES,
+  RESULT_STYLES, LEVEL_STYLES, LEVEL_LABELS
+} from "./security-mock";
 
-// ------------------- 类型定义 -------------------
-
-type RoleItem = {
-  id: string;
-  name: string;
-  description: string;
-  permissions: string[];
-  memberCount: number;
-  isSystem: boolean;
-};
-
-type PermissionGroup = {
-  group: string;
-  items: Array<{ key: string; label: string; enabled: boolean }>;
-};
-
-type AuditLogItem = {
-  id: string;
-  action: string;
-  operator: string;
-  target: string;
-  ip: string;
-  time: string;
-  result: "success" | "failure" | "warning";
-};
-
-type DataPolicyItem = {
-  id: string;
-  category: string;
-  description: string;
-  level: "high" | "medium" | "low";
-  status: "active" | "inactive";
-};
-
-// ------------------- 静态 Mock 数据 -------------------
-
-const roles = ref<RoleItem[]>([
-  {
-    id: "r1",
-    name: "超级管理员",
-    description: "拥有所有系统权限，可管理所有模块和用户",
-    permissions: ["user:*", "employee:*", "skill:*", "integration:*", "security:*", "audit:*"],
-    memberCount: 1,
-    isSystem: true
-  },
-  {
-    id: "r2",
-    name: "部门管理员",
-    description: "管理本部门员工、技能和运行记录",
-    permissions: ["employee:read", "employee:write", "skill:read", "skill:write", "run:read"],
-    memberCount: 5,
-    isSystem: false
-  },
-  {
-    id: "r3",
-    name: "普通成员",
-    description: "仅可查看员工列表和运行记录，不可修改",
-    permissions: ["employee:read", "run:read", "skill:read"],
-    memberCount: 23,
-    isSystem: false
-  },
-  {
-    id: "r4",
-    name: "审计员",
-    description: "可查看所有操作日志和数据安全报告",
-    permissions: ["audit:read", "employee:read", "security:read"],
-    memberCount: 2,
-    isSystem: false
-  }
-]);
-
-const permissionGroups = ref<PermissionGroup[]>([
-  {
-    group: "员工管理",
-    items: [
-      { key: "employee:read", label: "查看员工", enabled: true },
-      { key: "employee:write", label: "编辑员工", enabled: true },
-      { key: "employee:delete", label: "删除员工", enabled: false }
-    ]
-  },
-  {
-    group: "技能管理",
-    items: [
-      { key: "skill:read", label: "查看技能", enabled: true },
-      { key: "skill:write", label: "安装/编辑技能", enabled: true },
-      { key: "skill:delete", label: "删除技能", enabled: false }
-    ]
-  },
-  {
-    group: "集成配置",
-    items: [
-      { key: "integration:read", label: "查看集成", enabled: true },
-      { key: "integration:write", label: "编辑集成配置", enabled: false }
-    ]
-  },
-  {
-    group: "安全与审计",
-    items: [
-      { key: "security:read", label: "查看安全策略", enabled: false },
-      { key: "security:write", label: "修改安全策略", enabled: false },
-      { key: "audit:read", label: "查看审计日志", enabled: false }
-    ]
-  }
-]);
-
-const auditLogs = ref<AuditLogItem[]>([
-  { id: "l1", action: "登录系统", operator: "admin@example.com", target: "系统", ip: "192.168.1.10", time: "2026-03-26 10:32:15", result: "success" },
-  { id: "l2", action: "修改员工配置", operator: "manager@example.com", target: "数字员工 #E007", ip: "192.168.1.22", time: "2026-03-26 10:18:44", result: "success" },
-  { id: "l3", action: "删除技能", operator: "user@example.com", target: "Skill: web-search", ip: "10.0.0.5", time: "2026-03-26 09:55:01", result: "failure" },
-  { id: "l4", action: "导出数据报告", operator: "auditor@example.com", target: "运行记录", ip: "192.168.2.8", time: "2026-03-26 09:40:30", result: "success" },
-  { id: "l5", action: "修改角色权限", operator: "admin@example.com", target: "角色: 普通成员", ip: "192.168.1.10", time: "2026-03-25 18:02:11", result: "warning" },
-  { id: "l6", action: "登录失败", operator: "unknown@evil.com", target: "系统", ip: "203.0.113.44", time: "2026-03-25 17:45:33", result: "failure" }
-]);
-
-const dataPolicies = ref<DataPolicyItem[]>([
-  { id: "p1", category: "访问控制", description: "强制多因素认证（MFA）登录", level: "high", status: "active" },
-  { id: "p2", category: "数据加密", description: "系统提示词及配置数据静态加密存储", level: "high", status: "active" },
-  { id: "p3", category: "数据传输", description: "API 通信强制使用 TLS 1.2+", level: "high", status: "active" },
-  { id: "p4", category: "日志留存", description: "操作日志至少保留 90 天", level: "medium", status: "active" },
-  { id: "p5", category: "数据脱敏", description: "日志中敏感字段（密钥、凭证）自动脱敏", level: "medium", status: "active" },
-  { id: "p6", category: "访问审计", description: "关键操作（删除/修改集成）二次确认", level: "medium", status: "inactive" },
-  { id: "p7", category: "数据导出", description: "数据导出需管理员审批", level: "low", status: "inactive" }
-]);
+const roles = ref<RoleItem[]>([...INITIAL_ROLES]);
+const permissionGroups = ref<PermissionGroup[]>(INITIAL_PERMISSION_GROUPS);
+const auditLogs = ref<AuditLogItem[]>(INITIAL_AUDIT_LOGS);
+const dataPolicies = ref<DataPolicyItem[]>([...INITIAL_DATA_POLICIES]);
 
 // ------------------- Secrets 类型与数据 -------------------
 
@@ -363,24 +234,9 @@ function exportAuditLog() {
   URL.revokeObjectURL(url);
 }
 
-// 结果标签样式
-const resultStyles: Record<string, { badge: string; icon: typeof CheckCircle2 }> = {
-  success: { badge: "bg-primary/10 text-primary", icon: CheckCircle2 },
-  failure: { badge: "bg-destructive/10 text-destructive", icon: XCircle },
-  warning: { badge: "bg-warning/10 text-warning-foreground", icon: AlertTriangle }
-};
-
-const levelStyles: Record<string, string> = {
-  high: "bg-destructive/10 text-destructive",
-  medium: "bg-warning/10 text-warning-foreground",
-  low: "bg-muted text-muted-foreground"
-};
-
-const levelLabels: Record<string, string> = {
-  high: "高",
-  medium: "中",
-  low: "低"
-};
+const resultStyles = RESULT_STYLES;
+const levelStyles = LEVEL_STYLES;
+const levelLabels = LEVEL_LABELS;
 </script>
 
 <template>
@@ -504,72 +360,7 @@ const levelLabels: Record<string, string> = {
         </div>
       </div>
 
-      <!-- 权限详情 -->
-      <div class="space-y-4">
-        <template v-if="selectedRole">
-          <div class="flex items-start justify-between">
-            <div>
-              <h2 class="text-base font-semibold text-foreground">
-                {{ selectedRole.name }}
-                <span v-if="selectedRole.isSystem" class="ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary">系统角色</span>
-              </h2>
-              <p class="mt-0.5 text-sm text-muted-foreground">{{ selectedRole.description }}</p>
-            </div>
-            <button
-              v-if="!selectedRole.isSystem"
-              class="btn-ghost text-xs"
-            >
-              <Edit class="h-3.5 w-3.5" />
-              编辑角色
-            </button>
-          </div>
-
-          <div class="space-y-4">
-            <div
-              v-for="group in permissionGroups"
-              :key="group.group"
-              class="card-elevated rounded-xl p-4"
-            >
-              <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {{ group.group }}
-              </h3>
-              <div class="space-y-2">
-                <div
-                  v-for="perm in group.items"
-                  :key="perm.key"
-                  class="flex items-center justify-between rounded-lg px-3 py-2 transition-colors"
-                  :class="selectedRole.permissions.includes(perm.key) || selectedRole.permissions.includes(perm.key.split(':')[0] + ':*')
-                    ? 'bg-primary/5'
-                    : 'bg-muted/30'"
-                >
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="flex h-5 w-5 items-center justify-center rounded-full"
-                      :class="selectedRole.permissions.includes(perm.key) || selectedRole.permissions.includes(perm.key.split(':')[0] + ':*')
-                        ? 'bg-primary/10'
-                        : 'bg-border'"
-                    >
-                      <CheckCircle2
-                        v-if="selectedRole.permissions.includes(perm.key) || selectedRole.permissions.includes(perm.key.split(':')[0] + ':*')"
-                        class="h-3.5 w-3.5 text-primary"
-                        :stroke-width="2"
-                      />
-                      <XCircle v-else class="h-3.5 w-3.5 text-muted-foreground/50" :stroke-width="2" />
-                    </span>
-                    <span class="text-sm text-foreground">{{ perm.label }}</span>
-                  </div>
-                  <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{{ perm.key }}</code>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <div v-else class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 py-16 text-center">
-          <Lock class="mb-3 h-8 w-8 text-muted-foreground/40" :stroke-width="1.5" />
-          <p class="text-sm text-muted-foreground">请从左侧选择一个角色查看权限</p>
-        </div>
-      </div>
+      <SecurityPermissionDetail :role="selectedRole" :permission-groups="permissionGroups" />
     </div>
 
     <!-- ===== 操作审计 ===== -->

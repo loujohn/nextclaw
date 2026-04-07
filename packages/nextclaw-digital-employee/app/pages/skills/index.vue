@@ -58,10 +58,10 @@ const SKILL_CATEGORIES = [
   },
 ];
 
-type SkillListPayload = { ok: boolean; data: Array<{ categoryLabel: string; enabled: boolean }> };
-
-const { data, pending } = useLazyFetch<SkillListPayload>("/api/skills");
-const allSkills = computed(() => data.value?.data ?? []);
+const skillsStore = useSkillsStore();
+const pending = computed(() => skillsStore.pending);
+const data = computed(() => skillsStore.data);
+const allSkills = computed(() => skillsStore.list);
 
 const countByLabel = computed(() => {
   const map = new Map<string, number>();
