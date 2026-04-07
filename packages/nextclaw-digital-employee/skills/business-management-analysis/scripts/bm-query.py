@@ -19,6 +19,8 @@ TIMEOUT = int(os.environ.get("PM_TIMEOUT", "120000"))
 import platform
 
 _is_windows = platform.system() == "Windows"
+# 在 Linux/macOS 上也需要使用 shell=True 来执行带参数的命令
+_use_shell = True
 
 
 def post_form(url, form_data, timeout):
@@ -63,8 +65,8 @@ def list_tools():
         sys.exit(1)
 
     result = subprocess.run(
-        "mcporter list --http-url " + PM_MCP_URL + " --allow-http",
-        shell=_is_windows,
+        "/usr/local/bin/mcporter list --http-url " + PM_MCP_URL + " --allow-http",
+        shell=_use_shell,
         capture_output=True,
         text=True,
         encoding="utf-8" if _is_windows else None,
@@ -89,11 +91,11 @@ def call_tool(tool_name, args=None):
         params = f"{args} {params}"
 
     # 使用 server.tool 格式 + --http-url
-    cmd = f"mcporter call {tool_name} {params} --http-url {PM_MCP_URL} --allow-http"
+    cmd = f"/usr/local/bin/mcporter call {tool_name} {params} --http-url {PM_MCP_URL} --allow-http"
 
     result = subprocess.run(
         cmd,
-        shell=_is_windows,
+        shell=_use_shell,
         capture_output=True,
         text=True,
         encoding="utf-8" if _is_windows else None,
@@ -120,7 +122,6 @@ def call_all():
     tools = [
         ("stageCount", "token=" + token),
         ("forewarn", "token=" + token),
-        ("businessDataStatistics", "token=" + token),
         ("allCollect", "timeFlag=4 token=" + token),
         ("payCondition", "timeFlag=4 token=" + token),
         ("chanceStatistics", "timeFlag=1 token=" + token),
@@ -129,10 +130,10 @@ def call_all():
 
     results = {}
     for tool_name, args in tools:
-        cmd = f"mcporter call {tool_name} {args} --http-url {PM_MCP_URL} --allow-http"
+        cmd = f"/usr/local/bin/mcporter call {tool_name} {args} --http-url {PM_MCP_URL} --allow-http"
         result = subprocess.run(
             cmd,
-            shell=_is_windows,
+            shell=_use_shell,
             capture_output=True,
             text=True,
             encoding="utf-8" if _is_windows else None,
