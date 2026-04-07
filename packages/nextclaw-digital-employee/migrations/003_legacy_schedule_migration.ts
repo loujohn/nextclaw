@@ -1,5 +1,14 @@
 import type { Knex } from "knex";
 
+const IS_DM = (process.env.DB_CLIENT ?? "sqlite").toLowerCase() === "dm";
+
+function nowTimestamp(): string {
+  const d = new Date();
+  if (!IS_DM) return d.toISOString();
+  const pad = (n: number, len = 2) => String(n).padStart(len, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 /**
  * Migrates legacy single-schedule records (employee_schedules) into the
  * multi-job model (employee_schedule_jobs). Existing employee_schedule_jobs
@@ -18,7 +27,7 @@ export async function up(knex: Knex): Promise<void> {
       .first();
     if (existingJob) continue;
 
-    const now = new Date().toISOString();
+    const now = nowTimestamp();
     await knex("employee_schedule_jobs").insert({
       id: row.id,
       employee_id: row.employee_id,

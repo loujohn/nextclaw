@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type EmployeeRecord } from "../db/schema";
 import { EmployeeStatus } from "../db/enums";
+import { dbNow } from "../db/knex";
 
 export type CreateEmployeeInput = {
   name: string;
@@ -52,7 +53,7 @@ export class EmployeeRepository {
   constructor(private readonly db: Knex) {}
 
   async create(input: CreateEmployeeInput): Promise<EmployeeView> {
-    const now = new Date().toISOString();
+    const now = dbNow();
     const record: EmployeeRecord = {
       id: randomUUID(),
       name: input.name.trim(),
@@ -105,7 +106,7 @@ export class EmployeeRepository {
   }
 
   async updateById(id: string, input: UpdateEmployeeInput): Promise<EmployeeView | null> {
-    const updatedAt = new Date().toISOString();
+    const updatedAt = dbNow();
     const patch: Record<string, unknown> = {
       name: input.name.trim(),
       description: input.description.trim(),
@@ -128,7 +129,7 @@ export class EmployeeRepository {
     const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
       .where({ id })
       .whereNot({ status: EmployeeStatus.Archived })
-      .update({ status: EmployeeStatus.Archived, updated_at: new Date().toISOString() });
+      .update({ status: EmployeeStatus.Archived, updated_at: dbNow() });
     return affected > 0;
   }
 

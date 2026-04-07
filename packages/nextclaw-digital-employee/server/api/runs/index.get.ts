@@ -1,6 +1,6 @@
 import { getQuery } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { buildRunListEntries } from "../../../shared/ui-models";
+import { buildRunListEntriesFromJoin } from "../../../shared/ui-models";
 
 const ALLOWED_STATUSES = new Set(["completed", "running", "failed"]);
 
@@ -13,19 +13,11 @@ export default defineEventHandler(async (event) => {
   const rawStatus = typeof query.status === "string" ? query.status : undefined;
   const status = rawStatus && ALLOWED_STATUSES.has(rawStatus) ? rawStatus : undefined;
   const ctx = await getPlatformContext();
-  const [{ items: runs, total }, employees, allJobs] = await Promise.all([
-    ctx.runRepo.listPaged({ page, pageSize, status }),
-    ctx.employeeRepo.list(),
-    ctx.employeeScheduleJobRepo.listAllEnabled()
-  ]);
+  const { items, total } = await ctx.runRepo.listPagedWithNames({ page, pageSize, status });
   return {
     ok: true,
     data: {
-      items: buildRunListEntries({
-        employees: employees.map((employee) => ({ id: employee.id, name: employee.name })),
-        jobs: allJobs.map((job) => ({ id: job.id, name: job.name })),
-        runs
-      }),
+      items: buildRunListEntriesFromJoin(items),
       total,
       page,
       pageSize

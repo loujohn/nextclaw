@@ -1,7 +1,23 @@
 import { existsSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import knex, { type Knex } from "knex";
 import { PLATFORM_TABLES } from "./schema";
+
+const _require = createRequire(import.meta.url);
+
+export type DbClientType = "sqlite" | "dm";
+
+export type DmConnectionConfig = {
+  connectString: string;
+  user: string;
+  password: string;
+  schema?: string;
+};
+
+export type PlatformDbConfig =
+  | { client: "sqlite"; sqlitePath: string }
+  | { client: "dm"; connection: DmConnectionConfig };
 
 function ensureParentDir(path: string): void {
   const dir = dirname(resolve(path));
@@ -10,12 +26,100 @@ function ensureParentDir(path: string): void {
   }
 }
 
-export function createPlatformKnex(databasePath: string): Knex {
-  ensureParentDir(databasePath);
+export const DM_DEFAULT_SCHEMA = "DIGITAL_EMPLOYEE";
+
+let _dbClient: DbClientType = "sqlite";
+let _dmSchema = DM_DEFAULT_SCHEMA;
+let _dmSchemaReady = false;
+
+export function getDbClient(): DbClientType {
+  return _dbClient;
+}
+
+export function isSqlite(): boolean {
+  return _dbClient === "sqlite";
+}
+
+export function isDm(): boolean {
+  return _dbClient === "dm";
+}
+
+/**
+ * 返回当前数据库引擎兼容的时间戳字符串。
+ * SQLite 使用 ISO 8601 (2024-01-01T00:00:00.000Z)
+ * 达梦使用 YYYY-MM-DD HH:mm:ss (不带 T 和 Z)
+ */
+export function dbNow(): string {
+  return formatTimestamp(new Date());
+}
+
+export function formatTimestamp(date: Date): string {
+  if (isSqlite()) {
+    return date.toISOString();
+  }
+  const pad = (n: number, len = 2) => String(n).padStart(len, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export function resolveDbConfigFromEnv(): PlatformDbConfig {
+  const clientEnv = (process.env.DB_CLIENT ?? "sqlite").toLowerCase();
+  if (clientEnv === "dm") {
+    const host = process.env.DB_HOST ?? "localhost";
+    const port = process.env.DB_PORT ?? "5236";
+    return {
+      client: "dm",
+      connection: {
+        connectString: `${host}:${port}`,
+        user: process.env.DB_USER ?? "SYSDBA",
+        password: process.env.DB_PASSWORD ?? "SYSDBA",
+        schema: process.env.DB_SCHEMA ?? DM_DEFAULT_SCHEMA,
+      },
+    };
+  }
+  return { client: "sqlite", sqlitePath: "" };
+}
+
+export function createPlatformKnex(pathOrConfig: string | PlatformDbConfig): Knex {
+  const config: PlatformDbConfig =
+    typeof pathOrConfig === "string"
+      ? { client: "sqlite", sqlitePath: pathOrConfig }
+      : pathOrConfig;
+
+  _dbClient = config.client;
+
+  if (config.client === "dm") {
+    const knexDm = _require("knex-dm");
+    const schema = config.connection.schema ?? DM_DEFAULT_SCHEMA;
+    _dmSchema = schema;
+    return knex({
+      client: knexDm,
+      connection: {
+        connectString: config.connection.connectString,
+        user: config.connection.user,
+        password: config.connection.password,
+      },
+      pool: {
+        min: 2,
+        max: 10,
+        afterCreate(conn: { execute: (sql: string, params: unknown[], cb: (err: unknown) => void) => void }, cb: (err: unknown, conn: unknown) => void) {
+          if (!_dmSchemaReady) {
+            cb(null, conn);
+            return;
+          }
+          conn.execute(`SET SCHEMA "${schema}"`, [], (err: unknown) => {
+            cb(err, conn);
+          });
+        },
+      },
+      fetchAsString: ["DATE"],
+    });
+  }
+
+  ensureParentDir(config.sqlitePath);
   return knex({
     client: "better-sqlite3",
     connection: {
-      filename: resolve(databasePath)
+      filename: resolve(config.sqlitePath)
     },
     useNullAsDefault: true
   });
@@ -264,29 +368,66 @@ async function createSecretsTable(db: Knex): Promise<void> {
 }
 
 async function migrateAddQueryIndexes(db: Knex): Promise<void> {
-  const masterRows = await db.raw(
-    "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='employees' AND name LIKE '%code%'"
-  );
-  for (const idx of masterRows) {
-    if (idx.name && idx.name !== "idx_employees_code_active") {
-      await db.raw(`DROP INDEX IF EXISTS "${idx.name}"`);
+  if (isSqlite()) {
+    const masterRows = await db.raw(
+      "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='employees' AND name LIKE '%code%'"
+    );
+    for (const idx of masterRows) {
+      if (idx.name && idx.name !== "idx_employees_code_active") {
+        await db.raw(`DROP INDEX IF EXISTS "${idx.name}"`);
+      }
+    }
+    await db.raw(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_employees_code_active" ON "employees" ("code") WHERE "status" != 'archived'`
+    );
+  } else {
+    const hasIdx = await hasIndex(db, "idx_employees_code_active");
+    if (!hasIdx) {
+      await db.raw(
+        `CREATE UNIQUE INDEX "idx_employees_code_active" ON "employees" ("code")`
+      );
     }
   }
-  await db.raw(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "idx_employees_code_active" ON "employees" ("code") WHERE "status" != 'archived'`
+
+  await createIndexIfNotExists(db, "idx_employee_skills_eid_name",
+    `CREATE UNIQUE INDEX "idx_employee_skills_eid_name" ON "employee_skills" ("employee_id", "skill_name")`);
+  if (isSqlite()) {
+    await createIndexIfNotExists(db, "idx_run_records_eid_started",
+      `CREATE INDEX "idx_run_records_eid_started" ON "run_records" ("employee_id", "started_at" DESC)`);
+  } else {
+    await createIndexIfNotExists(db, "idx_run_records_eid_started",
+      `CREATE INDEX "idx_run_records_eid_started" ON "run_records" ("employee_id")`);
+  }
+  await createIndexIfNotExists(db, "idx_run_events_rid_seq",
+    `CREATE INDEX "idx_run_events_rid_seq" ON "run_events" ("run_id", "seq" ASC)`);
+  await createIndexIfNotExists(db, "idx_schedule_jobs_eid",
+    `CREATE INDEX "idx_schedule_jobs_eid" ON "employee_schedule_jobs" ("employee_id")`);
+}
+
+async function hasIndex(db: Knex, indexName: string): Promise<boolean> {
+  if (isSqlite()) {
+    const rows = await db.raw(
+      `SELECT name FROM sqlite_master WHERE type='index' AND name=?`, [indexName]
+    );
+    return rows.length > 0;
+  }
+  const rows = await db.raw(
+    `SELECT INDEX_NAME FROM ALL_INDEXES WHERE INDEX_NAME = ?`, [indexName.toUpperCase()]
   );
-  await db.raw(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "idx_employee_skills_eid_name" ON "employee_skills" ("employee_id", "skill_name")`
-  );
-  await db.raw(
-    `CREATE INDEX IF NOT EXISTS "idx_run_records_eid_started" ON "run_records" ("employee_id", "started_at" DESC)`
-  );
-  await db.raw(
-    `CREATE INDEX IF NOT EXISTS "idx_run_events_rid_seq" ON "run_events" ("run_id", "seq" ASC)`
-  );
-  await db.raw(
-    `CREATE INDEX IF NOT EXISTS "idx_schedule_jobs_eid" ON "employee_schedule_jobs" ("employee_id")`
-  );
+  const result = Array.isArray(rows) ? rows : (rows?.rows ?? []);
+  return result.length > 0;
+}
+
+async function createIndexIfNotExists(db: Knex, indexName: string, ddl: string): Promise<void> {
+  if (isSqlite()) {
+    await db.raw(ddl.replace(`CREATE INDEX`, `CREATE INDEX IF NOT EXISTS`)
+      .replace(`CREATE UNIQUE INDEX`, `CREATE UNIQUE INDEX IF NOT EXISTS`));
+    return;
+  }
+  const exists = await hasIndex(db, indexName);
+  if (!exists) {
+    await db.raw(ddl);
+  }
 }
 
 async function migrateLegacySchedulesToJobs(db: Knex): Promise<void> {
@@ -302,7 +443,7 @@ async function migrateLegacySchedulesToJobs(db: Knex): Promise<void> {
       .first();
     if (existingJob) continue;
 
-    const now = new Date().toISOString();
+    const now = dbNow();
     await db(PLATFORM_TABLES.employeeScheduleJobs).insert({
       id: row.id,
       employee_id: row.employee_id,
@@ -320,6 +461,32 @@ async function migrateLegacySchedulesToJobs(db: Knex): Promise<void> {
       updated_at: now,
     });
   }
+}
+
+/**
+ * 切换达梦当前会话的 Schema。
+ * 若未配置 DB_SCHEMA 或 schema 参数，则使用连接用户的默认 Schema（无需切换）。
+ * Schema 需由 DBA 预先创建，应用层不自动 CREATE。
+ */
+export async function ensureDmSchema(db: Knex, schema?: string): Promise<void> {
+  if (!isDm()) return;
+  const targetSchema = (schema ?? _dmSchema).toUpperCase();
+  const user = (process.env.DB_USER ?? "SYSDBA").toUpperCase();
+  if (targetSchema === user) {
+    _dmSchemaReady = true;
+    return;
+  }
+  try {
+    await db.raw(`SET SCHEMA "${targetSchema}"`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `无法切换到达梦 Schema "${targetSchema}"。` +
+      `请确认 DBA 已创建该 Schema/User，或将 DB_SCHEMA 设为连接用户名 "${user}"。` +
+      `\n原始错误: ${msg}`
+    );
+  }
+  _dmSchemaReady = true;
 }
 
 export async function ensurePlatformDatabase(db: Knex): Promise<void> {
@@ -384,11 +551,23 @@ const platformMigrations: MigrationEntry[] = [
       await migrateAddQueryIndexes(knex);
     },
     async down(knex) {
-      await knex.raw(`DROP INDEX IF EXISTS "idx_schedule_jobs_eid"`);
-      await knex.raw(`DROP INDEX IF EXISTS "idx_run_events_rid_seq"`);
-      await knex.raw(`DROP INDEX IF EXISTS "idx_run_records_eid_started"`);
-      await knex.raw(`DROP INDEX IF EXISTS "idx_employee_skills_eid_name"`);
-      await knex.raw(`DROP INDEX IF EXISTS "idx_employees_code_active"`);
+      const indexes = [
+        "idx_schedule_jobs_eid",
+        "idx_run_events_rid_seq",
+        "idx_run_records_eid_started",
+        "idx_employee_skills_eid_name",
+        "idx_employees_code_active",
+      ];
+      for (const name of indexes) {
+        if (isSqlite()) {
+          await knex.raw(`DROP INDEX IF EXISTS "${name}"`);
+        } else {
+          const exists = await hasIndex(knex, name);
+          if (exists) {
+            await knex.raw(`DROP INDEX "${name}"`);
+          }
+        }
+      }
     },
   },
   {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type HumanEmployeeRecord } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 export type CreateHumanEmployeeInput = {
   externalId: string;
@@ -68,7 +69,7 @@ export class HumanEmployeeRepository {
   constructor(private readonly db: Knex) {}
 
   async create(input: CreateHumanEmployeeInput): Promise<HumanEmployeeView> {
-    const now = new Date().toISOString();
+    const now = dbNow();
     const record: HumanEmployeeRecord = {
       id: randomUUID(),
       external_id: input.externalId,
@@ -116,7 +117,7 @@ export class HumanEmployeeRepository {
   /** 批量创建人类员工，用于组织同步 */
   async batchCreate(inputs: CreateHumanEmployeeInput[], trx?: Knex): Promise<void> {
     if (inputs.length === 0) return;
-    const now = new Date().toISOString();
+    const now = dbNow();
     const records: HumanEmployeeRecord[] = inputs.map((input) => ({
       id: randomUUID(),
       external_id: input.externalId,

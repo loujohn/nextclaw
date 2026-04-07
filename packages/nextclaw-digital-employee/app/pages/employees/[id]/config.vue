@@ -51,14 +51,7 @@ async function saveDingTalkBinding() {
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
-type WorkspaceFile = {
-  filename: string;
-  exists: boolean;
-  sizeBytes: number;
-  writable: boolean;
-};
-type FileListPayload = { ok: boolean; data: { files: WorkspaceFile[] } };
-type FileContentPayload = { ok: boolean; data: { filename: string; content: string } };
+import type { FileListPayload, FileContentPayload } from "~~/shared/api-types";
 
 const { data: listData, refresh: refreshList, pending: listPending } = useLazyFetch<FileListPayload>(
   () => `/api/employees/${employeeId.value}/workspace`,

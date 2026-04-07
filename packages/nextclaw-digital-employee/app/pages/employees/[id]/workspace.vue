@@ -5,22 +5,7 @@ import { renderMarkdown } from "~/lib/utils";
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 
-type WorkspaceFile = {
-  filename: string;
-  exists: boolean;
-  sizeBytes: number;
-  writable: boolean;
-};
-
-type FileListPayload = {
-  ok: boolean;
-  data: { files: WorkspaceFile[] };
-};
-
-type FileContentPayload = {
-  ok: boolean;
-  data: { filename: string; content: string };
-};
+import type { FileListPayload, FileContentPayload } from "~~/shared/api-types";
 
 // ── File list ──────────────────────────────────────────────────────────────────
 const { data: listData, refresh: refreshList, pending: listPending } = useLazyFetch<FileListPayload>(

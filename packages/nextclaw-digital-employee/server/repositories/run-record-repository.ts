@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type RunEventRecord, type RunRecord } from "../db/schema";
 import { RunStatus } from "../db/enums";
+import { dbNow, formatTimestamp, isSqlite } from "../db/knex";
 
 export type RunRecordView = {
   id: string;
@@ -57,7 +58,7 @@ export class RunRecordRepository {
     triggerType: string;
     triggerSource: string;
   }): Promise<RunRecordView> {
-    const startedAt = new Date().toISOString();
+    const startedAt = dbNow();
     const record: RunRecord = {
       id: randomUUID(),
       employee_id: params.employeeId,
@@ -82,7 +83,7 @@ export class RunRecordRepository {
     if (events.length === 0) {
       return;
     }
-    const now = new Date().toISOString();
+    const now = dbNow();
     const rows: RunEventRecord[] = events.map((event, index) => ({
       id: randomUUID(),
       run_id: runId,
@@ -95,7 +96,7 @@ export class RunRecordRepository {
   }
 
   async complete(runId: string, params: { status: string; summary: string; result: Record<string, unknown> }): Promise<RunRecordView> {
-    const finishedAt = new Date().toISOString();
+    const finishedAt = dbNow();
     await this.db<RunRecord>(PLATFORM_TABLES.runRecords)
       .where({ id: runId })
       .update({
@@ -114,7 +115,7 @@ export class RunRecordRepository {
    * Returns the number of runs recovered.
    */
   async recoverRunningRuns(): Promise<number> {
-    const finishedAt = new Date().toISOString();
+    const finishedAt = dbNow();
     const count = await this.db<RunRecord>(PLATFORM_TABLES.runRecords)
       .where({ status: RunStatus.Running })
       .update({ status: RunStatus.Interrupted, finished_at: finishedAt });
@@ -171,7 +172,7 @@ export class RunRecordRepository {
       .whereIn("employee_id", employeeIds)
       .andWhere({ status: "failed" })
       .andWhere("started_at", ">=", this.db.raw(
-        `datetime('now', '-24 hours')`
+        isSqlite() ? `datetime('now', '-24 hours')` : `SYSDATE - INTERVAL '24' HOUR`
       ))
       .groupBy("employee_id");
     return new Set((rows as Array<{ employee_id: string }>).map(r => r.employee_id));
@@ -219,6 +220,46 @@ export class RunRecordRepository {
     return { items: (rows as RunRecord[]).map(toRunRecordView), total };
   }
 
+  async listPagedWithNames(params: {
+    page: number;
+    pageSize: number;
+    status?: string;
+  }): Promise<{
+    items: (RunRecordView & { employeeName: string; triggerJobName: string | null })[];
+    total: number;
+  }> {
+    const offset = (params.page - 1) * params.pageSize;
+    const r = PLATFORM_TABLES.runRecords;
+    const e = PLATFORM_TABLES.employees;
+    const j = PLATFORM_TABLES.employeeScheduleJobs;
+
+    const applyStatus = (q: Knex.QueryBuilder) =>
+      params.status ? q.where(`${r}.status`, params.status) : q;
+
+    const [rows, countResult] = await Promise.all([
+      applyStatus(
+        this.db(r)
+          .leftJoin(e, `${r}.employee_id`, `${e}.id`)
+          .leftJoin(j, `${r}.trigger_source`, `${j}.id`)
+          .select(`${r}.*`, `${e}.name as employee_name`, `${j}.name as job_name`)
+          .orderBy(`${r}.started_at`, "desc")
+      )
+        .limit(params.pageSize)
+        .offset(offset),
+      applyStatus(this.db(r)).count({ count: "id" }).first()
+    ]);
+
+    const total = Number((countResult as { count?: number | string } | undefined)?.count ?? 0);
+    return {
+      items: (rows as Array<RunRecord & { employee_name?: string; job_name?: string }>).map((row) => ({
+        ...toRunRecordView(row),
+        employeeName: row.employee_name ?? "未关联员工",
+        triggerJobName: row.job_name ?? null
+      })),
+      total
+    };
+  }
+
   async getById(runId: string): Promise<(RunRecordView & { events: RunEventView[] }) | null> {
     const record = await this.db<RunRecord>(PLATFORM_TABLES.runRecords).where({ id: runId }).first();
     if (!record) {
@@ -238,7 +279,7 @@ export class RunRecordRepository {
       .select("employee_id")
       .count("* as total")
       .select(this.db.raw("count(CASE WHEN status = 'completed' THEN 1 END) as succeeded"))
-      .where("started_at", ">=", todayStart.toISOString())
+      .where("started_at", ">=", formatTimestamp(todayStart))
       .groupBy("employee_id");
     return (rows as Array<{ employee_id: string; total: number | string; succeeded: number | string | null }>).map((row) => ({
       employeeId: row.employee_id,

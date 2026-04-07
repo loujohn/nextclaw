@@ -228,7 +228,7 @@ export const AgentDefaultsSchema = z.object({
   engine: z.string().default("native"),
   engineConfig: z.record(z.unknown()).default({}),
   contextTokens: z.number().int().min(1000).default(200000),
-  maxToolIterations: z.number().int().default(1000)
+  maxToolIterations: z.number().int().default(100)
 });
 
 export const AgentProfileSchema = z.object({

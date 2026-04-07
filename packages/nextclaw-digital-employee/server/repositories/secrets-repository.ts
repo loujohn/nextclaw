@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type SecretRecord } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
@@ -95,7 +96,7 @@ export class SecretsRepository {
   }
 
   async create(params: { key: string; value: string; scope?: string; description?: string }): Promise<SecretView> {
-    const now = new Date().toISOString();
+    const now = dbNow();
     const record: SecretRecord = {
       id: randomUUID(),
       key: params.key,
@@ -110,7 +111,7 @@ export class SecretsRepository {
   }
 
   async update(key: string, params: { value?: string; description?: string }): Promise<SecretView> {
-    const updates: Partial<SecretRecord> = { updated_at: new Date().toISOString() };
+    const updates: Partial<SecretRecord> = { updated_at: dbNow() };
     if (params.value !== undefined) {
       updates.value = encrypt(params.value, this.encryptionKey);
     }

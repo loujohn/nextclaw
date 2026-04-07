@@ -9,12 +9,13 @@ const employeeCenterLink = computed(() => ({
   query: route.query
 }));
 
-// Department info for breadcrumb
-const { data: departmentsData } = useLazyFetch<{ ok: boolean; data: Array<{ id: string; name: string }> }>("/api/departments");
+const deptsStore = useDepartmentsStore();
+const skillsStore = useSkillsStore();
+
 const deptName = computed(() => {
   const deptId = data.value?.data?.departmentId;
   if (!deptId) return null;
-  return departmentsData.value?.data?.find((d) => d.id === deptId)?.name ?? null;
+  return deptsStore.nameMap.get(deptId) ?? null;
 });
 const deptLink = computed(() => {
   const deptId = data.value?.data?.departmentId;
@@ -22,28 +23,9 @@ const deptLink = computed(() => {
   return { path: "/employees", query: { view: "list", deptId } };
 });
 
-// Skills catalog for Chinese name display
-const { data: skillsData } = useLazyFetch<{ ok: boolean; data: Array<{ name: string; nameZh?: string }> }>("/api/skills");
-const skillNameZhMap = computed(() => {
-  const map = new Map<string, string>();
-  for (const skill of skillsData.value?.data ?? []) {
-    if (skill.nameZh) map.set(skill.name, skill.nameZh);
-  }
-  return map;
-});
+const skillNameZhMap = computed(() => skillsStore.displayNameMap);
 
-// Dashboard stats for this employee
-type DashboardStatsPayload = {
-  ok: boolean;
-  data: {
-    employeeStats: Array<{
-      employeeId: string;
-      todayRunCount: number;
-      totalRunCount: number;
-      todaySuccessRate: number;
-    }>;
-  };
-};
+import type { DashboardStatsPayload } from "~~/shared/api-types";
 
 const { data: dashStatsPayload } = useLazyFetch<DashboardStatsPayload>("/api/dashboard/stats");
 
@@ -52,17 +34,9 @@ const employeeStats = computed(() => {
   return stats.find((s) => s.employeeId === employeeId.value) ?? { todayRunCount: 0, totalRunCount: 0, todaySuccessRate: 100 };
 });
 
-// Schedule jobs
-type ScheduleJob = {
-  id: string;
-  name: string;
-  scheduleKind: string;
-  cronExpr: string | null;
-  everyMs: number | null;
-  enabled: boolean;
-  nextRunAt: string | null;
-};
-const { data: jobsPayload } = useLazyFetch<{ ok: boolean; data: ScheduleJob[] }>(
+import type { JobsPayload } from "~~/shared/api-types";
+
+const { data: jobsPayload } = useLazyFetch<JobsPayload>(
   () => `/api/employees/${employeeId.value}/jobs`
 );
 const jobs = computed(() => jobsPayload.value?.data ?? []);
