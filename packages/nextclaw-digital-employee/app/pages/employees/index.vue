@@ -2,7 +2,7 @@
 import { Search, Sparkles, Plus, X, CheckCircle, AlertCircle } from "lucide-vue-next";
 import type { EmployeeResponse, EmployeeListPayload } from "~/composables/useEmployeeList";
 import type { HumanEmployeeApiItem } from "~/composables/useDepartmentTree";
-import type { DepartmentView } from "~/components/DepartmentTree.vue";
+import type { DepartmentView } from "~~/shared/department-types";
 
 type SkillOption = {
   name: string;
@@ -133,18 +133,7 @@ function handleSelectOverview() {
   void replaceEmployeeListRoute({});
 }
 
-// Toast 通知系统
-type Toast = { id: number; type: "success" | "error"; message: string };
-const toasts = ref<Toast[]>([]);
-let _toastId = 0;
-function showToast(type: "success" | "error", message: string) {
-  const id = ++_toastId;
-  toasts.value.push({ id, type, message });
-  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3500);
-}
-function dismissToast(id: number) {
-  toasts.value = toasts.value.filter(t => t.id !== id);
-}
+const { toasts, showToast, dismissToast } = useToast();
 
 const showCreator = ref(false);
 const showEditor = ref(false);
@@ -394,19 +383,6 @@ function getDeptName(deptId: string | null): string | null {
   if (!deptId) return null;
   return departments.value.find(d => d.id === deptId)?.name ?? null;
 }
-
-// Auto-refresh employee list every 30 seconds so activity status stays up to date
-// without requiring manual navigation.
-let _refreshTimer: ReturnType<typeof setInterval> | null = null;
-onMounted(() => {
-  // _refreshTimer = setInterval(() => { void refresh(); }, 30_000);
-});
-onUnmounted(() => {
-  if (_refreshTimer !== null) {
-    clearInterval(_refreshTimer);
-    _refreshTimer = null;
-  }
-});
 
 
 </script>

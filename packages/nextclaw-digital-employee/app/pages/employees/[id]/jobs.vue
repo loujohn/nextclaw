@@ -45,18 +45,7 @@ const saving = ref(false);
 const runningJobId = ref<string | null>(null);
 const cronInputMode = ref<"visual" | "raw">("visual");
 
-// ── Toast 通知 ────────────────────────────────────────────────────────────────
-type Toast = { id: number; type: "success" | "error"; message: string };
-const toasts = ref<Toast[]>([]);
-let _toastId = 0;
-function showToast(type: "success" | "error", message: string) {
-  const id = ++_toastId;
-  toasts.value.push({ id, type, message });
-  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3500);
-}
-function dismissToast(id: number) {
-  toasts.value = toasts.value.filter(t => t.id !== id);
-}
+const { toasts, showToast, dismissToast } = useToast();
 const formError = ref<string | null>(null);
 const runDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 

@@ -1,4 +1,4 @@
-import type { DepartmentView, HumanMemberBrief, DigitalMemberBrief } from "~/components/DepartmentTree.vue";
+import type { DepartmentView, HumanMemberBrief, DigitalMemberBrief } from "~~/shared/department-types";
 import type { EmployeeResponse } from "./useEmployeeList";
 
 type HumanEmployeeApiItem = HumanMemberBrief & { departmentId: string | null };

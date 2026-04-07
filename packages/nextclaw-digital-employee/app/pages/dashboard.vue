@@ -66,8 +66,7 @@ const { data: statsPayload, refresh: refreshStats } =
   useLazyFetch<DashboardStatsPayload>("/api/dashboard/stats");
 const { data: employeePayload, refresh: refreshEmployees } =
   useLazyFetch<EmployeeListPayload>("/api/employees");
-const { data: runsPayload, refresh: refreshRuns } =
-  useLazyFetch<RunListPayload>("/api/runs?page=1&pageSize=10");
+useLazyFetch<RunListPayload>("/api/runs?page=1&pageSize=10");
 const { data: integrationPayload, refresh: refreshIntegrations } =
   useLazyFetch<{ ok: boolean; data: IntegrationItem[] }>("/api/integrations");
 const { data: skillPayload } = useLazyFetch<{

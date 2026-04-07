@@ -38,11 +38,11 @@ export default defineEventHandler(async () => {
     }
 
     throw createError({ statusCode: 501, statusMessage: `平台 "${os}" 暂不支持原生目录选择` });
-  } catch (err: any) {
-    // User cancelled the dialog (osascript exits with code 1 when cancelled)
-    if (err?.status === 1 || err?.code === 1) {
+  } catch (err: unknown) {
+    const e = err as { status?: number; code?: number; message?: string };
+    if (e?.status === 1 || e?.code === 1) {
       return { ok: false, data: { path: "" } };
     }
-    throw createError({ statusCode: 500, statusMessage: err?.message ?? "无法打开目录选择框" });
+    throw createError({ statusCode: 500, statusMessage: e?.message ?? "无法打开目录选择框" });
   }
 });
