@@ -184,6 +184,7 @@ function handleVisibility() {
 }
 
 onMounted(() => {
+  refreshAll();
   startPolling();
   document.addEventListener("visibilitychange", handleVisibility);
 });

@@ -131,6 +131,15 @@ export function useEmployeeCrud(options: CrudOptions) {
     });
   }
 
+  async function refreshEmployeeViews() {
+    await options.refresh();
+    await Promise.all([
+      refreshNuxtData("store-employees"),
+      refreshNuxtData("/api/dashboard"),
+      refreshNuxtData("/api/dashboard/stats")
+    ]);
+  }
+
   async function createEmployee() {
     creating.value = true;
     createError.value = "";
@@ -141,7 +150,7 @@ export function useEmployeeCrud(options: CrudOptions) {
       });
       resetForm();
       showCreator.value = false;
-      await options.refresh();
+      await refreshEmployeeViews();
       await navigateTo(options.buildWorkbenchRoute(created.data.id));
     } catch (error) {
       createError.value = error instanceof Error ? error.message : String(error);
@@ -182,7 +191,7 @@ export function useEmployeeCrud(options: CrudOptions) {
     editError.value = "";
     try {
       await $fetch(`/api/employees/${editForm.id}`, { method: "PATCH", body: buildEditPayload(editForm) });
-      await options.refresh();
+      await refreshEmployeeViews();
       showEditor.value = false;
       options.showToast("success", "员工信息已保存");
     } catch (error) {
@@ -207,7 +216,7 @@ export function useEmployeeCrud(options: CrudOptions) {
     try {
       const deletingId = deletingEmployee.value.id;
       await $fetch(`/api/employees/${deletingId}`, { method: "DELETE" });
-      await options.refresh();
+      await refreshEmployeeViews();
       if (showEditor.value && editForm.id === deletingId) {
         showEditor.value = false;
       }

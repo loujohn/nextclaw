@@ -144,6 +144,14 @@ const filteredEmployees = computed(() => {
   );
 });
 
+onMounted(() => {
+  void Promise.all([
+    refresh(),
+    refreshDepts(),
+    refreshHumanEmployees()
+  ]);
+});
+
 watch(() => route.query, () => {
   viewMode.value = resolveInitialViewMode();
   selectedDeptId.value = resolveInitialDeptId();

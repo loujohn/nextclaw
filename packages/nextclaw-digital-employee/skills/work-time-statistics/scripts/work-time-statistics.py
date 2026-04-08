@@ -7,6 +7,7 @@ import json
 import argparse
 import urllib.request
 import urllib.parse
+import glob
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -17,9 +18,22 @@ BASIC_AUTH = os.environ.get("PM_BASIC_AUTH", "")
 API_USERNAME = os.environ.get("PM_USERNAME", "admin")
 API_PASSWORD = os.environ.get("PM_PASSWORD", "")
 
+TEMP_DIR = os.path.expanduser("~/nextclaw-temp")
+SKILL_NAME = "work-time-statistics"
+
+
+def clean_previous_output():
+    if not os.path.exists(TEMP_DIR):
+        return
+    pattern = os.path.join(TEMP_DIR, f"{SKILL_NAME}_*.json")
+    for f in glob.glob(pattern):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
 
 def post_form(url, form_data, timeout):
-    """发送POST表单请求"""
     data = urllib.parse.urlencode(form_data).encode("utf-8")
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -36,47 +50,12 @@ def post_form(url, form_data, timeout):
 
 
 def fetch(url, token, timeout):
-    """发送GET请求"""
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {token}",
         "User-Agent": "nextclaw-work-time-query/1.0",
     }
     req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except Exception as e:
-        raise Exception(f"请求失败: {e}")
-
-
-def post_json(url, json_data, token, timeout):
-    """发送POST JSON请求"""
-    data = json.dumps(json_data).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "User-Agent": "nextclaw-work-time-query/1.0",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except Exception as e:
-        raise Exception(f"请求失败: {e}")
-
-
-def post_json(url, json_data, token, timeout):
-    """发送POST JSON请求"""
-    data = json.dumps(json_data).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "User-Agent": "nextclaw-work-time-query/1.0",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -117,7 +96,6 @@ def query_work_hours(token, project_code=None, start_day=None, end_day=None):
     if end_day:
         form_data["endDay"] = end_day
 
-    # 需要带 token 的 POST 请求
     data = json.dumps(form_data).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -131,6 +109,33 @@ def query_work_hours(token, project_code=None, start_day=None, end_day=None):
             return json.loads(response.read().decode("utf-8"))
     except Exception as e:
         raise Exception(f"请求失败：{e}")
+
+
+def output_result(data, command, project_code=None):
+    json_str = json.dumps(data, ensure_ascii=False, indent=2)
+    str_len = len(json_str)
+
+    if command == "list":
+        filename = "projects.json"
+    elif command == "query":
+        if project_code:
+            filename = f"workhours_{project_code}.json"
+        else:
+            filename = "workhours_all.json"
+    else:
+        filename = "output.json"
+
+    output_path = os.path.join(TEMP_DIR, f"{SKILL_NAME}_{filename}")
+
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(json_str)
+
+    if str_len > 10000:
+        print(f"[数据已保存到文件: {output_path}]")
+        print(f"[字符数: {str_len}]")
+    else:
+        print(json_str)
 
 
 def main():
@@ -149,22 +154,23 @@ def main():
     if not args.command:
         parser.print_help()
         print("\n示例:")
-        print("  python work-time-query.py list                    # 列出所有项目")
+        print("  python work-time-query.py list")
         print("  python work-time-query.py query XM001 2026-04-01 2026-04-02")
         sys.exit(0)
 
     try:
+        clean_previous_output()
         token = get_token()
 
         if args.command == "list":
             result = list_projects(token)
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            output_result(result, "list")
 
         elif args.command == "query":
             result = query_work_hours(
                 token, args.projectCode, args.startDay, args.endDay
             )
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            output_result(result, "query", args.projectCode)
 
     except Exception as e:
         print(f"失败: {e}", file=sys.stderr)
