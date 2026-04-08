@@ -87,14 +87,10 @@ export class WriteFileTool extends Tool {
     const urlBaseDir = this.workspaceDir ?? this.allowedDir;
     if (this.fileUrlBase && urlBaseDir) {
       const normalizedBase = resolve(urlBaseDir);
-      let rel = path.startsWith(normalizedBase)
+      const rel = path.startsWith(normalizedBase)
         ? path.slice(normalizedBase.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
         : null;
       if (rel) {
-        // API 以 workspace/files/ 为根，去掉 files/ 前缀避免 URL 出现双重 files/files/
-        if (rel.startsWith("files/")) {
-          rel = rel.slice("files/".length);
-        }
         const url = `${this.fileUrlBase}/${rel}`;
         const filename = rel.split("/").pop() ?? rel;
         return `Wrote ${content.length} bytes to ${path}\n\n[${filename}](${url})`;
