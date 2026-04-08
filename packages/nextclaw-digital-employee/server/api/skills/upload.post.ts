@@ -1,6 +1,6 @@
 import { createError, readBody } from "h3";
 import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, basename } from "node:path";
+import { dirname, join } from "node:path";
 import { getPlatformContext } from "../../runtime/platform-context";
 
 type UploadedFile = {

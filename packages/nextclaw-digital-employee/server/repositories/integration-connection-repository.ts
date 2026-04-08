@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 type IntegrationConnectionRecord = {
   id: string;
@@ -56,7 +57,7 @@ export class IntegrationConnectionRepository {
       .where({ type })
       .orderBy("updated_at", "desc")
       .first();
-    const now = new Date().toISOString();
+    const now = dbNow();
     const payload = {
       type,
       name: params.name.trim(),

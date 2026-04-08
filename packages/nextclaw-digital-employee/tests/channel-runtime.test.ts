@@ -340,7 +340,7 @@ describe("DigitalEmployeeChannelRuntime", () => {
     await publishDirectInbound(bus);
 
     await vi.waitFor(() => {
-      expect(fakeChannel.sent.some((msg) => msg.content.includes("No employee binding configured"))).toBe(true);
+      expect(fakeChannel.sent.some((msg) => msg.content.includes("未配置员工绑定"))).toBe(true);
     });
     expect(handleInbound).not.toHaveBeenCalled();
 

@@ -421,12 +421,23 @@ function readFirstCardContent(result: Record<string, unknown>): string {
   return "";
 }
 
-function formatTriggerLabel(triggerType: string, triggerSource: string): string {
+const CHANNEL_DISPLAY_NAMES: Record<string, string> = {
+  dingtalk: "钉钉",
+  qq: "QQ",
+  discord: "Discord",
+  wechat: "微信",
+};
+
+export function formatTriggerLabel(triggerType: string, triggerSource: string): string {
   if (triggerSource === "chat" || triggerType === "manual") {
     return "聊天触发";
   }
   if (triggerType === "scheduled") {
     return "自动运行";
+  }
+  if (triggerType === "channel") {
+    const channelName = triggerSource.split(":")[0] ?? "";
+    return CHANNEL_DISPLAY_NAMES[channelName] ?? (channelName || "渠道消息");
   }
   return "手动触发";
 }
@@ -454,25 +465,42 @@ export function formatRunStatusLabel(status: string): string {
 export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
   const employeeNameMap = new Map(input.employees.map((employee) => [employee.id, employee.name]));
   const jobNameMap = new Map((input.jobs ?? []).map((job) => [job.id, job.name]));
-  return input.runs.map((run) => {
-    const statusMeta = formatRunStatus(run.status);
-    const rawHighlight = readFirstCardContent(run.result) || run.summary || "等待执行结果";
-    const highlight = translateRunText(rawHighlight);
-    const isScheduled = run.triggerType === "scheduled";
-    const scheduleJobName = isScheduled ? (jobNameMap.get(run.triggerSource) ?? null) : null;
-    return {
-      id: run.id,
-      employeeId: run.employeeId,
-      employeeName: employeeNameMap.get(run.employeeId ?? "") ?? "未关联员工",
-      statusLabel: statusMeta.label,
-      triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
-      scheduleJobName,
-      summary: translateRunText(run.summary || "尚未生成摘要"),
-      highlight,
-      tone: statusMeta.tone,
-      startedAtLabel: formatDateTime(run.startedAt)
-    };
-  });
+  return input.runs.map((run) => toRunListEntry(run, {
+    employeeName: employeeNameMap.get(run.employeeId ?? "") ?? "未关联员工",
+    jobName: run.triggerType === "scheduled" ? (jobNameMap.get(run.triggerSource) ?? null) : null
+  }));
+}
+
+export type RunWithNames = RunListInput["runs"][number] & {
+  employeeName: string;
+  triggerJobName: string | null;
+};
+
+export function buildRunListEntriesFromJoin(runs: RunWithNames[]): RunListEntryView[] {
+  return runs.map((run) => toRunListEntry(run, {
+    employeeName: run.employeeName,
+    jobName: run.triggerType === "scheduled" ? run.triggerJobName : null
+  }));
+}
+
+function toRunListEntry(
+  run: RunListInput["runs"][number],
+  resolved: { employeeName: string; jobName: string | null }
+): RunListEntryView {
+  const statusMeta = formatRunStatus(run.status);
+  const rawHighlight = readFirstCardContent(run.result) || run.summary || "等待执行结果";
+  return {
+    id: run.id,
+    employeeId: run.employeeId,
+    employeeName: resolved.employeeName,
+    statusLabel: statusMeta.label,
+    triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
+    scheduleJobName: resolved.jobName,
+    summary: translateRunText(run.summary || "尚未生成摘要"),
+    highlight: translateRunText(rawHighlight),
+    tone: statusMeta.tone,
+    startedAtLabel: formatDateTime(run.startedAt)
+  };
 }
 
 function buildModelDetail(input: IntegrationCardsInput["model"]): string {

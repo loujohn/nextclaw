@@ -4,6 +4,7 @@ import { ClipboardList } from "lucide-vue-next";
 const props = defineProps<{
   employeeId: string;
   pageSize?: number;
+  refreshVersion?: number;
 }>();
 
 const emit = defineEmits<{ clickRun: [id: string] }>();
@@ -31,7 +32,7 @@ type RunListPayload = {
 
 const { data } = useFetch<RunListPayload>(
   () => `/api/employees/${props.employeeId}/runs?page=${currentPage.value}&pageSize=${PAGE_SIZE}`,
-  { key: computed(() => `employee-recent-runs:${props.employeeId}:${currentPage.value}`) }
+  { key: computed(() => `employee-recent-runs:${props.employeeId}:${currentPage.value}:${props.refreshVersion ?? 0}`) }
 );
 
 const runs = computed(() => data.value?.data.items ?? []);

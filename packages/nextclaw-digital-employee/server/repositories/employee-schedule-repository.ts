@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES } from "../db/schema";
+import { dbNow } from "../db/knex";
 
 type EmployeeScheduleRecord = {
   id: string;
@@ -72,7 +73,7 @@ export class EmployeeScheduleRepository {
     const existing = await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules)
       .where({ employee_id: input.employeeId })
       .first();
-    const now = new Date().toISOString();
+    const now = dbNow();
     const payload = {
       employee_id: input.employeeId,
       schedule_kind: input.scheduleKind,
@@ -133,6 +134,6 @@ export class EmployeeScheduleRepository {
   async patchNextRunAt(employeeId: string, nextRunAt: string | null): Promise<void> {
     await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules)
       .where({ employee_id: employeeId })
-      .update({ next_run_at: nextRunAt, updated_at: new Date().toISOString() });
+      .update({ next_run_at: nextRunAt, updated_at: dbNow() });
   }
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "preflight:deps": "pnpm -C ../nextclaw-core build && pnpm -C ../nextclaw-runtime build && pnpm -C ../extensions/nextclaw-channel-runtime build && pnpm -C ../nextclaw-openclaw-compat build",
     "dev": "pnpm preflight:deps && nuxt dev",
+    "dev:dm": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider\" && pnpm dev",
     "build": "pnpm preflight:deps && nuxt build",
     "lint": "eslint . --ext .ts,.vue --max-warnings=0",
     "tsc": "pnpm preflight:deps && nuxt typecheck",
@@ -21,18 +22,22 @@
     "@nextclaw/core": "workspace:*",
     "@nextclaw/openclaw-compat": "workspace:*",
     "@nextclaw/runtime": "workspace:*",
+    "@pinia/nuxt": "^0.11.3",
     "@types/node-cron": "^3.0.11",
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "consola": "^3.4.2",
+    "dmdb": "^1.0.48286",
     "https-proxy-agent": "^8.0.0",
     "knex": "^3.1.0",
+    "knex-dm": "^1.0.48662",
     "lucide-vue-next": "^0.577.0",
     "markdown-it": "^14.1.1",
     "minipass": "^7.0.0",
     "node-cron": "^3.0.3",
     "nuxt": "^4.3.1",
+    "pinia": "^3.0.4",
     "radix-vue": "^1.9.17",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"
@@ -52,6 +57,7 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.6.3",
     "vitest": "^2.1.2",
-    "vue-eslint-parser": "^10.4.0"
+    "vue-eslint-parser": "^10.4.0",
+    "vue-tsc": "^3.2.6"
   }
 }

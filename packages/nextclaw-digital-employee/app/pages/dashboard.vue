@@ -1,91 +1,23 @@
 <script setup lang="ts">
 import { Bot, CheckCircle2, BarChart3, Zap } from "lucide-vue-next";
 import type { Component } from "vue";
-import type { EmployeeListPayload } from "~/composables/useEmployeeList";
-
-type DashboardStatsPayload = {
-  ok: boolean;
-  data: {
-    todayRunCount: number;
-    todaySuccessRate: number;
-    totalSkillCount: number;
-    employeeStats: Array<{
-      employeeId: string;
-      todayRunCount: number;
-      totalRunCount: number;
-      todaySuccessRate: number;
-    }>;
-    skillCategoryCounts: Array<{
-      category: string;
-      categoryLabel: string;
-      emoji: string;
-      count: number;
-    }>;
-  };
-};
-
-type IntegrationItem = {
-  id: string;
-  title: string;
-  statusLabel: string;
-  description: string;
-  detail: string;
-  actionLabel: string;
-  tone: "teal" | "amber" | "slate";
-};
-
-type SkillOption = {
-  name: string;
-  nameZh?: string;
-  statusLabel: string;
-  usageCount: number;
-  enabled: boolean;
-  purpose: string;
-  categoryLabel: string;
-};
-
-type RunDetail = {
-  employeeName: string;
-  statusLabel: string;
-  triggerLabel: string;
-  scheduleJobName: string | null;
-  summary: string;
-  result: Record<string, unknown>;
-  events: Array<{
-    id: string;
-    seq: number;
-    eventType: string;
-    payload: Record<string, unknown>;
-    createdAt: string;
-  }>;
-};
+import type { DashboardStatsPayload, IntegrationItem, RunDetail } from "~~/shared/api-types";
 
 const router = useRouter();
 
+const employeesStore = useEmployeesStore();
+const skillsStore = useSkillsStore();
+const deptsStore = useDepartmentsStore();
+
 const { data: statsPayload, refresh: refreshStats } =
   useLazyFetch<DashboardStatsPayload>("/api/dashboard/stats");
-const { data: employeePayload, refresh: refreshEmployees } =
-  useLazyFetch<EmployeeListPayload>("/api/employees");
-const { data: runsPayload, refresh: refreshRuns } =
-  useLazyFetch<RunListPayload>("/api/runs?page=1&pageSize=10");
 const { data: integrationPayload, refresh: refreshIntegrations } =
   useLazyFetch<{ ok: boolean; data: IntegrationItem[] }>("/api/integrations");
-const { data: skillPayload } = useLazyFetch<{
-  ok: boolean;
-  data: SkillOption[];
-}>("/api/skills");
-const { data: departmentPayload } = useLazyFetch<{
-  ok: boolean;
-  data: Array<{ id: string; name: string }>;
-}>("/api/departments");
 
 const stats = computed(() => statsPayload.value?.data);
-const employees = computed(() => employeePayload.value?.data ?? []);
-
-const deptNameMap = computed(
-  () =>
-    new Map((departmentPayload.value?.data ?? []).map((d) => [d.id, d.name])),
-);
+const employees = computed(() => employeesStore.list);
+const deptNameMap = computed(() => deptsStore.nameMap);
+const skillDisplayNames = computed(() => skillsStore.displayNameMap);
 
 const employeeStatsMap = computed(() => {
   const m = new Map<
@@ -94,14 +26,6 @@ const employeeStatsMap = computed(() => {
   >();
   for (const s of stats.value?.employeeStats ?? []) {
     m.set(s.employeeId, s);
-  }
-  return m;
-});
-
-const skillDisplayNames = computed(() => {
-  const m = new Map<string, string>();
-  for (const skill of skillPayload.value?.data ?? []) {
-    m.set(skill.name, skill.nameZh ?? skill.name);
   }
   return m;
 });
@@ -230,21 +154,47 @@ function goToSkillCategory(slug: string) {
   router.push(`/skills?category=${slug}`);
 }
 
-let refreshInterval: ReturnType<typeof setInterval>;
+let refreshInterval: ReturnType<typeof setInterval> | null = null;
+
+function refreshAll() {
+  refreshStats();
+  employeesStore.refresh();
+  refreshIntegrations();
+}
+
+function startPolling() {
+  if (refreshInterval) return;
+  refreshInterval = setInterval(refreshAll, 30_000);
+}
+
+function stopPolling() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+}
+
+function handleVisibility() {
+  if (document.hidden) {
+    stopPolling();
+  } else {
+    refreshAll();
+    startPolling();
+  }
+}
 
 onMounted(() => {
-  refreshInterval = setInterval(() => {
-    refreshStats();
-    refreshEmployees();
-    refreshIntegrations();
-  }, 30_000);
+  refreshAll();
+  startPolling();
+  document.addEventListener("visibilitychange", handleVisibility);
 });
 
 onUnmounted(() => {
-  clearInterval(refreshInterval);
+  stopPolling();
+  document.removeEventListener("visibilitychange", handleVisibility);
 });
 
-const pending = computed(() => !statsPayload.value && !employeePayload.value);
+const pending = computed(() => !statsPayload.value && !employeesStore.data);
 </script>
 
 <template>

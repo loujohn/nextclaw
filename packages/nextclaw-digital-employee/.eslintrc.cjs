@@ -16,6 +16,7 @@ module.exports = {
   extends: ["eslint:recommended", "plugin:@typescript-eslint/recommended", "prettier"],
   rules: {
     "no-undef": "off",
+    "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     "max-lines": ["warn", { max: 800, skipBlankLines: true, skipComments: true }],
     "max-lines-per-function": ["warn", { max: 150, skipBlankLines: true, skipComments: true, IIFEs: true }]
   },
