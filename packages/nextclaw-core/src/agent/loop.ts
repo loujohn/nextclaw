@@ -71,7 +71,6 @@ export class AgentLoop {
       resolveMessageToolHints?: MessageToolHintsResolver;
       agentId?: string;
       envOverlay?: Record<string, string>;
-      fileUrlBase?: string;
     }
   ) {
     this.context = new ContextBuilder(options.workspace, options.contextConfig, options.additionalSkillsDirs);
@@ -96,7 +95,7 @@ export class AgentLoop {
   private registerDefaultTools(): void {
     const allowedDir = this.options.restrictToWorkspace ? this.options.workspace : undefined;
     this.tools.register(new ReadFileTool(allowedDir));
-    this.tools.register(new WriteFileTool(allowedDir, this.options.fileUrlBase, this.options.workspace));
+    this.tools.register(new WriteFileTool(allowedDir));
     this.tools.register(new EditFileTool(allowedDir));
     this.tools.register(new ListDirTool(allowedDir));
 

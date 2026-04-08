@@ -60,8 +60,6 @@ export type RunEmployeeTurnParams = {
   requestedSkills?: string[];
   /** 定时任务执行时传 true，防止 AI 在执行期间调用 cron 工具重复创建任务 */
   disableCronTool?: boolean;
-  /** 文件下载 URL 前缀，如 /api/employees/:id/files，让 AI 在回复中生成可点击链接 */
-  fileUrlBase?: string;
 };
 
 export type RunEmployeeTurnResult = {
@@ -234,8 +232,7 @@ export class NextclawEngineGateway {
     workspace: string,
     model?: string,
     envOverlay?: Record<string, string>,
-    cronServiceOverride?: CronService | null,
-    fileUrlBase?: string
+    cronServiceOverride?: CronService | null
   ): AgentEngine {
     const globalSkillsDir = join(this.workspaceDir, "skills");
     const engineContext: AgentEngineFactoryContext = {
@@ -256,8 +253,7 @@ export class NextclawEngineGateway {
       config: this.config,
       extensionRegistry: this.extensionRegistry,
       additionalSkillsDirs: workspace !== this.workspaceDir ? [globalSkillsDir] : undefined,
-      envOverlay,
-      fileUrlBase
+      envOverlay
     };
     return this.createEngine(engineContext);
   }
@@ -320,7 +316,6 @@ export class NextclawEngineGateway {
     workspace?: string;
     model?: string;
     disableCronTool?: boolean;
-    fileUrlBase?: string;
   }): Promise<AgentEngine> {
     let envOverlay: Record<string, string> | undefined;
     if (this.secretsRepo) {
@@ -335,18 +330,15 @@ export class NextclawEngineGateway {
         params.workspace ?? this.workspaceDir,
         params.model,
         envOverlay,
-        null,
-        params.fileUrlBase
+        null
       );
     }
-    if (envOverlay || params.fileUrlBase) {
+    if (envOverlay) {
       return this.createEngineForWorkspace(
         params.agentId,
         params.workspace ?? this.workspaceDir,
         params.model,
-        envOverlay,
-        undefined,
-        params.fileUrlBase
+        envOverlay
       );
     }
     return this.getOrCreateEngine(params.agentId, params.workspace, params.model);
@@ -482,8 +474,7 @@ export class NextclawEngineGateway {
       employeeId: params.employeeId,
       workspace: params.workspace,
       model: params.model,
-      disableCronTool: params.disableCronTool,
-      fileUrlBase: params.fileUrlBase
+      disableCronTool: params.disableCronTool
     });
     const session = this.sessionManager.getOrCreate(sessionKey);
     const historyCountBefore = this.sessionManager.getHistory(session).length;

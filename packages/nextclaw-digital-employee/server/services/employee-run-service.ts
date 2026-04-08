@@ -68,8 +68,7 @@ export class EmployeeRunService {
         model: employee.model || undefined,
         requestedSkills: skillNames.length > 0 ? skillNames : undefined,
         // 定时触发时禁用 CronTool，防止 AI 在执行任务期间重复创建调度任务
-        disableCronTool: params.triggerType === "scheduled",
-        fileUrlBase: `/api/employees/${employee.id}/files`
+        disableCronTool: params.triggerType === "scheduled"
       });
       const messages = this.gateway.getSessionHistory(result.sessionKey);
       const resultCards = buildChatResultCards(result.reply);

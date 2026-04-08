@@ -196,7 +196,7 @@ export class ContextBuilder {
       "Tool availability (filtered by policy):",
       "Tool names are case-sensitive. Call tools exactly as listed.",
       "- read_file: Read file contents",
-      "- write_file: Create or overwrite files. When the result contains a Markdown link [filename](url), always include it in your reply so the user can click to download or view the file.",
+      "- write_file: Create or overwrite files",
       "- edit_file: Make precise edits to files",
       "- list_dir: List directory contents",
       "- exec: Run shell commands",
