@@ -8,6 +8,21 @@ const markdownRenderer = new MarkdownIt({
   breaks: true
 });
 
+// 让所有链接在新标签页打开
+const defaultLinkOpen =
+  markdownRenderer.renderer.rules.link_open ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options);
+  };
+markdownRenderer.renderer.rules.link_open = function (tokens, idx, options, env, self) {
+  const token = tokens[idx];
+  if (token) {
+    token.attrSet("target", "_blank");
+    token.attrSet("rel", "noopener noreferrer");
+  }
+  return defaultLinkOpen(tokens, idx, options, env, self);
+};
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

@@ -2,9 +2,10 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSy
 import { resolve, dirname, isAbsolute, sep } from "node:path";
 import { Tool } from "./base.js";
 
-function resolvePath(path: string, allowedDir?: string): string {
-  const resolved = allowedDir && !isAbsolute(path)
-    ? resolve(allowedDir, path)
+function resolvePath(path: string, allowedDir?: string, baseDir?: string): string {
+  const base = baseDir ?? allowedDir;
+  const resolved = base && !isAbsolute(path)
+    ? resolve(base, path)
     : resolve(path);
   if (allowedDir) {
     const allowed = resolve(allowedDir);
@@ -48,7 +49,11 @@ export class ReadFileTool extends Tool {
 }
 
 export class WriteFileTool extends Tool {
-  constructor(private allowedDir?: string) {
+  constructor(
+    private allowedDir?: string,
+    private fileUrlBase?: string,
+    private workspaceDir?: string
+  ) {
     super();
   }
 
@@ -57,7 +62,7 @@ export class WriteFileTool extends Tool {
   }
 
   get description(): string {
-    return "Write content to a file";
+    return "Write content to a file. When a file download URL is available, the result includes a Markdown link like [filename](url). Always include this link in your reply so the user can click to download or view the file.";
   }
 
   get parameters(): Record<string, unknown> {
@@ -72,13 +77,25 @@ export class WriteFileTool extends Tool {
   }
 
   async execute(params: Record<string, unknown>): Promise<string> {
-    const path = resolvePath(String(params.path), this.allowedDir);
+    const path = resolvePath(String(params.path), this.allowedDir, this.workspaceDir);
     const content = String(params.content ?? "");
     const dir = dirname(path);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
     writeFileSync(path, content, "utf-8");
+    const urlBaseDir = this.workspaceDir ?? this.allowedDir;
+    if (this.fileUrlBase && urlBaseDir) {
+      const normalizedBase = resolve(urlBaseDir);
+      const rel = path.startsWith(normalizedBase)
+        ? path.slice(normalizedBase.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
+        : null;
+      if (rel) {
+        const url = `${this.fileUrlBase}/${rel}`;
+        const filename = rel.split("/").pop() ?? rel;
+        return `Wrote ${content.length} bytes to ${path}\n\n[${filename}](${url})`;
+      }
+    }
     return `Wrote ${content.length} bytes to ${path}`;
   }
 }

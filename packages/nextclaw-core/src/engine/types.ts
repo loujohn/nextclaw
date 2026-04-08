@@ -57,6 +57,7 @@ export type AgentEngineFactoryContext = {
   resolveMessageToolHints?: AgentEngineMessageToolHintsResolver;
   additionalSkillsDirs?: string[];
   envOverlay?: Record<string, string>;
+  fileUrlBase?: string;
 };
 
 export type AgentEngineFactory = (context: AgentEngineFactoryContext) => AgentEngine;
