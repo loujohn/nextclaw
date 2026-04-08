@@ -29,10 +29,13 @@ TEMP_DIR = os.path.expanduser("~/nextclaw-temp")
 SKILL_NAME = "business-management-analysis"
 
 
-def clean_previous_output():
+def clean_previous_output(specific_file=None):
     if not os.path.exists(TEMP_DIR):
         return
-    pattern = os.path.join(TEMP_DIR, f"{SKILL_NAME}_*.json")
+    if specific_file:
+        pattern = os.path.join(TEMP_DIR, f"{SKILL_NAME}_{specific_file}.json")
+    else:
+        pattern = os.path.join(TEMP_DIR, f"{SKILL_NAME}_*.json")
     for f in glob.glob(pattern):
         try:
             os.remove(f)
@@ -103,7 +106,6 @@ def list_tools():
 
 def output_result(data, command, tool_name=None):
     json_str = json.dumps(data, ensure_ascii=False, indent=2)
-    str_len = len(json_str)
 
     if command == "all":
         filename = "all.json"
@@ -118,11 +120,7 @@ def output_result(data, command, tool_name=None):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(json_str)
 
-    if str_len > 10000:
-        print(f"[数据已保存到文件: {output_path}]")
-        print(f"[字符数: {str_len}]")
-    else:
-        print(json_str)
+    print(f"[数据已保存到文件: {output_path}]")
 
 
 def call_tool(tool_name, args=None):
@@ -134,7 +132,7 @@ def call_tool(tool_name, args=None):
 
     params = f"token={token}"
     if args:
-        params = f"{args} {params}"
+        params = f"{' '.join(args)} {params}"
 
     result = run_mcporter(f"call {tool_name} {params}")
 
@@ -188,7 +186,7 @@ def main():
 
     call_parser = subparsers.add_parser("call", help="调用MCP工具")
     call_parser.add_argument("tool", help="工具名称")
-    call_parser.add_argument("args", nargs="?", help="参数(可选)")
+    call_parser.add_argument("args", nargs="*", help="参数(可选，多个参数用空格分隔)")
 
     subparsers.add_parser("all", help="一次性获取所有经营数据")
 
@@ -199,19 +197,22 @@ def main():
         print("\n示例:")
         print("  python bm-query.py call stageCount")
         print("  python bm-query.py call businessDataStatistics")
+        print("  python bm-query.py call businessDataStatistics name=数字广安")
         print("  python bm-query.py call allCollect timeFlag=4")
+        print("  python bm-query.py call singleCollect name=渝你同行 timeFlag=4")
         print("  python bm-query.py call forewarn")
         print("  python bm-query.py all")
         sys.exit(0)
 
     try:
-        clean_previous_output()
-        if args.command == "list":
-            list_tools()
-        elif args.command == "call":
+        if args.command == "call":
+            clean_previous_output(f"{args.tool}.json")
             call_tool(args.tool, args.args)
         elif args.command == "all":
+            clean_previous_output("all.json")
             call_all()
+        elif args.command == "list":
+            list_tools()
     except Exception as e:
         print(f"失败: {e}", file=sys.stderr)
         sys.exit(1)

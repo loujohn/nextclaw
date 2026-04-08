@@ -60,23 +60,28 @@ python skills/business-management-analysis/scripts/bm-query.py list
 ### 调用单个工具
 
 ```bash
-python skills/business-management-analysis/scripts/bm-query.py call <工具名> [参数]
+python skills/business-management-analysis/scripts/bm-query.py call <工具名> [参数1] [参数2] ...
 ```
+
+**参数说明**：参数用**空格**分隔，格式为 `key=value`。
 
 示例：
 
 ```bash
-# 项目推进情况
+# 项目推进情况（无参数）
 python skills/business-management-analysis/scripts/bm-query.py call stageCount
 
-# 经营数据统计
+# 经营数据统计（无参数）
 python skills/business-management-analysis/scripts/bm-query.py call businessDataStatistics
 
-# 整体收款情况
+# 整体收款情况（传 timeFlag=4）
 python skills/business-management-analysis/scripts/bm-query.py call allCollect timeFlag=4
 
-# 预警情况
+# 预警情况（无参数）
 python skills/business-management-analysis/scripts/bm-query.py call forewarn
+
+# 单个项目收款情况（传 name 和 timeFlag）
+python skills/business-management-analysis/scripts/bm-query.py call singleCollect name=渝你同行 timeFlag=4
 ```
 
 ### 全面分析（获取所有数据）
@@ -94,7 +99,7 @@ python skills/business-management-analysis/scripts/bm-query.py all
 
 ## ⚠️ 大数据量处理
 
-当返回数据量超过 10K 字符时，数据会自动保存到文件，终端只输出简短提示。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段，只展示用户友好的中文描述**。
+查询结果会保存到文件，终端只输出文件路径。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段，只展示用户友好的中文描述**。
 
 - `call <tool>` → `~/nextclaw-temp/business-management-analysis_{tool}.json`
 - `all` → `~/nextclaw-temp/business-management-analysis_all.json`
@@ -102,17 +107,17 @@ python skills/business-management-analysis/scripts/bm-query.py all
 
 ## 可用工具
 
-| 工具名                 | 说明                  | 参数                        |
-| ---------------------- | --------------------- | --------------------------- |
-| stageCount             | 项目推进情况          | token                       |
-| payCondition           | 整体付款情况          | name?, timeFlag?, token     |
-| businessDataStatistics | 经营数据统计          | name?, yearAndMonth?, token |
-| allCollect             | 整体收款情况          | name?, timeFlag?, token     |
-| forewarn               | 预警情况（超期/亏损） | token                       |
-| chanceStatistics       | 签约金额              | name?, timeFlag?, token     |
-| singlePay              | 单个项目付款情况      | name, timeFlag?, token      |
-| selfBuildYear          | 年度自建情况          | token, timeFlag?            |
-| singleCollect          | 单个项目收款情况      | name, timeFlag?, token      |
+| 工具名                 | 说明                  | 参数（空格分隔）      |
+| ---------------------- | --------------------- | --------------------- |
+| stageCount             | 项目推进情况          | -                     |
+| payCondition           | 整体付款情况          | [name] [timeFlag]     |
+| businessDataStatistics | 经营数据统计          | [name] [yearAndMonth] |
+| allCollect             | 整体收款情况          | [name] [timeFlag]     |
+| forewarn               | 预警情况（超期/亏损） | -                     |
+| chanceStatistics       | 签约金额              | [name] [timeFlag]     |
+| singlePay              | 单个项目付款情况      | name=xxx [timeFlag=4] |
+| selfBuildYear          | 年度自建情况          | [timeFlag=4]          |
+| singleCollect          | 单个项目收款情况      | name=xxx [timeFlag=4] |
 
 ## ⚠️ 易混淆概念说明
 
@@ -127,19 +132,19 @@ python skills/business-management-analysis/scripts/bm-query.py all
 **支持两种查询方式**：
 
 ```bash
-# 查所有项目（不传 name）
+# 查所有项目（不传参数）
 python skills/business-management-analysis/scripts/bm-query.py call businessDataStatistics
 
 # 查单个项目（传 name）
 python skills/business-management-analysis/scripts/bm-query.py call businessDataStatistics name=数字广安
 
-# 查指定年月
+# 查指定年月（传 yearAndMonth）
 python skills/business-management-analysis/scripts/bm-query.py call businessDataStatistics yearAndMonth=202603
 ```
 
 **⚠️ 重要提示**：当用户询问**单个项目**的经营统计数据时：
 
-1. 先调用 `businessDataStatistics`（不传 name）获取所有项目列表
+1. 先调用 `businessDataStatistics`（不传参数）获取所有项目列表
 2. 根据用户说的名称（可能是简称）在返回的数据中过滤出对应项目
 3. 直接返回该项目的经营数据，**无需再次调用**
 
