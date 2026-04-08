@@ -81,18 +81,24 @@ python skills/business-management-analysis/scripts/bm-query.py call forewarn
 
 ### 全面分析（获取所有数据）
 
-当用户要求**全面分析**经营管理情况时，一次性获取所有关键数据：
-
 ```bash
 python skills/business-management-analysis/scripts/bm-query.py all
 ```
 
-这会同时获取：项目推进情况、预警情况、整体收款、整体付款、签约金额、年度自建。
+这会同时获取：项目推进情况、预警情况、整体收款、整体付款、签约金额、年度自建
 
 **注意**：
 
 - 如果用户只是问某个具体问题，不要使用 `all`，只调用对应的单个工具。
 - `all` **不包含**经营数据统计（businessDataStatistics），该工具用于查询**详细经营数据**，需单独调用。
+
+## ⚠️ 大数据量处理
+
+当返回数据量超过 10K 字符时，数据会自动保存到文件，终端只输出简短提示。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段，只展示用户友好的中文描述**。
+
+- `call <tool>` → `~/nextclaw-temp/business-management-analysis_{tool}.json`
+- `all` → `~/nextclaw-temp/business-management-analysis_all.json`
+- 每次请求前自动清理该技能上次产生的文件
 
 ## 可用工具
 

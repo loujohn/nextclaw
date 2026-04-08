@@ -39,24 +39,60 @@ python skills/work-time-statistics/scripts/work-time-statistics.py query XM20250
 python skills/work-time-statistics/scripts/work-time-statistics.py query
 ```
 
-## ⚠️ 时间参数处理说明
+## ⚠️ 时间参数处理
 
-当用户询问**本周、本月、上周、上月**等相对时间时，必须**先获取当前日期**，然后计算对应的日期范围：
+当用户询问**本周、本月、上周、上月**等相对时间时，**必须先计算具体日期范围**，再传入命令。
 
-1. **先获取当前日期**：使用 Python 的 datetime 获取今天的日期
-2. **根据当前日期计算周期**：
-   - 本周：当前日期所在的周一到周日（本周一 ~ 本周日）
-   - 上周：本周一往前7天（上周一 ~ 上周日）
-   - 本月：当前月份1号到月末（1号 ~ 月最后一天）
-   - 上月：上个月1号到月末
-3. **将计算后的日期传入**：`query startDay endDay`
+### 日期计算公式
 
-**示例**：
+```python
+from datetime import datetime, timedelta
 
-- 用户问"本周工时" → 计算本周日期范围 → `query 2026-04-07 2026-04-13`
-- 用户问"上月工时" → 计算上月日期范围 → `query 2026-03-01 2026-03-31`
+today = datetime.now().date()
+
+# 本周：找到本周一
+days_since_monday = today.weekday()  # 0=周一, 6=周日
+week_start = today - timedelta(days=days_since_monday)
+week_end = week_start + timedelta(days=6)
+
+# 上周：本周一减7天
+prev_week_start = week_start - timedelta(days=7)
+prev_week_end = week_start - timedelta(days=1)
+
+# 本月：1号到月末
+month_start = today.replace(day=1)
+if today.month == 12:
+    month_end = today.replace(year=today.year+1, month=1, day=1) - timedelta(days=1)
+else:
+    month_end = today.replace(month=today.month+1, day=1) - timedelta(days=1)
+
+# 上月
+if month_start.month == 1:
+    prev_month_end = month_start - timedelta(days=1)
+    prev_month_start = prev_month_end.replace(day=1)
+else:
+    prev_month_end = month_start - timedelta(days=1)
+    prev_month_start = prev_month_end.replace(day=1)
+```
+
+### 正确示例
+
+- 用户问"本周工时" → 计算日期范围 → `query 2026-04-07 2026-04-13`
+- 用户问"上周工时" → 计算日期范围 → `query 2026-03-31 2026-04-06`
+- 用户问"本月工时" → 计算日期范围 → `query 2026-04-01 2026-04-30`
+- 用户问"上月工时" → 计算日期范围 → `query 2026-03-01 2026-03-31`
 
 **禁止**：直接使用用户说的"本周"、"上月"而不进行日期转换。
+
+## ⚠️ 大数据量处理
+
+数据自动保存到文件（当数据量大，超出 exec 工具 12K 限制时）。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段（如 projectType、userType 等），只展示用户友好的中文描述**。
+
+- `list` → `~/nextclaw-temp/work-time-statistics_projects.json`
+- `query` → `~/nextclaw-temp/work-time-statistics_workhours_{projectCode}.json`
+- `query` 无项目 → `~/nextclaw-temp/work-time-statistics_workhours_all.json`
+
+- 每次请求前自动清理该技能上次产生的文件
 
 ## 接口说明
 
@@ -100,15 +136,11 @@ python skills/work-time-statistics/scripts/work-time-statistics.py query
   "code": 0,
   "data": [
     {
-      "userName": "张三",
-      "userAccount": "zhangsan",
-      "workHours": [
-        {
-          "date": "2026-04-01",
-          "hours": 8,
-          "taskName": "任务名称"
-        }
-      ]
+      "projectCode": "XM202502102176",
+      "projectName": "项目名称",
+      "userName": "zhangsan",
+      "name": "张三",
+      "projectWorkHour": 100.5
     }
   ]
 }
