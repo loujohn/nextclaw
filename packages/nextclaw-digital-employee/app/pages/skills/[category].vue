@@ -84,12 +84,18 @@ const form = reactive({ sourceType: "local", source: "" });
 const importing = ref(false);
 const importError = ref("");
 const togglingSkill = ref("");
+const toggleError = ref("");
 const uploadingDir = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 const skillsStore = useSkillsStore();
 const refresh = () => skillsStore.refresh();
 const allSkills = computed(() => skillsStore.list);
+
+watch(categorySlug, () => {
+  query.value = "";
+  toggleError.value = "";
+});
 
 const categorySkills = computed(() => {
   const cat = currentCat.value;
@@ -156,9 +162,11 @@ async function importSkill() {
 
 async function toggleSkill(name: string, enabled: boolean) {
   togglingSkill.value = name;
+  toggleError.value = "";
   try {
-    await $fetch(`/api/skills/${name}/state`, { method: "PATCH", body: { enabled } });
-    await refresh();
+    await skillsStore.toggleSkill(name, enabled);
+  } catch (err) {
+    toggleError.value = err instanceof Error ? err.message : String(err);
   } finally {
     togglingSkill.value = "";
   }
@@ -234,6 +242,14 @@ async function toggleSkill(name: string, enabled: boolean) {
         />
       </label>
     </div>
+
+    <!-- Toggle Error -->
+    <p
+      v-if="toggleError"
+      class="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      操作失败：{{ toggleError }}
+    </p>
 
     <!-- Skill Cards Grid -->
     <div class="stagger-in grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
