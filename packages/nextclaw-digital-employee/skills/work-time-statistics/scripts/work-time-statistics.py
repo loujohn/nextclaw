@@ -7,6 +7,7 @@ import json
 import argparse
 import urllib.request
 import urllib.parse
+import glob
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -17,9 +18,62 @@ BASIC_AUTH = os.environ.get("PM_BASIC_AUTH", "")
 API_USERNAME = os.environ.get("PM_USERNAME", "admin")
 API_PASSWORD = os.environ.get("PM_PASSWORD", "")
 
+TEMP_DIR = os.path.expanduser("~/nextclaw-temp")
+SKILL_NAME = "work-time-statistics"
+
+
+def clean_previous_output(specific_file=None):
+    if not os.path.exists(TEMP_DIR):
+        return
+    if specific_file:
+        pattern = os.path.join(TEMP_DIR, f"{SKILL_NAME}_{specific_file}.json")
+    else:
+        pattern = os.path.join(TEMP_DIR, f"{SKILL_NAME}_*.json")
+    for f in glob.glob(pattern):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
+
+def get_date_range(period):
+    from datetime import datetime, timedelta, timezone
+
+    tz = timezone(timedelta(hours=8))
+    today = datetime.now(tz).date()
+
+    if period == "本周":
+        days_since_monday = today.weekday()
+        week_start = today - timedelta(days=days_since_monday)
+        week_end = week_start + timedelta(days=6)
+        return week_start.strftime("%Y-%m-%d"), week_end.strftime("%Y-%m-%d")
+    elif period == "上周":
+        days_since_monday = today.weekday()
+        week_start = today - timedelta(days=days_since_monday)
+        prev_week_start = week_start - timedelta(days=7)
+        prev_week_end = week_start - timedelta(days=1)
+        return prev_week_start.strftime("%Y-%m-%d"), prev_week_end.strftime("%Y-%m-%d")
+    elif period == "本月":
+        month_start = today.replace(day=1)
+        if today.month == 12:
+            month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(
+                days=1
+            )
+        else:
+            month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+        return month_start.strftime("%Y-%m-%d"), month_end.strftime("%Y-%m-%d")
+    elif period == "上月":
+        first_day_this_month = today.replace(day=1)
+        prev_month_end = first_day_this_month - timedelta(days=1)
+        prev_month_start = prev_month_end.replace(day=1)
+        return prev_month_start.strftime("%Y-%m-%d"), prev_month_end.strftime(
+            "%Y-%m-%d"
+        )
+
+    return None, None
+
 
 def post_form(url, form_data, timeout):
-    """发送POST表单请求"""
     data = urllib.parse.urlencode(form_data).encode("utf-8")
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -36,47 +90,12 @@ def post_form(url, form_data, timeout):
 
 
 def fetch(url, token, timeout):
-    """发送GET请求"""
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {token}",
         "User-Agent": "nextclaw-work-time-query/1.0",
     }
     req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except Exception as e:
-        raise Exception(f"请求失败: {e}")
-
-
-def post_json(url, json_data, token, timeout):
-    """发送POST JSON请求"""
-    data = json.dumps(json_data).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "User-Agent": "nextclaw-work-time-query/1.0",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except Exception as e:
-        raise Exception(f"请求失败: {e}")
-
-
-def post_json(url, json_data, token, timeout):
-    """发送POST JSON请求"""
-    data = json.dumps(json_data).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "User-Agent": "nextclaw-work-time-query/1.0",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout / 1000) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -107,7 +126,9 @@ def list_projects(token):
     return fetch(url, token, TIMEOUT)
 
 
-def query_work_hours(token, project_code=None, start_day=None, end_day=None):
+def query_work_hours(
+    token, project_code=None, start_day=None, end_day=None, project_type=None
+):
     url = f"{PM_BASE_URL}/admin/project/workHour/getProjectUserWorkHour"
     form_data = {}
     if project_code:
@@ -116,8 +137,9 @@ def query_work_hours(token, project_code=None, start_day=None, end_day=None):
         form_data["startDay"] = start_day
     if end_day:
         form_data["endDay"] = end_day
+    if project_type:
+        form_data["projectType"] = project_type
 
-    # 需要带 token 的 POST 请求
     data = json.dumps(form_data).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -133,6 +155,28 @@ def query_work_hours(token, project_code=None, start_day=None, end_day=None):
         raise Exception(f"请求失败：{e}")
 
 
+def output_result(data, command, project_code=None):
+    json_str = json.dumps(data, ensure_ascii=False, indent=2)
+
+    if command == "list":
+        filename = "projects.json"
+    elif command == "query":
+        if project_code:
+            filename = f"workhours_{project_code}.json"
+        else:
+            filename = "workhours_all.json"
+    else:
+        filename = "output.json"
+
+    output_path = os.path.join(TEMP_DIR, f"{SKILL_NAME}_{filename}")
+
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(json_str)
+
+    print(f"[数据已保存到文件: {output_path}]")
+
+
 def main():
     parser = argparse.ArgumentParser(description="工时查询")
     subparsers = parser.add_subparsers(dest="command")
@@ -140,31 +184,64 @@ def main():
     subparsers.add_parser("list", help="列出所有项目")
 
     query_parser = subparsers.add_parser("query", help="查询项目人员工时")
-    query_parser.add_argument("projectCode", nargs="?", help="项目编号 (可选)")
-    query_parser.add_argument("startDay", nargs="?", help="开始日期 (YYYY-MM-DD, 可选)")
-    query_parser.add_argument("endDay", nargs="?", help="结束日期 (YYYY-MM-DD, 可选)")
+    query_parser.add_argument(
+        "args",
+        nargs="*",
+        help="参数 (可选, 格式: key=value 或 period=本周/上周/本月/上月)",
+    )
 
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
         print("\n示例:")
-        print("  python work-time-query.py list                    # 列出所有项目")
-        print("  python work-time-query.py query XM001 2026-04-01 2026-04-02")
+        print("  python work-time-statistics.py list")
+        print(
+            "  python work-time-statistics.py query startDay=2026-04-01 endDay=2026-04-07"
+        )
+        print("  python work-time-statistics.py query period=本周")
+        print("  python work-time-statistics.py query period=本月 projectType=承建")
         sys.exit(0)
 
     try:
         token = get_token()
 
         if args.command == "list":
+            clean_previous_output("projects.json")
             result = list_projects(token)
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            output_result(result, "list")
 
         elif args.command == "query":
-            result = query_work_hours(
-                token, args.projectCode, args.startDay, args.endDay
+            project_code = None
+            kwargs = {}
+            if args.args:
+                for arg in args.args:
+                    if "=" in arg:
+                        k, v = arg.split("=", 1)
+                        kwargs[k] = v
+
+                if "period" in kwargs:
+                    start_day, end_day = get_date_range(kwargs["period"])
+                    if start_day:
+                        kwargs["startDay"] = start_day
+                        kwargs["endDay"] = end_day
+                    del kwargs["period"]
+
+                project_code = kwargs.get("projectCode")
+
+            clean_previous_output(
+                f"workhours_{project_code}.json"
+                if project_code
+                else "workhours_all.json"
             )
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            result = query_work_hours(
+                token,
+                kwargs.get("projectCode"),
+                kwargs.get("startDay"),
+                kwargs.get("endDay"),
+                kwargs.get("projectType"),
+            )
+            output_result(result, "query", project_code)
 
     except Exception as e:
         print(f"失败: {e}", file=sys.stderr)

@@ -23,8 +23,18 @@ python skills/work-time-statistics/scripts/work-time-statistics.py list
 ### 查询项目人员工时
 
 ```bash
-python skills/work-time-statistics/scripts/work-time-statistics.py query [projectCode] [startDay] [endDay]
+python skills/work-time-statistics/scripts/work-time-statistics.py query [参数1] [参数2] ...
 ```
+
+**参数说明**：参数用**空格**分隔，格式为 `key=value`。
+
+支持参数：
+
+- `period`: 相对时间 (`本周`/`上周`/`本月`/`上月`)，自动计算日期
+- `startDay`: 开始日期 (YYYY-MM-DD)
+- `endDay`: 结束日期 (YYYY-MM-DD)
+- `projectCode`: 项目编号
+- `projectType`: 项目分类 (`承建`/`自研`/`运营`/`商机项目`)
 
 示例：
 
@@ -32,31 +42,27 @@ python skills/work-time-statistics/scripts/work-time-statistics.py query [projec
 # 查询所有项目列表
 python skills/work-time-statistics/scripts/work-time-statistics.py list
 
-# 查询指定项目的人员工时
-python skills/work-time-statistics/scripts/work-time-statistics.py query XM202508125040 2026-04-01 2026-04-02
+# 使用相对时间查询
+python skills/work-time-statistics/scripts/work-time-statistics.py query period=本周
+python skills/work-time-statistics/scripts/work-time-statistics.py query period=上月
 
-# 查询所有项目人员工时
-python skills/work-time-statistics/scripts/work-time-statistics.py query
+# 筛选项目分类
+python skills/work-time-statistics/scripts/work-time-statistics.py query period=本月 projectType=自研
+python skills/work-time-statistics/scripts/work-time-statistics.py query period=本周 projectType=承建
+
+# 指定日期范围和项目
+python skills/work-time-statistics/scripts/work-time-statistics.py query projectCode=XM202508125040 startDay=2026-04-01 endDay=2026-04-07
 ```
 
-## ⚠️ 时间参数处理说明
+## ⚠️ 大数据量处理
 
-当用户询问**本周、本月、上周、上月**等相对时间时，必须**先获取当前日期**，然后计算对应的日期范围：
+数据自动保存到文件（当数据量大，超出 exec 工具 12K 限制时）。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段（如 projectType、userType 等），只展示用户友好的中文描述**。
 
-1. **先获取当前日期**：使用 Python 的 datetime 获取今天的日期
-2. **根据当前日期计算周期**：
-   - 本周：当前日期所在的周一到周日（本周一 ~ 本周日）
-   - 上周：本周一往前7天（上周一 ~ 上周日）
-   - 本月：当前月份1号到月末（1号 ~ 月最后一天）
-   - 上月：上个月1号到月末
-3. **将计算后的日期传入**：`query startDay endDay`
+- `list` → `~/nextclaw-temp/work-time-statistics_projects.json`
+- `query` → `~/nextclaw-temp/work-time-statistics_workhours_{projectCode}.json`
+- `query` 无项目 → `~/nextclaw-temp/work-time-statistics_workhours_all.json`
 
-**示例**：
-
-- 用户问"本周工时" → 计算本周日期范围 → `query 2026-04-07 2026-04-13`
-- 用户问"上月工时" → 计算上月日期范围 → `query 2026-03-01 2026-03-31`
-
-**禁止**：直接使用用户说的"本周"、"上月"而不进行日期转换。
+- 每次请求前自动清理该技能上次产生的文件
 
 ## 接口说明
 
@@ -100,15 +106,11 @@ python skills/work-time-statistics/scripts/work-time-statistics.py query
   "code": 0,
   "data": [
     {
-      "userName": "张三",
-      "userAccount": "zhangsan",
-      "workHours": [
-        {
-          "date": "2026-04-01",
-          "hours": 8,
-          "taskName": "任务名称"
-        }
-      ]
+      "projectCode": "XM202502102176",
+      "projectName": "项目名称",
+      "userName": "zhangsan",
+      "name": "张三",
+      "projectWorkHour": 100.5
     }
   ]
 }
