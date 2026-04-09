@@ -6,7 +6,6 @@ type SkillPayload = { ok: boolean; data: SkillCatalogEntryView[] };
 export const useSkillsStore = defineStore("skills", () => {
   const { data, refresh, pending } = useLazyFetch<SkillPayload>("/api/skills", {
     key: "store-skills",
-    getCachedData: (k) => useNuxtData<SkillPayload>(k).data.value ?? undefined,
   });
 
   const list = computed<SkillCatalogEntryView[]>(() => data.value?.data ?? []);
@@ -16,5 +15,10 @@ export const useSkillsStore = defineStore("skills", () => {
     return m;
   });
 
-  return { data, list, displayNameMap, pending, refresh };
+  async function toggleSkill(name: string, enabled: boolean) {
+    await $fetch(`/api/skills/${name}/state`, { method: "PATCH", body: { enabled } });
+    await refresh();
+  }
+
+  return { data, list, displayNameMap, pending, refresh, toggleSkill };
 });
