@@ -241,6 +241,7 @@ async function createRunRecordsTable(db: Knex): Promise<void> {
   await db.schema.createTable(PLATFORM_TABLES.runRecords, (table) => {
     table.string("id").primary();
     table.string("employee_id").references("id").inTable(PLATFORM_TABLES.employees).onDelete("SET NULL");
+    table.string("session_key").nullable();
     table.string("trigger_type").notNullable();
     table.string("trigger_source").notNullable();
     table.string("status").notNullable();
@@ -264,6 +265,50 @@ async function createRunEventsTable(db: Knex): Promise<void> {
     table.text("payload_json").notNullable().defaultTo("{}");
     table.timestamp("created_at").notNullable();
   });
+}
+
+async function createChatSessionsTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.chatSessions);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.chatSessions, (table) => {
+    table.string("id").primary();
+    table.string("employee_id").notNullable().references("id").inTable(PLATFORM_TABLES.employees).onDelete("CASCADE");
+    table.string("session_key").notNullable();
+    table.string("title").notNullable().defaultTo("新对话");
+    table.text("preview").notNullable().defaultTo("");
+    table.integer("message_count").notNullable().defaultTo(0);
+    table.timestamp("created_at").notNullable();
+    table.timestamp("updated_at").notNullable();
+  });
+}
+
+async function createChatMessagesTable(db: Knex): Promise<void> {
+  const exists = await db.schema.hasTable(PLATFORM_TABLES.chatMessages);
+  if (exists) {
+    return;
+  }
+  await db.schema.createTable(PLATFORM_TABLES.chatMessages, (table) => {
+    table.string("id").primary();
+    table.string("session_id").notNullable().references("id").inTable(PLATFORM_TABLES.chatSessions).onDelete("CASCADE");
+    table.string("role").notNullable();
+    table.text("content").notNullable().defaultTo("");
+    table.string("tool_name").nullable();
+    table.string("tool_call_id").nullable();
+    table.text("metadata_json").notNullable().defaultTo("{}");
+    table.timestamp("created_at").notNullable();
+  });
+}
+
+async function migrateChatMessagesMetadataJson(db: Knex): Promise<void> {
+  const hasTable = await db.schema.hasTable(PLATFORM_TABLES.chatMessages);
+  if (!hasTable) {
+    return;
+  }
+  await db(PLATFORM_TABLES.chatMessages)
+    .whereNull("metadata_json")
+    .update({ metadata_json: "{}" });
 }
 
 async function createHumanEmployeesTable(db: Knex): Promise<void> {
@@ -313,6 +358,15 @@ async function migrateEmployeesAddDepartmentId(db: Knex): Promise<void> {
   if (!hasColumn) {
     await db.schema.alterTable(PLATFORM_TABLES.employees, (table) => {
       table.string("department_id").nullable().defaultTo(null);
+    });
+  }
+}
+
+async function migrateRunRecordsAddSessionKey(db: Knex): Promise<void> {
+  const hasColumn = await db.schema.hasColumn(PLATFORM_TABLES.runRecords, "session_key");
+  if (!hasColumn) {
+    await db.schema.alterTable(PLATFORM_TABLES.runRecords, (table) => {
+      table.string("session_key").nullable().defaultTo(null);
     });
   }
 }
@@ -402,6 +456,23 @@ async function migrateAddQueryIndexes(db: Knex): Promise<void> {
     `CREATE INDEX "idx_run_events_rid_seq" ON "run_events" ("run_id", "seq" ASC)`);
   await createIndexIfNotExists(db, "idx_schedule_jobs_eid",
     `CREATE INDEX "idx_schedule_jobs_eid" ON "employee_schedule_jobs" ("employee_id")`);
+  await createIndexIfNotExists(db, "idx_chat_sessions_eid_session_key",
+    `CREATE UNIQUE INDEX "idx_chat_sessions_eid_session_key" ON "chat_sessions" ("employee_id", "session_key")`);
+  if (isSqlite()) {
+    await createIndexIfNotExists(db, "idx_chat_sessions_eid_updated",
+      `CREATE INDEX "idx_chat_sessions_eid_updated" ON "chat_sessions" ("employee_id", "updated_at" DESC)`);
+    await createIndexIfNotExists(db, "idx_chat_messages_sid_created",
+      `CREATE INDEX "idx_chat_messages_sid_created" ON "chat_messages" ("session_id", "created_at" DESC, "id" DESC)`);
+    await createIndexIfNotExists(db, "idx_run_records_eid_session_started",
+      `CREATE INDEX "idx_run_records_eid_session_started" ON "run_records" ("employee_id", "session_key", "started_at" DESC)`);
+  } else {
+    await createIndexIfNotExists(db, "idx_chat_sessions_eid_updated",
+      `CREATE INDEX "idx_chat_sessions_eid_updated" ON "chat_sessions" ("employee_id")`);
+    await createIndexIfNotExists(db, "idx_chat_messages_sid_created",
+      `CREATE INDEX "idx_chat_messages_sid_created" ON "chat_messages" ("session_id")`);
+    await createIndexIfNotExists(db, "idx_run_records_eid_session_started",
+      `CREATE INDEX "idx_run_records_eid_session_started" ON "run_records" ("employee_id", "session_key")`);
+  }
 }
 
 async function hasIndex(db: Knex, indexName: string): Promise<boolean> {
@@ -500,11 +571,15 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createIntegrationConnectionsTable(db);
   await createRunRecordsTable(db);
   await createRunEventsTable(db);
+  await createChatSessionsTable(db);
+  await createChatMessagesTable(db);
   await createOrgSyncConfigTable(db);
   await createSecretsTable(db);
   await migrateEmployeesAddModel(db);
   await migrateEmployeesAddDepartmentId(db);
   await migrateAddDepartmentExternalId(db);
+  await migrateRunRecordsAddSessionKey(db);
+  await migrateChatMessagesMetadataJson(db);
   await migrateAddQueryIndexes(db);
   await migrateLegacySchedulesToJobs(db);
 }
@@ -571,12 +646,58 @@ const platformMigrations: MigrationEntry[] = [
     },
   },
   {
+    name: "003_chat_sessions_messages.ts",
+    async up(knex) {
+      await createChatSessionsTable(knex);
+      await createChatMessagesTable(knex);
+      await migrateRunRecordsAddSessionKey(knex);
+      await migrateAddQueryIndexes(knex);
+    },
+    async down(knex) {
+      if (isSqlite()) {
+        for (const name of [
+          "idx_run_records_eid_session_started",
+          "idx_chat_messages_sid_created",
+          "idx_chat_sessions_eid_updated",
+          "idx_chat_sessions_eid_session_key"
+        ]) {
+          await knex.raw(`DROP INDEX IF EXISTS "${name}"`);
+        }
+      }
+      await knex.schema.dropTableIfExists(PLATFORM_TABLES.chatMessages);
+      await knex.schema.dropTableIfExists(PLATFORM_TABLES.chatSessions);
+    },
+  },
+  {
     name: "003_legacy_schedule_migration.ts",
     async up(knex) {
       await migrateLegacySchedulesToJobs(knex);
     },
     async down() {
       // Not reversible — see migrations/003_legacy_schedule_migration.ts
+    },
+  },
+  {
+    name: "004_chat_persistence.ts",
+    async up(knex) {
+      await createChatSessionsTable(knex);
+      await createChatMessagesTable(knex);
+      await migrateRunRecordsAddSessionKey(knex);
+      await migrateAddQueryIndexes(knex);
+    },
+    async down(knex) {
+      if (isSqlite()) {
+        for (const name of [
+          "idx_run_records_eid_session_started",
+          "idx_chat_messages_sid_created",
+          "idx_chat_sessions_eid_updated",
+          "idx_chat_sessions_eid_session_key"
+        ]) {
+          await knex.raw(`DROP INDEX IF EXISTS "${name}"`);
+        }
+      }
+      await knex.schema.dropTableIfExists(PLATFORM_TABLES.chatMessages);
+      await knex.schema.dropTableIfExists(PLATFORM_TABLES.chatSessions);
     },
   },
 ];

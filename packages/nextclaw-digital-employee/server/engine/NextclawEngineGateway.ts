@@ -60,12 +60,16 @@ export type RunEmployeeTurnParams = {
   requestedSkills?: string[];
   /** 定时任务执行时传 true，防止 AI 在执行期间调用 cron 工具重复创建任务 */
   disableCronTool?: boolean;
+  abortSignal?: AbortSignal;
+  onAssistantDelta?: (delta: string) => void;
+  onSessionEvent?: (event: SessionEvent) => void;
 };
 
 export type RunEmployeeTurnResult = {
   sessionKey: string;
   reply: string;
   events: SessionEvent[];
+  newMessages: SessionHistoryMessage[];
 };
 
 // 工具调用的简化视图（供前端展示）
@@ -464,6 +468,55 @@ export class NextclawEngineGateway {
     }
   }
 
+  private mapSessionMessage(message: Record<string, unknown>): SessionHistoryMessage | null {
+    const role = String(message.role ?? "");
+    const content = typeof message.content === "string" ? message.content : "";
+    const timestamp = typeof message.timestamp === "string" ? message.timestamp : undefined;
+
+    if (role === "user" || role === "system") {
+      return { role, content, timestamp } satisfies SessionHistoryMessage;
+    }
+
+    if (role === "assistant") {
+      const result: SessionHistoryMessage = { role, content, timestamp };
+      const rawToolCalls = message.tool_calls;
+      if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
+        result.toolCalls = rawToolCalls
+          .filter((tc): tc is Record<string, unknown> => tc && typeof tc === "object")
+          .map((tc) => ({
+            id: String(tc.id ?? ""),
+            name: String((tc.function as Record<string, unknown>)?.name ?? tc.name ?? ""),
+            arguments: typeof (tc.function as Record<string, unknown>)?.arguments === "string"
+              ? String((tc.function as Record<string, unknown>).arguments)
+              : JSON.stringify(tc.arguments ?? {})
+          }));
+      }
+      const reasoning = message.reasoning_content;
+      if (typeof reasoning === "string" && reasoning.trim()) {
+        result.reasoning = reasoning;
+      }
+      return result;
+    }
+
+    if (role === "tool") {
+      return {
+        role: "tool" as const,
+        content,
+        timestamp,
+        toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
+        toolName: typeof message.name === "string" ? message.name : undefined
+      } satisfies SessionHistoryMessage;
+    }
+
+    return null;
+  }
+
+  private mapSessionHistory(messages: Array<Record<string, unknown>>): SessionHistoryMessage[] {
+    return messages
+      .map((message) => this.mapSessionMessage(message))
+      .filter((message): message is SessionHistoryMessage => Boolean(message));
+  }
+
   async runEmployeeTurn(params: RunEmployeeTurnParams): Promise<RunEmployeeTurnResult> {
     const events: SessionEvent[] = [];
     const sessionKey = params.sessionKey ?? `employee:${params.employeeId}:ui:direct:web`;
@@ -492,8 +545,11 @@ export class NextclawEngineGateway {
         channel: "ui",
         chatId: params.employeeId,
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        ...(params.abortSignal ? { abortSignal: params.abortSignal } : {}),
+        ...(params.onAssistantDelta ? { onAssistantDelta: params.onAssistantDelta } : {}),
         onSessionEvent: (event) => {
           events.push(event);
+          params.onSessionEvent?.(event);
         }
       });
     } catch (err) {
@@ -506,7 +562,12 @@ export class NextclawEngineGateway {
       this.sessionManager.addMessage(session, "user", params.message);
       this.sessionManager.addMessage(session, "assistant", reply);
     }
-    return { sessionKey, reply, events };
+    const latestMessages = this.sessionManager.getHistory(session);
+    const newMessages = latestMessages
+      .slice(historyCountBefore)
+      .map((message) => this.mapSessionMessage(message as unknown as Record<string, unknown>))
+      .filter((message): message is SessionHistoryMessage => Boolean(message));
+    return { sessionKey, reply, events, newMessages };
   }
 
   // 获取会话历史，包含工具调用和推理过程等元数据
@@ -520,48 +581,7 @@ export class NextclawEngineGateway {
       ? session.messages.slice(-maxMessages)
       : session.messages;
     return recent
-      .map((message) => {
-        const role = String(message.role ?? "");
-        const content = typeof message.content === "string" ? message.content : "";
-        const timestamp = typeof message.timestamp === "string" ? message.timestamp : undefined;
-
-        if (role === "user" || role === "system") {
-          return { role, content, timestamp } satisfies SessionHistoryMessage;
-        }
-
-        if (role === "assistant") {
-          const result: SessionHistoryMessage = { role, content, timestamp };
-          const rawToolCalls = message.tool_calls;
-          if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
-            result.toolCalls = rawToolCalls
-              .filter((tc): tc is Record<string, unknown> => tc && typeof tc === "object")
-              .map((tc) => ({
-                id: String(tc.id ?? ""),
-                name: String((tc.function as Record<string, unknown>)?.name ?? tc.name ?? ""),
-                arguments: typeof (tc.function as Record<string, unknown>)?.arguments === "string"
-                  ? String((tc.function as Record<string, unknown>).arguments)
-                  : JSON.stringify(tc.arguments ?? {})
-              }));
-          }
-          const reasoning = message.reasoning_content;
-          if (typeof reasoning === "string" && reasoning.trim()) {
-            result.reasoning = reasoning;
-          }
-          return result;
-        }
-
-        if (role === "tool") {
-          return {
-            role: "tool" as const,
-            content,
-            timestamp,
-            toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
-            toolName: typeof message.name === "string" ? message.name : undefined
-          } satisfies SessionHistoryMessage;
-        }
-
-        return null;
-      })
+      .map((message) => this.mapSessionMessage(message as unknown as Record<string, unknown>))
       .filter((message): message is SessionHistoryMessage => Boolean(message));
   }
 }
