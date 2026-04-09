@@ -1,20 +1,17 @@
 <script setup lang="ts">
 import { Search, Sparkles, Plus } from "lucide-vue-next";
-import type { HumanEmployeeApiItem } from "~/composables/useDepartmentTree";
 
 const employeesStore = useEmployeesStore();
 const skillsStore = useSkillsStore();
 const deptsStore = useDepartmentsStore();
+const humanEmpStore = useHumanEmployeesStore();
 
-const cachedDataOption = <T,>(key: string) => ({
-  key,
-  getCachedData: (k: string) => useNuxtData<T>(k).data.value ?? undefined,
-});
 const employeePayload = computed(() => employeesStore.data);
 const refresh = () => employeesStore.refresh();
 const skillPayload = computed(() => skillsStore.data);
 const departmentPayload = computed(() => deptsStore.data);
-const { data: humanEmployeePayload, refresh: refreshHumanEmployees } = useLazyFetch<{ ok: boolean; data: HumanEmployeeApiItem[] }>("/api/org/human-employees", cachedDataOption("human-employees-list"));
+const humanEmployeePayload = computed(() => humanEmpStore.data);
+const refreshHumanEmployees = () => humanEmpStore.refresh();
 const refreshDepts = () => deptsStore.refresh();
 
 const pageReady = computed(() => !!employeePayload.value && !!departmentPayload.value);

@@ -14,6 +14,11 @@ import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountCo
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { normalizeString } from "./utils";
 
+const INITIAL_RECONNECT_DELAY_MS = 2_000;
+const MAX_RECONNECT_DELAY_MS = 60_000;
+const HEALTH_CHECK_INTERVAL_MS = 30_000;
+const FORCE_RESTART_AFTER_MS = 120_000;
+
 function getProxyUrl(): string | undefined {
   return process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
 }
@@ -44,12 +49,104 @@ function injectWsProxy(client: DWClient): void {
   console.log(`[dingtalk] ws proxy injected → ${proxyUrl}`);
 }
 
+/**
+ * Replace the library's verbose socket error handler (dumps full stack trace
+ * for every 503) with a concise single-line version.  Consecutive identical
+ * errors are throttled: first 3 individually, then every 10th.  When the
+ * connection recovers, a single summary line is logged.
+ */
+function patchSocketLogging(client: DWClient, accountId: string): void {
+  const origInternalConnect = (client as any)._connect;
+  if (typeof origInternalConnect !== "function") return;
+
+  let wsErrorCount = 0;
+
+  (client as any)._connect = function (this: any) {
+    return origInternalConnect.call(this).then(() => {
+      const socket = this.socket;
+      if (!socket) return;
+
+      socket.removeAllListeners("error");
+      socket.on("error", (err: Error) => {
+        wsErrorCount++;
+        if (wsErrorCount <= 3 || wsErrorCount % 10 === 0) {
+          console.warn(
+            `[dingtalk] ws error account=${accountId}: ${err.message}` +
+              (wsErrorCount > 1 ? ` (${wsErrorCount} consecutive)` : "")
+          );
+        }
+      });
+
+      const origOpenListeners = socket.listeners("open").slice();
+      socket.removeAllListeners("open");
+      socket.on("open", (...args: unknown[]) => {
+        if (wsErrorCount > 0) {
+          console.log(`[dingtalk] ws recovered account=${accountId} after ${wsErrorCount} error(s)`);
+          wsErrorCount = 0;
+        }
+        for (const fn of origOpenListeners) {
+          (fn as Function).apply(socket, args);
+        }
+      });
+    });
+  };
+}
+
+/**
+ * Wrap DWClient.connect() so that getEndpoint() failures (which the library
+ * leaves as unhandled promise rejections during auto-reconnect) are caught
+ * and retried with exponential backoff.
+ *
+ * The first successful connect sets a flag; errors before that propagate
+ * to the caller so start() can still report failure.
+ *
+ * Returns a dispose function that prevents any pending retry from firing
+ * after the client is intentionally stopped.
+ */
+function patchClientConnect(client: DWClient, accountId: string): { dispose(): void } {
+  const originalConnect = client.connect.bind(client);
+  let backoffMs = INITIAL_RECONNECT_DELAY_MS;
+  let connecting = false;
+  let initialConnectDone = false;
+  let disposed = false;
+
+  client.connect = async function () {
+    if (connecting || disposed) return;
+    connecting = true;
+    try {
+      await originalConnect();
+      backoffMs = INITIAL_RECONNECT_DELAY_MS;
+      initialConnectDone = true;
+    } catch (err) {
+      if (!initialConnectDone) {
+        connecting = false;
+        throw err;
+      }
+      const delay = backoffMs;
+      backoffMs = Math.min(backoffMs * 2, MAX_RECONNECT_DELAY_MS);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[dingtalk] connect error account=${accountId}, retry in ${delay / 1000}s: ${msg}`);
+      setTimeout(() => {
+        connecting = false;
+        client.connect().catch(() => {});
+      }, delay);
+      return;
+    }
+    connecting = false;
+  };
+
+  return { dispose() { disposed = true; } };
+}
+
 type TokenState = { token: string; expiresAt: number };
 
 export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]> {
   name = "dingtalk";
   private clients = new Map<string, DWClient>();
   private tokens = new Map<string, TokenState>();
+  private healthCheckTimer?: ReturnType<typeof setInterval>;
+  private disconnectedSince = new Map<string, number>();
+  private clientDisposers = new Map<string, () => void>();
 
   async start(): Promise<void> {
     this.running = true;
@@ -64,17 +161,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     const startedClients: DWClient[] = [];
     try {
       for (const [accountId, account] of entries) {
-        console.log(`[dingtalk] connecting account=${accountId} clientId=${account.clientId}`);
-        const client = new DWClient({
-          clientId: account.clientId,
-          clientSecret: account.clientSecret,
-          debug: false
-        });
-        injectWsProxy(client);
-        client.registerCallbackListener(TOPIC_ROBOT, async (event: DWClientDownStream) => {
-          await this.handleRobotMessage(accountId, account, event);
-        });
-        client.registerAllEventListener(() => ({ status: EventAck.SUCCESS }));
+        const client = this.createClient(accountId, account);
         await client.connect();
         this.clients.set(accountId, client);
         startedClients.push(client);
@@ -90,17 +177,87 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       console.error(`[dingtalk] start failed`, error);
       throw error;
     }
+
+    this.startHealthMonitor();
   }
 
   async stop(): Promise<void> {
     console.log(`[dingtalk] stopping, accounts=${this.clients.size}`);
     this.running = false;
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
+    this.disconnectedSince.clear();
+    for (const dispose of this.clientDisposers.values()) dispose();
+    this.clientDisposers.clear();
     for (const client of this.clients.values()) {
       client.disconnect();
     }
     this.clients.clear();
     this.tokens.clear();
     console.log(`[dingtalk] stopped`);
+  }
+
+  private createClient(accountId: string, account: DingTalkAccountConfig): DWClient {
+    console.log(`[dingtalk] connecting account=${accountId} clientId=${account.clientId}`);
+    const client = new DWClient({
+      clientId: account.clientId,
+      clientSecret: account.clientSecret,
+      debug: false
+    });
+    injectWsProxy(client);
+    patchSocketLogging(client, accountId);
+    const { dispose } = patchClientConnect(client, accountId);
+    this.clientDisposers.set(accountId, dispose);
+    client.registerCallbackListener(TOPIC_ROBOT, async (event: DWClientDownStream) => {
+      await this.handleRobotMessage(accountId, account, event);
+    });
+    client.registerAllEventListener(() => ({ status: EventAck.SUCCESS }));
+    return client;
+  }
+
+  private startHealthMonitor(): void {
+    this.healthCheckTimer = setInterval(() => {
+      if (!this.running) return;
+      for (const [accountId, client] of this.clients) {
+        if (client.connected) {
+          this.disconnectedSince.delete(accountId);
+          continue;
+        }
+        const since = this.disconnectedSince.get(accountId);
+        if (!since) {
+          console.log(`[dingtalk] health: account=${accountId} disconnected, monitoring...`);
+          this.disconnectedSince.set(accountId, Date.now());
+          continue;
+        }
+        const elapsed = Date.now() - since;
+        if (elapsed > FORCE_RESTART_AFTER_MS) {
+          console.warn(`[dingtalk] health: account=${accountId} disconnected >${Math.round(elapsed / 1000)}s, force restart`);
+          this.forceRestartClient(accountId).catch((err) => {
+            console.error(`[dingtalk] health: restart failed account=${accountId}`, err);
+          });
+        }
+      }
+    }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  private async forceRestartClient(accountId: string): Promise<void> {
+    this.disconnectedSince.delete(accountId);
+    const oldDispose = this.clientDisposers.get(accountId);
+    if (oldDispose) oldDispose();
+    const oldClient = this.clients.get(accountId);
+    if (oldClient) {
+      try { oldClient.disconnect(); } catch { /* ignore */ }
+    }
+    const normalized = normalizeDingTalkConfig(this.config);
+    const account = normalized.accounts[accountId];
+    if (!account?.clientId || !account?.clientSecret) return;
+
+    const newClient = this.createClient(accountId, account);
+    await newClient.connect();
+    this.clients.set(accountId, newClient);
+    console.log(`[dingtalk] health: account=${accountId} restarted successfully`);
   }
 
   async send(msg: OutboundMessage): Promise<void> {

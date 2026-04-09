@@ -6,7 +6,6 @@ type DepartmentPayload = { ok: boolean; data: DepartmentView[] };
 export const useDepartmentsStore = defineStore("departments", () => {
   const { data, refresh, pending } = useLazyFetch<DepartmentPayload>("/api/departments", {
     key: "store-departments",
-    getCachedData: (k) => useNuxtData<DepartmentPayload>(k).data.value ?? undefined,
   });
 
   const list = computed<DepartmentView[]>(() => data.value?.data ?? []);
