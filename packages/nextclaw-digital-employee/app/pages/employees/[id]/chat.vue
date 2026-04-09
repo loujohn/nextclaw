@@ -678,9 +678,13 @@ async function cancelMessage() {
     return;
   }
   try {
-    await $fetch(`/api/employees/${employeeId.value}/chat/${activeRunId.value}/cancel`, {
-      method: "POST"
-    });
+    const result = await $fetch<{ ok: boolean; data: { stopped: boolean } }>(
+      `/api/employees/${employeeId.value}/chat/${activeRunId.value}/cancel`,
+      { method: "POST" }
+    );
+    if (!result.data.stopped) {
+      streamAbortController.value?.abort();
+    }
   } catch {
     streamAbortController.value?.abort();
   }

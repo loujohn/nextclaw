@@ -102,7 +102,7 @@ function toUiMessage(message: PersistedChatMessageView, inferredRunStatus?: stri
         }
       : {}),
     ...(typeof message.metadata?.reasoning === "string" ? { reasoning: message.metadata.reasoning } : {}),
-    ...(resolvedRunStatus ? { replyStatus: formatRunStatusMeta(resolvedRunStatus) } : {}),
+    ...(resolvedRunStatus && message.role !== "user" ? { replyStatus: formatRunStatusMeta(resolvedRunStatus) } : {}),
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
     ...(message.toolName ? { toolName: message.toolName } : {})
   };

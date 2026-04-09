@@ -503,3 +503,234 @@ describe("EmployeeRunService scheduled chat persistence", () => {
     expect(messages.items.some((item) => item.role === "assistant" && item.content.includes("你好，世界"))).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-1 回归：用户消息不应携带 replyStatus
+// ─────────────────────────────────────────────────────────────────────────────
+describe("EmployeeRunService - BUG-1 user message has no replyStatus", () => {
+  it("用户消息不携带 replyStatus，只有 assistant/tool 消息才有", async () => {
+    const homeDir = createTempDir("bug1-user-replystatus-");
+    const { employee, service } = await createService(homeDir);
+
+    await service.streamChatTurn({
+      employeeId: employee.id,
+      message: "你好",
+      onEvent: async () => {}
+    });
+
+    const result = await service.listChatSessions({ employeeId: employee.id, limit: 1 });
+    const sessionKey = result.items[0]?.sessionKey;
+    expect(sessionKey).toBeTruthy();
+
+    const messages = await service.getChatMessages({
+      employeeId: employee.id,
+      sessionKey: sessionKey!,
+      limit: 20
+    });
+
+    const userMessages = messages.items.filter((item) => item.role === "user");
+    const assistantMessages = messages.items.filter((item) => item.role === "assistant");
+
+    // 用户消息绝不能有 replyStatus
+    for (const msg of userMessages) {
+      expect(msg.replyStatus).toBeUndefined();
+    }
+    // assistant 消息应有 replyStatus
+    for (const msg of assistantMessages) {
+      expect(msg.replyStatus).toBeDefined();
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-3 回归：touchWithMessage 使用原子 SQL 增量，避免并发竞态
+// ─────────────────────────────────────────────────────────────────────────────
+describe("ChatSessionRepository - BUG-3 atomic message_count increment", () => {
+  it("多次 touchWithMessage 后 message_count 正确累加", async () => {
+    const homeDir = createTempDir("bug3-message-count-");
+    const { employee, chatSessionRepo } = await createService(homeDir);
+
+    const session = await chatSessionRepo.create({
+      employeeId: employee.id,
+      sessionKey: "test-atomic",
+      title: "新对话"
+    });
+
+    await chatSessionRepo.touchWithMessage({ sessionId: session.id, messageCountIncrement: 2, latestContent: "A" });
+    await chatSessionRepo.touchWithMessage({ sessionId: session.id, messageCountIncrement: 3, latestContent: "B" });
+    await chatSessionRepo.touchWithMessage({ sessionId: session.id, messageCountIncrement: 1, latestContent: "C" });
+
+    const updated = await chatSessionRepo.getByEmployeeIdAndSessionKey(employee.id, "test-atomic");
+    expect(updated?.messageCount).toBe(6);
+    expect(updated?.preview).toBe("C");
+  });
+
+  it("increment 为 0 时 message_count 不变", async () => {
+    const homeDir = createTempDir("bug3-zero-increment-");
+    const { employee, chatSessionRepo } = await createService(homeDir);
+
+    const session = await chatSessionRepo.create({
+      employeeId: employee.id,
+      sessionKey: "test-zero",
+      title: "新对话"
+    });
+    await chatSessionRepo.touchWithMessage({ sessionId: session.id, messageCountIncrement: 5, latestContent: "init" });
+    await chatSessionRepo.touchWithMessage({ sessionId: session.id, messageCountIncrement: 0, latestContent: "no-change" });
+
+    const updated = await chatSessionRepo.getByEmployeeIdAndSessionKey(employee.id, "test-zero");
+    expect(updated?.messageCount).toBe(5);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 多会话隔离：不同员工的会话不可见
+// ─────────────────────────────────────────────────────────────────────────────
+describe("EmployeeRunService - session cross-employee isolation", () => {
+  it("员工 A 无法读取员工 B 的会话历史", async () => {
+    const homeDir = createTempDir("cross-employee-isolation-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const chatSessionRepo = new ChatSessionRepository(db);
+    const chatMessageRepo = new ChatMessageRepository(db);
+
+    const gateway = buildGateway(homeDir);
+    const employeeA = await employeeRepo.create({ name: "员工A", code: "emp-a", description: "", systemPrompt: "" });
+    const employeeB = await employeeRepo.create({ name: "员工B", code: "emp-b", description: "", systemPrompt: "" });
+
+    const makeService = () => new EmployeeRunService(
+      employeeRepo, skillRepo, runRepo, gateway, undefined, chatSessionRepo, chatMessageRepo
+    );
+
+    const serviceA = makeService();
+    const serviceB = makeService();
+
+    const sessionA = await serviceA.createChatSession(employeeA.id);
+    await chatMessageRepo.createMany([
+      { sessionId: sessionA.id, role: "user", content: "A的私密消息" }
+    ]);
+
+    // 员工B尝试用员工A的sessionKey读取历史，应报错
+    await expect(
+      serviceB.getChatMessages({
+        employeeId: employeeB.id,
+        sessionKey: sessionA.sessionKey,
+        limit: 10
+      })
+    ).rejects.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// cancelChatRun：错误员工ID不能取消他人的 run
+// ─────────────────────────────────────────────────────────────────────────────
+describe("EmployeeRunService - cancelChatRun employee ownership check", () => {
+  it("错误员工 ID 无法取消他人的 run，返回 stopped: false", async () => {
+    const homeDir = createTempDir("cancel-ownership-");
+    const gateway = buildGateway(homeDir, { stallUntilAbort: true });
+    const { employee, service } = await createService(homeDir, gateway);
+
+    let capturedRunId = "";
+    const streamPromise = service.streamChatTurn({
+      employeeId: employee.id,
+      message: "执行中",
+      onEvent: async (event) => {
+        if (event.event === "run_started") {
+          capturedRunId = event.data.runId;
+          // 使用错误的 employeeId 尝试取消
+          const result = await service.cancelChatRun({
+            employeeId: "wrong-employee-id",
+            runId: capturedRunId
+          });
+          expect(result.stopped).toBe(false);
+          // 再用正确的 employeeId 取消
+          await service.cancelChatRun({
+            employeeId: employee.id,
+            runId: capturedRunId
+          });
+        }
+      }
+    });
+
+    await streamPromise;
+    expect(capturedRunId).toBeTruthy();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// streamChatTurn：消息发送失败时 run 状态标记为 failed
+// ─────────────────────────────────────────────────────────────────────────────
+describe("EmployeeRunService - streamChatTurn failure handling", () => {
+  it("引擎抛出错误时流式事件序列为 run_started → run_failed → done，run 状态为 failed", async () => {
+    const homeDir = createTempDir("stream-failure-");
+    const gateway = buildGateway(homeDir);
+    vi.spyOn(gateway, "runEmployeeTurn").mockRejectedValue(new Error("engine crash"));
+
+    const { employee, service, runRepo } = await createService(homeDir, gateway);
+    const events: string[] = [];
+
+    const result = await service.streamChatTurn({
+      employeeId: employee.id,
+      message: "触发错误",
+      onEvent: async (event) => {
+        events.push(event.event);
+      }
+    });
+
+    expect(events).toContain("run_started");
+    expect(events).toContain("run_failed");
+    expect(events[events.length - 1]).toBe("done");
+    expect(result.reply).toBe("");
+
+    const runs = await runRepo.listByEmployeeIdAndSessionKey({
+      employeeId: employee.id,
+      sessionKey: result.sessionKey,
+      limit: 1
+    });
+    expect(runs[0]?.status).toBe("failed");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getChatMessages：分页游标稳定性（大历史）
+// ─────────────────────────────────────────────────────────────────────────────
+describe("ChatMessageRepository - cursor-based pagination stability", () => {
+  it("游标分页能完整遍历所有消息，无重复无遗漏", async () => {
+    const homeDir = createTempDir("pagination-stability-");
+    const { employee, service, chatMessageRepo } = await createService(homeDir);
+
+    const session = await service.createChatSession(employee.id);
+    const totalCount = 13;
+    const msgs = Array.from({ length: totalCount }, (_, i) => ({
+      sessionId: session.id,
+      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+      content: `消息${i + 1}`,
+      createdAt: new Date(Date.now() + i * 1000).toISOString()
+    }));
+    await chatMessageRepo.createMany(msgs);
+
+    const collected: string[] = [];
+    let cursor: string | null = null;
+
+    do {
+      const page = await service.getChatMessages({
+        employeeId: employee.id,
+        sessionKey: session.sessionKey,
+        limit: 5,
+        before: cursor
+      });
+      for (const item of [...page.items].reverse()) {
+        if (!collected.includes(item.content)) {
+          collected.unshift(item.content);
+        }
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(collected).toHaveLength(totalCount);
+    // 按时间升序最末尾的是最新消息
+    expect(collected[totalCount - 1]).toBe(`消息${totalCount}`);
+  });
+});

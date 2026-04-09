@@ -168,12 +168,13 @@ export class ChatSessionRepository {
     const nextTitle = existing.title === "新对话" && params.titleSeed?.trim()
       ? buildSessionTitle(params.titleSeed)
       : existing.title;
+    const increment = Math.max(0, params.messageCountIncrement);
     await this.db<ChatSessionRecord>(PLATFORM_TABLES.chatSessions)
       .where({ id: params.sessionId })
       .update({
         title: nextTitle,
         preview: buildSessionPreview(params.latestContent),
-        message_count: existing.message_count + Math.max(0, params.messageCountIncrement),
+        message_count: this.db.raw("message_count + ?", [increment]),
         updated_at: dbNow()
       });
   }
