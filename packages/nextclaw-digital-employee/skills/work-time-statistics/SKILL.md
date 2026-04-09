@@ -17,72 +17,48 @@ metadata:
 ### 列出所有项目
 
 ```bash
+python skills/work-time-statistics/scripts/work-time-statistics.py list [参数]
+```
+
+**参数说明**：`projectType` 项目分类 (`承建`/`自研`/`运营`/`商机项目`)
+
+示例：
+
+```bash
+# 列出所有项目
 python skills/work-time-statistics/scripts/work-time-statistics.py list
+
+# 按项目分类筛选（本地过滤）
+python skills/work-time-statistics/scripts/work-time-statistics.py list projectType=自研
 ```
 
 ### 查询项目人员工时
 
 ```bash
-python skills/work-time-statistics/scripts/work-time-statistics.py query [projectCode] [startDay] [endDay]
+python skills/work-time-statistics/scripts/work-time-statistics.py query [参数1] [参数2] ...
 ```
+
+**参数说明**：参数用**空格**分隔，格式为 `key=value`。
+
+支持参数：
+
+- `period`: 相对时间 (`本周`/`上周`/`本月`/`上月`)，自动计算日期
+- `startDay`: 开始日期 (YYYY-MM-DD)
+- `endDay`: 结束日期 (YYYY-MM-DD)
+- `projectCode`: 项目编号
+
+**重要**：请直接传递参数让服务端过滤，**不要先调用 list 获取所有项目再筛选**，这样可以减少请求时间。
 
 示例：
 
 ```bash
-# 查询所有项目列表
-python skills/work-time-statistics/scripts/work-time-statistics.py list
+# 使用相对时间查询
+python skills/work-time-statistics/scripts/work-time-statistics.py query period=本周
+python skills/work-time-statistics/scripts/work-time-statistics.py query period=上月
 
-# 查询指定项目的人员工时
-python skills/work-time-statistics/scripts/work-time-statistics.py query XM202508125040 2026-04-01 2026-04-02
-
-# 查询所有项目人员工时
-python skills/work-time-statistics/scripts/work-time-statistics.py query
+# 指定日期范围和项目
+python skills/work-time-statistics/scripts/work-time-statistics.py query projectCode=XM202508125040 startDay=2026-04-01 endDay=2026-04-07
 ```
-
-## ⚠️ 时间参数处理
-
-当用户询问**本周、本月、上周、上月**等相对时间时，**必须先计算具体日期范围**，再传入命令。
-
-### 日期计算公式
-
-```python
-from datetime import datetime, timedelta
-
-today = datetime.now().date()
-
-# 本周：找到本周一
-days_since_monday = today.weekday()  # 0=周一, 6=周日
-week_start = today - timedelta(days=days_since_monday)
-week_end = week_start + timedelta(days=6)
-
-# 上周：本周一减7天
-prev_week_start = week_start - timedelta(days=7)
-prev_week_end = week_start - timedelta(days=1)
-
-# 本月：1号到月末
-month_start = today.replace(day=1)
-if today.month == 12:
-    month_end = today.replace(year=today.year+1, month=1, day=1) - timedelta(days=1)
-else:
-    month_end = today.replace(month=today.month+1, day=1) - timedelta(days=1)
-
-# 上月
-if month_start.month == 1:
-    prev_month_end = month_start - timedelta(days=1)
-    prev_month_start = prev_month_end.replace(day=1)
-else:
-    prev_month_end = month_start - timedelta(days=1)
-    prev_month_start = prev_month_end.replace(day=1)
-```
-
-### 正确示例
-
-- 用户问"本周工时" → 计算日期范围 → `query 2026-04-07 2026-04-13`
-- 用户问"上周工时" → 计算日期范围 → `query 2026-03-31 2026-04-06`
-- 用户问"本月工时" → 计算日期范围 → `query 2026-04-01 2026-04-30`
-- 用户问"上月工时" → 计算日期范围 → `query 2026-03-01 2026-03-31`
-
-**禁止**：直接使用用户说的"本周"、"上月"而不进行日期转换。
 
 ## ⚠️ 大数据量处理
 

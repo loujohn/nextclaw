@@ -107,17 +107,17 @@ python skills/business-management-analysis/scripts/bm-query.py all
 
 ## 可用工具
 
-| 工具名                 | 说明                  | 参数（空格分隔）      |
-| ---------------------- | --------------------- | --------------------- |
-| stageCount             | 项目推进情况          | -                     |
-| payCondition           | 整体付款情况          | [name] [timeFlag]     |
-| businessDataStatistics | 经营数据统计          | [name] [yearAndMonth] |
-| allCollect             | 整体收款情况          | [name] [timeFlag]     |
-| forewarn               | 预警情况（超期/亏损） | -                     |
-| chanceStatistics       | 签约金额              | [name] [timeFlag]     |
-| singlePay              | 单个项目付款情况      | name=xxx [timeFlag=4] |
-| selfBuildYear          | 年度自建情况          | [timeFlag=4]          |
-| singleCollect          | 单个项目收款情况      | name=xxx [timeFlag=4] |
+| 工具名                 | 说明                  | 参数（空格分隔，格式 key=value） |
+| ---------------------- | --------------------- | -------------------------------- |
+| stageCount             | 项目推进情况          | -                                |
+| payCondition           | 整体付款情况          | [name=xxx] [timeFlag=4]          |
+| businessDataStatistics | 经营数据统计          | [name=xxx] [yearAndMonth=202603] |
+| allCollect             | 整体收款情况          | [name=xxx] [timeFlag=4]          |
+| forewarn               | 预警情况（超期/亏损） | -                                |
+| chanceStatistics       | 签约金额              | [name=xxx] [timeFlag=4]          |
+| singlePay              | 单个项目付款情况      | name=xxx [timeFlag=4]            |
+| selfBuildYear          | 年度自建情况          | [timeFlag=4]                     |
+| singleCollect          | 单个项目收款情况      | name=xxx [timeFlag=4]            |
 
 ## ⚠️ 易混淆概念说明
 

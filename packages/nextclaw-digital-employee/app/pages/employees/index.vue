@@ -114,7 +114,7 @@ const crud = useEmployeeCrud({
   buildWorkbenchRoute: buildEmployeeWorkbenchRoute,
 });
 
-const skills = computed(() => skillPayload.value?.data.filter((s) => s.enabled || s.statusLabel !== "已停用") ?? []);
+const skills = computed(() => skillPayload.value?.data.filter((s) => s.enabled) ?? []);
 
 const digitalEmployeeCoverage = computed(() => {
   const total = totalHumanCount.value + employees.value.length;
