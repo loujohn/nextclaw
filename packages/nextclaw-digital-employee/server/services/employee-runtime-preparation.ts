@@ -19,16 +19,12 @@ export async function prepareEmployeeRuntime(params: {
     ? await params.skillInstallationRepo.list()
     : [];
 
-  const disabledGlobally = new Set(
-    installations.filter((i) => !i.enabled).map((i) => i.skillName)
-  );
-
   const globallyEnabled = new Set(
     installations.filter((i) => i.enabled).map((i) => i.skillName)
   );
 
   const boundSkills = employeeSkills
-    .filter((skill) => skill.enabled && !disabledGlobally.has(skill.skillName))
+    .filter((skill) => skill.enabled)
     .map((skill) => skill.skillName);
 
   const skillNames = [...new Set([...boundSkills, ...globallyEnabled])];
