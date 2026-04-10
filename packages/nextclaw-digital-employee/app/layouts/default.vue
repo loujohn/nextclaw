@@ -38,7 +38,7 @@ function isActive(path: string): boolean {
           <Zap class="h-4.5 w-4.5 text-white" :stroke-width="2.2" fill="currentColor" />
         </span>
         <div v-if="!collapsed" class="min-w-0">
-          <p class="truncate text-sm font-semibold leading-tight text-sidebar-foreground">数字员工平台</p>
+          <p class="truncate text-sm font-semibold leading-tight text-sidebar-foreground">元工（MetaWorker）</p>
           <p class="truncate text-[11px] text-sidebar-muted">智能协作 · 自动执行</p>
         </div>
       </div>
