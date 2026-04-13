@@ -50,4 +50,5 @@ for pair in "packages/nextclaw-core:core" "packages/extensions/nextclaw-channel-
   fi
 done
 
+
 echo -e "\033[32m[deploy] channel plugin runtime 构建完成!\033[0m"
