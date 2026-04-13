@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CronService } from "@nextclaw/core";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeScheduleRepository } from "../server/repositories/employee-schedule-repository";
 import { EmployeeScheduleJobRepository } from "../server/repositories/employee-schedule-job-repository";
@@ -68,8 +68,8 @@ afterEach(() => {
 describe("automation service - cron schedule", () => {
   it("stores cron schedules and can manually trigger a scheduled employee run", async () => {
     const homeDir = createTempDir("nextclaw-automation-cron-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -108,8 +108,8 @@ describe("automation service - cron schedule", () => {
 
   it("persists cron job to disk so it survives a server restart", async () => {
     const homeDir = createTempDir("nextclaw-automation-cron-restart-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -155,8 +155,8 @@ describe("automation service - cron schedule", () => {
 describe("automation service - every (interval) schedule", () => {
   it("creates an every-interval schedule and can manually trigger it", async () => {
     const homeDir = createTempDir("nextclaw-automation-every-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -197,8 +197,8 @@ describe("automation service - every (interval) schedule", () => {
   it("fires automatically when the interval elapses (using fake timers)", async () => {
     vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-every-timer-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -240,8 +240,8 @@ describe("automation service - heartbeat schedule", () => {
   it("creates a heartbeat schedule and restores it after simulated restart", async () => {
     vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-heartbeat-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -308,8 +308,8 @@ describe("automation service - heartbeat schedule", () => {
   it("fires heartbeat tick using fake timers", async () => {
     vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-heartbeat-tick-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -352,8 +352,8 @@ describe("automation service - heartbeat schedule", () => {
 
   it("runNow works for a heartbeat schedule", async () => {
     const homeDir = createTempDir("nextclaw-automation-heartbeat-runnow-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -396,8 +396,8 @@ describe("automation service - heartbeat schedule", () => {
   it("disabled heartbeat schedule does not start the timer", async () => {
     vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-heartbeat-disabled-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -442,8 +442,8 @@ describe("automation service - heartbeat schedule", () => {
   it("HeartbeatService.start() is idempotent - double call does not create duplicate timers", async () => {
     vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-heartbeat-idem-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -503,8 +503,8 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
   it("scheduleRepo.nextRunAt updates after every-interval job fires automatically", async () => {
     vi.useFakeTimers();
     const homeDir = createTempDir("nextclaw-automation-nextrun-every-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -556,8 +556,8 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
     vi.setSystemTime(baseTime);
 
     const homeDir = createTempDir("nextclaw-automation-nextrun-cron-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -612,8 +612,8 @@ describe("automation service - nextRunAt syncs to DB after automatic execution (
 
   it("scheduleRepo.nextRunAt does NOT update on manual runNow (only auto-timer)", async () => {
     const homeDir = createTempDir("nextclaw-automation-nextrun-manual-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);

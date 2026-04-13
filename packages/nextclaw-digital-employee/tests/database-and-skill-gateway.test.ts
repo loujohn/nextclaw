@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { MessageBus, SessionManager } from "@nextclaw/core";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
 
@@ -25,11 +25,10 @@ afterEach(() => {
 });
 
 describe("digital employee platform database", () => {
-  it("creates employees and loads them back from sqlite", async () => {
+  it("creates employees and loads them back from DM", async () => {
     const homeDir = createTempHome();
-    const dbPath = join(homeDir, "platform.sqlite");
-    const db = createPlatformKnex(dbPath);
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const repo = new EmployeeRepository(db);
     const created = await repo.create({

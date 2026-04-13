@@ -1,10 +1,7 @@
 import type { Knex } from "knex";
 
-const IS_DM = (process.env.DB_CLIENT ?? "sqlite").toLowerCase() === "dm";
-
 function nowTimestamp(): string {
   const d = new Date();
-  if (!IS_DM) return d.toISOString();
   const pad = (n: number, len = 2) => String(n).padStart(len, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }

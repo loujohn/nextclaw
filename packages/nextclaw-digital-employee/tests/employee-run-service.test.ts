@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { RunRecordRepository } from "../server/repositories/run-record-repository";
@@ -56,8 +56,8 @@ afterEach(() => {
 describe("EmployeeRunService", () => {
   it("completes a run with reply and persists record", async () => {
     const homeDir = createTempDir("run-service-ok-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -87,8 +87,8 @@ describe("EmployeeRunService", () => {
 
   it("records failure when engine throws", async () => {
     const homeDir = createTempDir("run-service-fail-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -140,8 +140,8 @@ describe("EmployeeRunService", () => {
 
   it("throws for non-existent employee", async () => {
     const homeDir = createTempDir("run-service-404-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);

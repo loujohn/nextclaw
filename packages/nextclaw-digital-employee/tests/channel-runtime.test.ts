@@ -11,7 +11,7 @@ import {
   type ExtensionRegistry
 } from "@nextclaw/core";
 import type { PluginRegistry } from "@nextclaw/openclaw-compat";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
@@ -177,12 +177,12 @@ function createChannelRuntimeState(params: {
 }
 
 async function createEmployeeRepos(homeDir: string): Promise<{
-  db: ReturnType<typeof createPlatformKnex>;
+  db: ReturnType<typeof createTestKnex>;
   employeeRepo: EmployeeRepository;
   employeeSkillRepo: EmployeeSkillRepository;
 }> {
-  const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-  await ensurePlatformDatabase(db);
+  const db = createTestKnex();
+  await ensureTestDatabase(db);
   const employeeRepo = new EmployeeRepository(db);
   const employeeSkillRepo = new EmployeeSkillRepository(db);
   await employeeRepo.create({

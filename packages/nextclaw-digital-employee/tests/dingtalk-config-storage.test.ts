@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { IntegrationConnectionRepository } from "../server/repositories/integration-connection-repository";
 import {
   applyDingTalkConfigUpdate,
@@ -37,8 +37,8 @@ afterEach(() => {
 describe("dingtalk config storage", () => {
   it("persists dingtalk channel config in platform database", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-config-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     const initial = await getDingTalkChannelConfig(repo);
@@ -75,8 +75,8 @@ describe("dingtalk config storage", () => {
 
   it("builds runtime config from database with preserved client secrets", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-runtime-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateDingTalkChannelConfig(repo, {
@@ -112,8 +112,8 @@ describe("dingtalk config storage", () => {
 
   it("preserves client secret when renaming an account id", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-rename-secret-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateDingTalkChannelConfig(repo, {
@@ -151,8 +151,8 @@ describe("dingtalk config storage", () => {
 
   it("persists employee direct and group bindings in platform database", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-routing-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateEmployeeDingTalkBinding(repo, "ops-bot", {
@@ -195,8 +195,8 @@ describe("dingtalk config storage", () => {
 
   it("preserves multiple direct accounts for one employee", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-multi-direct-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateEmployeeDingTalkBinding(repo, "ops-bot", {
@@ -216,8 +216,8 @@ describe("dingtalk config storage", () => {
 
   it("keeps same group id bindings separate across different accounts", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-routing-same-group-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateEmployeeDingTalkBinding(repo, "ops-bot", {
@@ -262,8 +262,8 @@ describe("dingtalk config storage", () => {
 
   it("rolls back stored config when runtime reload fails", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-rollback-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateDingTalkChannelConfig(repo, {
@@ -323,8 +323,8 @@ describe("dingtalk config storage", () => {
 
   it("migrates routing references when an account is renamed through config updates", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-rename-routing-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateDingTalkChannelConfig(repo, {
@@ -390,8 +390,8 @@ describe("dingtalk config storage", () => {
 
   it("rewrites a renamed defaultAccountId even when the submitted default still uses the old account id", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-rename-default-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateDingTalkChannelConfig(repo, {
@@ -430,8 +430,8 @@ describe("dingtalk config storage", () => {
 
   it("rolls back employee bindings when runtime reload fails", async () => {
     const homeDir = createTempDir("nextclaw-dingtalk-binding-rollback-db-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new IntegrationConnectionRepository(db);
 
     await updateEmployeeDingTalkBinding(repo, "ops-bot", {

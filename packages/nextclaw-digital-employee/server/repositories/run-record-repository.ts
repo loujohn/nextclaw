@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type RunEventRecord, type RunRecord } from "../db/schema";
 import { RunStatus } from "../db/enums";
-import { dbNow, formatTimestamp, isSqlite } from "../db/knex";
+import { dbNow, formatTimestamp } from "../db/knex";
 
 export type RunRecordView = {
   id: string;
@@ -171,9 +171,7 @@ export class RunRecordRepository {
       .select("employee_id")
       .whereIn("employee_id", employeeIds)
       .andWhere({ status: "failed" })
-      .andWhere("started_at", ">=", this.db.raw(
-        isSqlite() ? `datetime('now', '-24 hours')` : `SYSDATE - INTERVAL '24' HOUR`
-      ))
+      .andWhere("started_at", ">=", this.db.raw(`SYSDATE - INTERVAL '24' HOUR`))
       .groupBy("employee_id");
     return new Set((rows as Array<{ employee_id: string }>).map(r => r.employee_id));
   }
