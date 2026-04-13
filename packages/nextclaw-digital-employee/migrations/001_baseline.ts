@@ -169,13 +169,13 @@ export async function up(knex: Knex): Promise<void> {
 
   if (!(await knex.schema.hasTable("secrets"))) {
     await knex.schema.createTable("secrets", (t) => {
-      t.text("id").primary();
-      t.text("key").notNullable().unique();
+      t.string("id").primary();
+      t.string("key").notNullable().unique();
       t.text("value").notNullable();
-      t.text("scope").notNullable().defaultTo("global");
+      t.string("scope").notNullable().defaultTo("global");
       t.text("description").defaultTo("");
-      t.text("created_at").notNullable();
-      t.text("updated_at").notNullable();
+      t.timestamp("created_at").notNullable();
+      t.timestamp("updated_at").notNullable();
     });
   }
 

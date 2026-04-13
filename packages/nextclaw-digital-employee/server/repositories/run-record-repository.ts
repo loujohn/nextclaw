@@ -7,6 +7,7 @@ import { dbNow, formatTimestamp } from "../db/knex";
 export type RunRecordView = {
   id: string;
   employeeId: string | null;
+  sessionKey: string | null;
   triggerType: string;
   triggerSource: string;
   status: string;
@@ -29,6 +30,7 @@ function toRunRecordView(record: RunRecord): RunRecordView {
   return {
     id: record.id,
     employeeId: record.employee_id,
+    sessionKey: record.session_key,
     triggerType: record.trigger_type,
     triggerSource: record.trigger_source,
     status: record.status,
@@ -57,11 +59,13 @@ export class RunRecordRepository {
     employeeId: string;
     triggerType: string;
     triggerSource: string;
+    sessionKey?: string | null;
   }): Promise<RunRecordView> {
     const startedAt = dbNow();
     const record: RunRecord = {
       id: randomUUID(),
       employee_id: params.employeeId,
+      session_key: params.sessionKey ?? null,
       trigger_type: params.triggerType,
       trigger_source: params.triggerSource,
       status: RunStatus.Running,
@@ -127,6 +131,28 @@ export class RunRecordRepository {
       .where({ employee_id: employeeId })
       .orderBy("started_at", "desc");
     if (limit) query = query.limit(limit);
+    const rows = await query;
+    return rows.map(toRunRecordView);
+  }
+
+  async listByEmployeeIdAndSessionKey(params: {
+    employeeId: string;
+    sessionKey: string;
+    statuses?: string[];
+    limit?: number;
+  }): Promise<RunRecordView[]> {
+    let query = this.db<RunRecord>(PLATFORM_TABLES.runRecords)
+      .where({
+        employee_id: params.employeeId,
+        session_key: params.sessionKey
+      })
+      .orderBy("started_at", "desc");
+    if (params.statuses?.length) {
+      query = query.whereIn("status", params.statuses);
+    }
+    if (params.limit) {
+      query = query.limit(params.limit);
+    }
     const rows = await query;
     return rows.map(toRunRecordView);
   }

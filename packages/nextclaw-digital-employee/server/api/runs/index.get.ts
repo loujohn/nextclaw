@@ -2,7 +2,7 @@ import { getQuery } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
 import { buildRunListEntriesFromJoin } from "../../../shared/ui-models";
 
-const ALLOWED_STATUSES = new Set(["completed", "running", "failed"]);
+const ALLOWED_STATUSES = new Set(["completed", "running", "failed", "aborted", "interrupted"]);
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);

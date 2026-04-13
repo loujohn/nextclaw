@@ -9,6 +9,8 @@ import { EmployeeScheduleRepository } from "../server/repositories/employee-sche
 import { EmployeeScheduleJobRepository } from "../server/repositories/employee-schedule-job-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { RunRecordRepository } from "../server/repositories/run-record-repository";
+import { ChatSessionRepository } from "../server/repositories/chat-session-repository";
+import { ChatMessageRepository } from "../server/repositories/chat-message-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
 import { EmployeeRunService } from "../server/services/employee-run-service";
 import { AutomationService } from "../server/services/automation-service";
@@ -389,6 +391,66 @@ describe("automation service - heartbeat schedule", () => {
     const runs = await runRepo.listByEmployeeId(employee.id);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.summary).toContain("手动心跳已触发");
+    automation.stop();
+    await db.destroy();
+  });
+
+  it("stores heartbeat runNow records in chat sessions", async () => {
+    const homeDir = createTempDir("nextclaw-automation-heartbeat-chat-session-");
+    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+    await ensurePlatformDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);    const runRepo = new RunRecordRepository(db);
+    const chatSessionRepo = new ChatSessionRepository(db);
+    const chatMessageRepo = new ChatMessageRepository(db);
+    const employee = await employeeRepo.create({
+      name: "聊天归档心跳",
+      code: "heartbeat-chat-archive",
+      description: "验证心跳运行写入会话",
+      systemPrompt: "你是心跳测试员"
+    });
+
+    const wsDir = join(homeDir, "agents", employee.code);
+    mkdirSync(wsDir, { recursive: true });
+    writeFileSync(join(wsDir, "HEARTBEAT.md"), "# HEARTBEAT\n\n执行聊天归档检查", "utf-8");
+
+    const gateway = buildTestGateway(homeDir, "心跳聊天归档成功");
+    const runService = new EmployeeRunService(
+      employeeRepo,
+      skillRepo,
+      runRepo,
+      gateway,
+      undefined,
+      chatSessionRepo,
+      chatMessageRepo
+    );
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+    await automation.upsertSchedule({
+      employeeId: employee.id,
+      scheduleKind: "heartbeat",
+      everyMs: 60_000,
+      enabled: true
+    });
+
+    const triggered = await automation.runNow(employee.id);
+    expect(triggered).toBe(true);
+
+    const sessionKey = `employee:${employee.id}:scheduled:heartbeat`;
+    const sessions = await chatSessionRepo.listByEmployeeId(employee.id);
+    expect(sessions.some((session) => session.sessionKey === sessionKey)).toBe(true);
+
+    const storedSession = sessions.find((session) => session.sessionKey === sessionKey);
+    const page = await chatMessageRepo.listBySessionId({
+      sessionId: storedSession!.id,
+      limit: 10
+    });
+    expect(page.items.some((item) => item.role === "assistant" && item.content.includes("心跳聊天归档成功"))).toBe(true);
+
     automation.stop();
     await db.destroy();
   });

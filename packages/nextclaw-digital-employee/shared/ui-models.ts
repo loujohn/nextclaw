@@ -75,12 +75,22 @@ export type ChatToolCallView = {
   arguments: string;
 };
 
+export type StatusBadgeTone = "teal" | "amber" | "slate" | "danger";
+
+export type ChatReplyStatusView = {
+  value: string;
+  label: string;
+  tone: StatusBadgeTone;
+};
+
 export type ChatMessageView = {
+  id?: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp?: string;
   toolCalls?: ChatToolCallView[];
   reasoning?: string;
+  replyStatus?: ChatReplyStatusView;
   toolCallId?: string;
   toolName?: string;
 };
@@ -126,7 +136,7 @@ export type RunListEntryView = {
   scheduleJobName: string | null;
   summary: string;
   highlight: string;
-  tone: "teal" | "amber" | "slate" | "danger";
+  tone: StatusBadgeTone;
   startedAtLabel: string;
 };
 
@@ -442,24 +452,27 @@ export function formatTriggerLabel(triggerType: string, triggerSource: string): 
   return "手动触发";
 }
 
-function formatRunStatus(status: string): { label: string; tone: RunListEntryView["tone"] } {
+export function formatRunStatusMeta(status: string): ChatReplyStatusView {
   if (status === "completed") {
-    return { label: "已完成", tone: "teal" };
+    return { value: status, label: "已完成", tone: "teal" };
   }
   if (status === "failed") {
-    return { label: "执行失败", tone: "danger" };
+    return { value: status, label: "执行失败", tone: "danger" };
+  }
+  if (status === "aborted") {
+    return { value: status, label: "已取消", tone: "amber" };
   }
   if (status === "running") {
-    return { label: "执行中", tone: "amber" };
+    return { value: status, label: "执行中", tone: "amber" };
   }
   if (status === "interrupted") {
-    return { label: "已中断", tone: "slate" };
+    return { value: status, label: "已中断", tone: "slate" };
   }
-  return { label: "等待中", tone: "slate" };
+  return { value: status, label: "等待中", tone: "slate" };
 }
 
 export function formatRunStatusLabel(status: string): string {
-  return formatRunStatus(status).label;
+  return formatRunStatusMeta(status).label;
 }
 
 export function buildRunListEntries(input: RunListInput): RunListEntryView[] {
@@ -487,7 +500,7 @@ function toRunListEntry(
   run: RunListInput["runs"][number],
   resolved: { employeeName: string; jobName: string | null }
 ): RunListEntryView {
-  const statusMeta = formatRunStatus(run.status);
+  const statusMeta = formatRunStatusMeta(run.status);
   const rawHighlight = readFirstCardContent(run.result) || run.summary || "等待执行结果";
   return {
     id: run.id,
