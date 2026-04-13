@@ -17,7 +17,19 @@ metadata:
 ### 列出所有项目
 
 ```bash
+python skills/work-time-statistics/scripts/work-time-statistics.py list [参数]
+```
+
+**参数说明**：`projectType` 项目分类 (`承建`/`自研`/`运营`/`商机项目`)
+
+示例：
+
+```bash
+# 列出所有项目
 python skills/work-time-statistics/scripts/work-time-statistics.py list
+
+# 按项目分类筛选（本地过滤）
+python skills/work-time-statistics/scripts/work-time-statistics.py list projectType=自研
 ```
 
 ### 查询项目人员工时
@@ -34,21 +46,15 @@ python skills/work-time-statistics/scripts/work-time-statistics.py query [参数
 - `startDay`: 开始日期 (YYYY-MM-DD)
 - `endDay`: 结束日期 (YYYY-MM-DD)
 - `projectCode`: 项目编号
-- `projectType`: 项目分类 (`承建`/`自研`/`运营`/`商机项目`)
+
+**重要**：请直接传递参数让服务端过滤，**不要先调用 list 获取所有项目再筛选**，这样可以减少请求时间。
 
 示例：
 
 ```bash
-# 查询所有项目列表
-python skills/work-time-statistics/scripts/work-time-statistics.py list
-
 # 使用相对时间查询
 python skills/work-time-statistics/scripts/work-time-statistics.py query period=本周
 python skills/work-time-statistics/scripts/work-time-statistics.py query period=上月
-
-# 筛选项目分类
-python skills/work-time-statistics/scripts/work-time-statistics.py query period=本月 projectType=自研
-python skills/work-time-statistics/scripts/work-time-statistics.py query period=本周 projectType=承建
 
 # 指定日期范围和项目
 python skills/work-time-statistics/scripts/work-time-statistics.py query projectCode=XM202508125040 startDay=2026-04-01 endDay=2026-04-07

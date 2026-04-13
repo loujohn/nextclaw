@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES } from "../db/schema";
+import { EmployeeStatus } from "../db/enums";
 import { dbNow } from "../db/knex";
 
 type EmployeeSkillRecord = {
@@ -88,7 +89,8 @@ export class EmployeeSkillRepository {
     const es = PLATFORM_TABLES.employeeSkills;
     const e = PLATFORM_TABLES.employees;
     const rows = await this.db(es)
-      .leftJoin(e, `${es}.employee_id`, `${e}.id`)
+      .innerJoin(e, `${es}.employee_id`, `${e}.id`)
+      .whereNot(`${e}.status`, EmployeeStatus.Archived)
       .select(`${es}.employee_id`, `${e}.name as employee_name`, `${es}.skill_name`)
       .orderBy(`${es}.created_at`, "asc");
     return (rows as Array<{ employee_id: string; employee_name?: string; skill_name: string }>).map((row) => ({

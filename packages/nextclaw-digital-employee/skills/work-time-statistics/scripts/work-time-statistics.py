@@ -123,12 +123,20 @@ def get_token():
 
 def list_projects(token):
     url = f"{PM_BASE_URL}/admin/project/getProjectCodeNameList"
-    return fetch(url, token, TIMEOUT)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "nextclaw-work-time-query/1.0",
+    }
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT / 1000) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        raise Exception(f"请求失败: {e}")
 
 
-def query_work_hours(
-    token, project_code=None, start_day=None, end_day=None, project_type=None
-):
+def query_work_hours(token, project_code=None, start_day=None, end_day=None):
     url = f"{PM_BASE_URL}/admin/project/workHour/getProjectUserWorkHour"
     form_data = {}
     if project_code:
@@ -137,8 +145,6 @@ def query_work_hours(
         form_data["startDay"] = start_day
     if end_day:
         form_data["endDay"] = end_day
-    if project_type:
-        form_data["projectType"] = project_type
 
     data = json.dumps(form_data).encode("utf-8")
     headers = {
@@ -181,7 +187,8 @@ def main():
     parser = argparse.ArgumentParser(description="工时查询")
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("list", help="列出所有项目")
+    list_parser = subparsers.add_parser("list", help="列出所有项目")
+    list_parser.add_argument("args", nargs="*", help="参数 (可选, 格式: key=value)")
 
     query_parser = subparsers.add_parser("query", help="查询项目人员工时")
     query_parser.add_argument(
@@ -196,6 +203,7 @@ def main():
         parser.print_help()
         print("\n示例:")
         print("  python work-time-statistics.py list")
+        print("  python work-time-statistics.py list projectType=自研")
         print(
             "  python work-time-statistics.py query startDay=2026-04-01 endDay=2026-04-07"
         )
@@ -207,8 +215,33 @@ def main():
         token = get_token()
 
         if args.command == "list":
+            kwargs = {}
+            if args.args:
+                for arg in args.args:
+                    if "=" in arg:
+                        k, v = arg.split("=", 1)
+                        kwargs[k] = v
+
+            filter_type = kwargs.get("projectType")
+            project_type_map = {
+                "承建": "2",
+                "自研": "1",
+                "运营": "3",
+                "商机项目": "4",
+            }
+            filter_type_code = project_type_map.get(filter_type, filter_type)
+
             clean_previous_output("projects.json")
             result = list_projects(token)
+
+            if filter_type_code:
+                filtered_data = [
+                    p
+                    for p in result.get("data", [])
+                    if p.get("projectType") == filter_type_code
+                ]
+                result = {"code": result.get("code", 0), "data": filtered_data}
+
             output_result(result, "list")
 
         elif args.command == "query":
@@ -239,7 +272,6 @@ def main():
                 kwargs.get("projectCode"),
                 kwargs.get("startDay"),
                 kwargs.get("endDay"),
-                kwargs.get("projectType"),
             )
             output_result(result, "query", project_code)
 
