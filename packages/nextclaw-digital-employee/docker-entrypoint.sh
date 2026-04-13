@@ -22,4 +22,10 @@ else
   export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider"
 fi
 
-exec node server/index.mjs
+ENV_ARG=""
+if [ -f "/data/.env" ]; then
+  echo "[env] Loading /data/.env"
+  ENV_ARG="--env-file=/data/.env"
+fi
+
+exec node $ENV_ARG server/index.mjs
