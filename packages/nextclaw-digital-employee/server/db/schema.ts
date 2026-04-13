@@ -10,7 +10,8 @@ export const PLATFORM_TABLES = {
   runRecords: "run_records",
   runEvents: "run_events",
   orgSyncConfig: "org_sync_config",
-  secrets: "secrets"
+  secrets: "secrets",
+  users: "users",
 } as const;
 
 export type DepartmentRecord = {
@@ -40,11 +41,11 @@ export type HumanEmployeeRecord = {
   /** 工号 */
   job_number: string;
   /** 是否在职 */
-  active: number; // SQLite 0/1
+  active: number;
   /** 是否管理员 */
-  is_admin: number; // SQLite 0/1
+  is_admin: number;
   /** 是否 boss */
-  is_boss: number; // SQLite 0/1
+  is_boss: number;
   /** 主部门（FK → departments.id） */
   department_id: string | null;
   /** 外部系统中该用户所属的所有部门 ID（JSON 数组字符串，供参考） */
@@ -116,6 +117,26 @@ export type SecretRecord = {
   updated_at: string;
 };
 
+export type UserRecord = {
+  id: string;
+  keycloak_sub: string;
+  username: string;
+  email: string;
+  display_name: string;
+  avatar_url: string;
+  role: string;
+  is_active: number;
+  department_id: string | null;
+  human_employee_id: string | null;
+  preferences: string;
+  /** "keycloak" | "local" */
+  auth_provider: string;
+  password_hash: string | null;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type OrgSyncConfigRecord = {
   id: string; // 固定 "default"
   app_key: string;
@@ -123,7 +144,7 @@ export type OrgSyncConfigRecord = {
   /** cron 表达式，如 "0 1 * * *" */
   cron_expr: string;
   /** 是否开启定时同步 */
-  enabled: number; // SQLite 0/1
+  enabled: number;
   /** 上次运行时间 */
   last_run_at: string | null;
   /** 上次运行结果 "success" | "failure" | null */

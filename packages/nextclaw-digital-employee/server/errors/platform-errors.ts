@@ -81,7 +81,7 @@ export function classifyError(err: unknown): PlatformError {
   if (lower.includes("context length") || lower.includes("token limit") || lower.includes("too long")) {
     return new ModelError(msg, "Input exceeds the model context window. Try reducing input length.", err);
   }
-  if (lower.includes("unique constraint") || lower.includes("sqlite_constraint") || lower.includes("duplicate") || lower.includes("违反唯一性约束")) {
+  if (lower.includes("unique constraint") || lower.includes("duplicate") || lower.includes("违反唯一性约束")) {
     return new DataError(msg, "A record with this identifier already exists.", err);
   }
 

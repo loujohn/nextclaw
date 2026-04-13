@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { SkillInstallationRepository } from "../server/repositories/skill-installation-repository";
@@ -44,8 +44,8 @@ describe("skill import service", () => {
   it("imports a skill from local path and records installation metadata", async () => {
     const homeDir = createTempDir("nextclaw-digital-employee-skill-local-");
     const sourceRoot = createTempDir("nextclaw-digital-employee-skill-source-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const gateway = new NextclawEngineGateway({ homeDir, workspaceDir: join(homeDir, "workspace") });
     const repo = new SkillInstallationRepository(db);
     const service = new SkillInstallService(repo, gateway);
@@ -63,8 +63,8 @@ describe("skill import service", () => {
   it("imports a skill from git and records installation metadata", async () => {
     const homeDir = createTempDir("nextclaw-digital-employee-skill-git-home-");
     const gitRepoDir = createTempDir("nextclaw-digital-employee-skill-git-repo-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const gateway = new NextclawEngineGateway({ homeDir, workspaceDir: join(homeDir, "workspace") });
     const repo = new SkillInstallationRepository(db);
     const service = new SkillInstallService(repo, gateway);
@@ -88,8 +88,8 @@ describe("skill import service", () => {
 describe("employee run service", () => {
   it("executes one employee turn and persists run records", async () => {
     const homeDir = createTempDir("nextclaw-digital-employee-run-home-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);

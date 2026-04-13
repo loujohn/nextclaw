@@ -6,7 +6,8 @@ import { createLogger } from "../utils/logger";
 const logger = createLogger("platform-context");
 import { CronService, MessageBus, SessionManager } from "@nextclaw/core";
 import { findBuiltinProviderByName } from "@nextclaw/runtime";
-import { createPlatformKnex, ensureDmSchema, ensurePlatformDatabase, platformMigrationSource, resolveDbConfigFromEnv } from "../db/knex";
+import { createPlatformKnex, ensureDmSchema, resolveDbConfigFromEnv } from "../db/knex";
+import { bundledMigrationSource } from "../db/migration-source";
 import { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { AutomationService } from "../services/automation-service";
 import { EmployeeHealthService } from "../services/employee-health-service";
@@ -23,6 +24,7 @@ import { RunRecordRepository } from "../repositories/run-record-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
 import { SecretsRepository } from "../repositories/secrets-repository";
+import { UserRepository } from "../repositories/user-repository";
 import { DigitalEmployeeChannelRuntime } from "./channel-runtime";
 import { getDingTalkRuntimeConfig } from "./dingtalk-config";
 import { loadPlatformRuntimeState } from "./openclaw-runtime";
@@ -41,6 +43,7 @@ type PlatformContext = {
   skillInstallationRepo: SkillInstallationRepository;
   integrationConnectionRepo: IntegrationConnectionRepository;
   secretsRepo: SecretsRepository;
+  userRepo: UserRepository;
   gateway: NextclawEngineGateway;
   skillInstallService: SkillInstallService;
   employeeRunService: EmployeeRunService;
@@ -112,13 +115,9 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         writeFileSync(homePkg, '{ "private": true, "type": "commonjs" }\n', "utf-8");
       }
       const dbConfig = resolveDbConfigFromEnv();
-      if (dbConfig.client === "sqlite" && !dbConfig.sqlitePath) {
-        dbConfig.sqlitePath = join(homeDir, "platform.sqlite");
-      }
       const db = createPlatformKnex(dbConfig);
       await ensureDmSchema(db);
-      await ensurePlatformDatabase(db);
-      await db.migrate.latest({ migrationSource: platformMigrationSource });
+      await db.migrate.latest({ migrationSource: bundledMigrationSource });
       const integrationConnectionRepo = new IntegrationConnectionRepository(db);
       const initialRuntimeState = loadPlatformRuntimeState({
         workspaceDir,
@@ -129,6 +128,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const sessionManager = new SessionManager(workspaceDir);
       const cronService = new CronService(join(homeDir, "cron", "jobs.json"));
       const secretsRepo = new SecretsRepository(db, homeDir);
+      const userRepo = new UserRepository(db);
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
@@ -172,7 +172,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         gateway
       );
       // 当 Agent 通过对话创建定时任务时，同步写入数据库以便 UI 显示。
-      // SQLite 在并发异步操作时可能出现 SQLITE_BUSY；达梦可能出现锁等待——保留单次重试作为防御。
+      // 达梦可能出现锁等待——保留单次重试作为防御。
       cronService.onJobAdded = (job) => {
         if (!job.agentId) return;
         const agentCode = job.agentId;
@@ -236,6 +236,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         skillInstallationRepo,
         integrationConnectionRepo,
         secretsRepo,
+        userRepo,
         gateway,
         skillInstallService,
         employeeRunService,

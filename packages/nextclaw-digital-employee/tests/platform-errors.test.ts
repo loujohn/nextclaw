@@ -90,7 +90,7 @@ describe("classifyError", () => {
   });
 
   it("classifies unique constraint as data", () => {
-    const result = classifyError(new Error("SQLITE_CONSTRAINT: UNIQUE constraint failed"));
+    const result = classifyError(new Error("UNIQUE constraint failed: duplicate key"));
     expect(result.category).toBe("data");
   });
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CronService } from "@nextclaw/core";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeScheduleRepository } from "../server/repositories/employee-schedule-repository";
 import { EmployeeScheduleJobRepository } from "../server/repositories/employee-schedule-job-repository";
@@ -51,7 +51,7 @@ function buildTestGateway(homeDir: string): NextclawEngineGateway {
 }
 
 function buildTestStack(homeDir: string) {
-  const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
+  const db = createTestKnex();
   const employeeRepo = new EmployeeRepository(db);
   const skillRepo = new EmployeeSkillRepository(db);
   const scheduleRepo = new EmployeeScheduleRepository(db);
@@ -83,7 +83,7 @@ describe("EmployeeLifecycleService", () => {
   it("creates employee with skills and schedule", async () => {
     const homeDir = createTempDir("lifecycle-create-");
     const { db, lifecycleService, skillRepo } = buildTestStack(homeDir);
-    await ensurePlatformDatabase(db);
+    await ensureTestDatabase(db);
 
     const result = await lifecycleService.createEmployee({
       employee: { name: "测试助手", code: "test-bot", description: "单测用", systemPrompt: "你是测试员" },
@@ -103,7 +103,7 @@ describe("EmployeeLifecycleService", () => {
   it("rolls back employee on workspace error", async () => {
     const homeDir = createTempDir("lifecycle-rollback-");
     const { db, lifecycleService, employeeRepo } = buildTestStack(homeDir);
-    await ensurePlatformDatabase(db);
+    await ensureTestDatabase(db);
 
     vi.spyOn(await import("../server/engine/employee-workspace"), "ensureEmployeeWorkspace")
       .mockImplementation(() => { throw new Error("workspace boom"); });
@@ -119,7 +119,7 @@ describe("EmployeeLifecycleService", () => {
   it("deletes (archives) employee and disables jobs", async () => {
     const homeDir = createTempDir("lifecycle-delete-");
     const { db, lifecycleService, employeeRepo, jobRepo } = buildTestStack(homeDir);
-    await ensurePlatformDatabase(db);
+    await ensureTestDatabase(db);
 
     const created = await lifecycleService.createEmployee({
       employee: { name: "待删除", code: "to-delete", description: "", systemPrompt: "" },
@@ -139,7 +139,7 @@ describe("EmployeeLifecycleService", () => {
   it("excludes archived employee skills from skill usage statistics", async () => {
     const homeDir = createTempDir("lifecycle-skill-usage-");
     const { db, lifecycleService, skillRepo } = buildTestStack(homeDir);
-    await ensurePlatformDatabase(db);
+    await ensureTestDatabase(db);
 
     const created = await lifecycleService.createEmployee({
       employee: { name: "技能员工", code: "skill-delete", description: "", systemPrompt: "" },
@@ -156,7 +156,7 @@ describe("EmployeeLifecycleService", () => {
   it("updates employee info and schedule", async () => {
     const homeDir = createTempDir("lifecycle-update-");
     const { db, lifecycleService } = buildTestStack(homeDir);
-    await ensurePlatformDatabase(db);
+    await ensureTestDatabase(db);
 
     const created = await lifecycleService.createEmployee({
       employee: { name: "更新前", code: "update-test", description: "旧", systemPrompt: "旧提示词" },
@@ -179,7 +179,7 @@ describe("EmployeeLifecycleService", () => {
   it("throws 404 when deleting non-existent employee", async () => {
     const homeDir = createTempDir("lifecycle-404-");
     const { db, lifecycleService } = buildTestStack(homeDir);
-    await ensurePlatformDatabase(db);
+    await ensureTestDatabase(db);
 
     await expect(lifecycleService.deleteEmployee("non-existent-id")).rejects.toThrow("employee not found");
   });

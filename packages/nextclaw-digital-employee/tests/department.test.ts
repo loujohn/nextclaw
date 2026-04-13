@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
+import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { DepartmentRepository } from "../server/repositories/department-repository";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 
@@ -23,8 +23,8 @@ afterEach(() => {
 
 describe("DepartmentRepository - CRUD", () => {
   it("creates and retrieves a department", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const dept = await repo.create({ name: "技术部", description: "负责技术研发" });
@@ -38,8 +38,8 @@ describe("DepartmentRepository - CRUD", () => {
   });
 
   it("lists departments ordered by sort_order", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     await repo.create({ name: "产品部", sortOrder: 2 });
@@ -54,8 +54,8 @@ describe("DepartmentRepository - CRUD", () => {
   });
 
   it("creates nested departments (parent-child)", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const parent = await repo.create({ name: "技术部" });
@@ -69,8 +69,8 @@ describe("DepartmentRepository - CRUD", () => {
   });
 
   it("updates a department name and description", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const dept = await repo.create({ name: "旧名称" });
@@ -82,8 +82,8 @@ describe("DepartmentRepository - CRUD", () => {
   });
 
   it("deletes a department without employees", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const dept = await repo.create({ name: "临时部门" });
@@ -98,8 +98,8 @@ describe("DepartmentRepository - CRUD", () => {
 
 describe("DepartmentRepository - 删除保护（有员工时不可删除）", () => {
   it("countEmployees returns 0 when no employees in dept", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const dept = await repo.create({ name: "空部门" });
@@ -109,8 +109,8 @@ describe("DepartmentRepository - 删除保护（有员工时不可删除）", ()
   });
 
   it("countEmployees returns correct count when employees are assigned", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const deptRepo = new DepartmentRepository(db);
     const empRepo = new EmployeeRepository(db);
 
@@ -138,8 +138,8 @@ describe("DepartmentRepository - 删除保护（有员工时不可删除）", ()
 
 describe("EmployeeRepository - departmentId 支持", () => {
   it("creates an employee with departmentId", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const deptRepo = new DepartmentRepository(db);
     const empRepo = new EmployeeRepository(db);
 
@@ -160,8 +160,8 @@ describe("EmployeeRepository - departmentId 支持", () => {
   });
 
   it("filters employees by departmentId", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const deptRepo = new DepartmentRepository(db);
     const empRepo = new EmployeeRepository(db);
 
@@ -187,8 +187,8 @@ describe("EmployeeRepository - departmentId 支持", () => {
   });
 
   it("updates employee departmentId", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const deptRepo = new DepartmentRepository(db);
     const empRepo = new EmployeeRepository(db);
 
@@ -209,8 +209,8 @@ describe("EmployeeRepository - departmentId 支持", () => {
 
 describe("DepartmentRepository - 树形结构辅助", () => {
   it("getAllDescendantIds returns all nested children", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const root = await repo.create({ name: "总部" });
@@ -227,8 +227,8 @@ describe("DepartmentRepository - 树形结构辅助", () => {
   });
 
   it("getAllDescendantIds returns empty for leaf node", async () => {
-    const db = createPlatformKnex(join(createTempHome(), "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
     const dept = await repo.create({ name: "叶子部门" });
