@@ -50,4 +50,21 @@ for pair in "packages/nextclaw-core:core" "packages/extensions/nextclaw-channel-
   fi
 done
 
+# Deploy digital-employee prod deps to extract native DB drivers (knex-dm, dmdb).
+# These are dynamically required via createRequire and cannot be bundled by Nitro.
+echo -e "\033[34m[deploy] 提取 DB native 驱动 (knex-dm, dmdb)...\033[0m"
+pnpm --filter @nextclaw/digital-employee deploy --prod /tmp/de-deploy
+if [ $? -ne 0 ]; then
+  echo -e "\033[31m[deploy] digital-employee deploy 失败!\033[0m"
+  exit 1
+fi
+for pkg in knex-dm dmdb; do
+  src="/tmp/de-deploy/node_modules/$pkg"
+  dest="$COMPAT_DEPLOY_DIR/node_modules/$pkg"
+  if [ -d "$src" ]; then
+    cp -r "$src" "$dest"
+    echo "  copied $pkg -> $dest"
+  fi
+done
+
 echo -e "\033[32m[deploy] channel plugin runtime 构建完成!\033[0m"
