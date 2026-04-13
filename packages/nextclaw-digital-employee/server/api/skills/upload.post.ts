@@ -23,6 +23,7 @@ function parseSkillNameFromContent(content: string, fallback: string): string {
 }
 
 export default defineEventHandler(async (event) => {
+
   const body = await readBody<{ files: UploadedFile[] }>(event);
   const files = body?.files;
 

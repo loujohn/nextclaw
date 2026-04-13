@@ -2,6 +2,16 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-03-11",
   devtools: { enabled: true },
   modules: ["@pinia/nuxt"],
+  runtimeConfig: {
+    keycloakUrl: process.env.KEYCLOAK_URL ?? "",
+    keycloakRealm: process.env.KEYCLOAK_REALM ?? "",
+    jwtSecret: process.env.JWT_SECRET ?? "de-platform-default-secret-change-me",
+    public: {
+      keycloakUrl: process.env.KEYCLOAK_URL ?? "",
+      keycloakRealm: process.env.KEYCLOAK_REALM ?? "",
+      keycloakClientId: process.env.KEYCLOAK_CLIENT_ID ?? "de-platform",
+    },
+  },
   css: [
     "@fontsource/inter/400.css",
     "@fontsource/inter/500.css",

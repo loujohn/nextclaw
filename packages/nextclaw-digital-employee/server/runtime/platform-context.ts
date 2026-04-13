@@ -23,6 +23,7 @@ import { RunRecordRepository } from "../repositories/run-record-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
 import { SecretsRepository } from "../repositories/secrets-repository";
+import { UserRepository } from "../repositories/user-repository";
 import { DigitalEmployeeChannelRuntime } from "./channel-runtime";
 import { getDingTalkRuntimeConfig } from "./dingtalk-config";
 import { loadPlatformRuntimeState } from "./openclaw-runtime";
@@ -41,6 +42,7 @@ type PlatformContext = {
   skillInstallationRepo: SkillInstallationRepository;
   integrationConnectionRepo: IntegrationConnectionRepository;
   secretsRepo: SecretsRepository;
+  userRepo: UserRepository;
   gateway: NextclawEngineGateway;
   skillInstallService: SkillInstallService;
   employeeRunService: EmployeeRunService;
@@ -129,6 +131,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const sessionManager = new SessionManager(workspaceDir);
       const cronService = new CronService(join(homeDir, "cron", "jobs.json"));
       const secretsRepo = new SecretsRepository(db, homeDir);
+      const userRepo = new UserRepository(db);
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
@@ -236,6 +239,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         skillInstallationRepo,
         integrationConnectionRepo,
         secretsRepo,
+        userRepo,
         gateway,
         skillInstallService,
         employeeRunService,

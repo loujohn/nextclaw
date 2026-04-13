@@ -367,6 +367,117 @@ async function createSecretsTable(db: Knex): Promise<void> {
   });
 }
 
+async function createUsersTable(db: Knex): Promise<void> {
+  if (await db.schema.hasTable(PLATFORM_TABLES.users)) return;
+  await db.schema.createTable(PLATFORM_TABLES.users, (table) => {
+    table.text("id").primary();
+    table.text("keycloak_sub").notNullable().defaultTo("");
+    table.text("username").notNullable().defaultTo("");
+    table.text("email").notNullable();
+    table.text("display_name").notNullable().defaultTo("");
+    table.text("avatar_url").notNullable().defaultTo("");
+    table.text("role").notNullable().defaultTo("user");
+    table.integer("is_active").notNullable().defaultTo(1);
+    table.text("department_id").nullable()
+      .references("id").inTable(PLATFORM_TABLES.departments).onDelete("SET NULL");
+    table.text("human_employee_id").nullable()
+      .references("id").inTable(PLATFORM_TABLES.humanEmployees).onDelete("SET NULL");
+    table.text("preferences").notNullable().defaultTo("{}");
+    table.text("auth_provider").notNullable().defaultTo("local");
+    table.text("password_hash").nullable();
+    table.text("last_login_at").nullable();
+    table.text("created_at").notNullable();
+    table.text("updated_at").notNullable();
+  });
+
+  if (isSqlite()) {
+    await createIndexIfNotExists(db, "idx_users_keycloak_sub",
+      `CREATE UNIQUE INDEX "idx_users_keycloak_sub" ON "users" ("keycloak_sub") WHERE "keycloak_sub" != ''`);
+  } else {
+    await createIndexIfNotExists(db, "idx_users_keycloak_sub",
+      `CREATE UNIQUE INDEX "idx_users_keycloak_sub" ON "users" ("keycloak_sub")`);
+  }
+  await createIndexIfNotExists(db, "idx_users_email",
+    `CREATE UNIQUE INDEX "idx_users_email" ON "users" ("email")`);
+  if (isSqlite()) {
+    await createIndexIfNotExists(db, "idx_users_username",
+      `CREATE UNIQUE INDEX "idx_users_username" ON "users" ("username") WHERE "username" != ''`);
+  } else {
+    await createIndexIfNotExists(db, "idx_users_username",
+      `CREATE UNIQUE INDEX "idx_users_username" ON "users" ("username")`);
+  }
+  await createIndexIfNotExists(db, "idx_users_is_active",
+    `CREATE INDEX "idx_users_is_active" ON "users" ("is_active")`);
+}
+
+async function migrateUsersAddLocalAuth(db: Knex): Promise<void> {
+  if (!(await db.schema.hasTable(PLATFORM_TABLES.users))) return;
+  const hasAuthProvider = await db.schema.hasColumn(PLATFORM_TABLES.users, "auth_provider");
+  if (!hasAuthProvider) {
+    await db.schema.alterTable(PLATFORM_TABLES.users, (table) => {
+      table.text("auth_provider").notNullable().defaultTo("keycloak");
+    });
+  }
+  const hasPasswordHash = await db.schema.hasColumn(PLATFORM_TABLES.users, "password_hash");
+  if (!hasPasswordHash) {
+    await db.schema.alterTable(PLATFORM_TABLES.users, (table) => {
+      table.text("password_hash").nullable();
+    });
+  }
+}
+
+async function migrateUsersAddUsername(db: Knex): Promise<void> {
+  if (!(await db.schema.hasTable(PLATFORM_TABLES.users))) return;
+  const hasUsername = await db.schema.hasColumn(PLATFORM_TABLES.users, "username");
+  if (!hasUsername) {
+    await db.schema.alterTable(PLATFORM_TABLES.users, (table) => {
+      table.text("username").notNullable().defaultTo("");
+    });
+    await db(PLATFORM_TABLES.users)
+      .where({ auth_provider: "local" })
+      .whereRaw(`"username" = ''`)
+      .update({ username: db.raw(`REPLACE("email", '@local', '')`) });
+    if (isSqlite()) {
+      await createIndexIfNotExists(db, "idx_users_username",
+        `CREATE UNIQUE INDEX "idx_users_username" ON "users" ("username") WHERE "username" != ''`);
+    } else {
+      await createIndexIfNotExists(db, "idx_users_username",
+        `CREATE UNIQUE INDEX "idx_users_username" ON "users" ("username")`);
+    }
+  }
+}
+
+async function seedDefaultAdmin(db: Knex): Promise<void> {
+  if (!(await db.schema.hasTable(PLATFORM_TABLES.users))) return;
+  const count = await db(PLATFORM_TABLES.users).count("* as cnt").first();
+  if (count && Number(count.cnt) > 0) return;
+
+  const { hashSync } = await import("bcryptjs");
+  const { randomUUID } = await import("node:crypto");
+
+  const defaultPassword = process.env.ADMIN_DEFAULT_PASSWORD ?? "changeme123";
+  const now = dbNow();
+  await db(PLATFORM_TABLES.users).insert({
+    id: randomUUID(),
+    keycloak_sub: "",
+    username: "admin",
+    email: "admin@local",
+    display_name: "系统管理员",
+    avatar_url: "",
+    role: "admin",
+    is_active: 1,
+    department_id: null,
+    human_employee_id: null,
+    preferences: "{}",
+    auth_provider: "local",
+    password_hash: hashSync(defaultPassword, 10),
+    last_login_at: null,
+    created_at: now,
+    updated_at: now,
+  });
+  console.log(`[seed] Default admin created: admin / changeme123 (or ADMIN_DEFAULT_PASSWORD)`);
+}
+
 async function migrateAddQueryIndexes(db: Knex): Promise<void> {
   if (isSqlite()) {
     const masterRows = await db.raw(
@@ -502,6 +613,10 @@ export async function ensurePlatformDatabase(db: Knex): Promise<void> {
   await createRunEventsTable(db);
   await createOrgSyncConfigTable(db);
   await createSecretsTable(db);
+  await createUsersTable(db);
+  await migrateUsersAddLocalAuth(db);
+  await migrateUsersAddUsername(db);
+  await seedDefaultAdmin(db);
   await migrateEmployeesAddModel(db);
   await migrateEmployeesAddDepartmentId(db);
   await migrateAddDepartmentExternalId(db);
@@ -577,6 +692,33 @@ const platformMigrations: MigrationEntry[] = [
     },
     async down() {
       // Not reversible — see migrations/003_legacy_schedule_migration.ts
+    },
+  },
+  {
+    name: "004_users_table.ts",
+    async up(knex) {
+      await createUsersTable(knex);
+    },
+    async down(knex) {
+      await knex.schema.dropTableIfExists(PLATFORM_TABLES.users);
+    },
+  },
+  {
+    name: "005_users_local_auth.ts",
+    async up(knex) {
+      await migrateUsersAddLocalAuth(knex);
+    },
+    async down() {
+      // Column removal not supported in SQLite
+    },
+  },
+  {
+    name: "006_seed_default_admin.ts",
+    async up(knex) {
+      await seedDefaultAdmin(knex);
+    },
+    async down() {
+      // Seed — not reversible
     },
   },
 ];

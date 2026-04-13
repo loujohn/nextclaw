@@ -10,7 +10,8 @@ export const PLATFORM_TABLES = {
   runRecords: "run_records",
   runEvents: "run_events",
   orgSyncConfig: "org_sync_config",
-  secrets: "secrets"
+  secrets: "secrets",
+  users: "users",
 } as const;
 
 export type DepartmentRecord = {
@@ -112,6 +113,26 @@ export type SecretRecord = {
   value: string;
   scope: string;
   description: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserRecord = {
+  id: string;
+  keycloak_sub: string;
+  username: string;
+  email: string;
+  display_name: string;
+  avatar_url: string;
+  role: string;
+  is_active: number;
+  department_id: string | null;
+  human_employee_id: string | null;
+  preferences: string;
+  /** "keycloak" | "local" */
+  auth_provider: string;
+  password_hash: string | null;
+  last_login_at: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -8,18 +8,25 @@ import {
   PanelLeftOpen,
   Zap,
   Settings,
-  ShieldCheck
+  ShieldCheck,
+  LogOut,
+  UserCog,
+  type LucideIcon,
 } from "lucide-vue-next";
 
 const route = useRoute();
 const collapsed = ref(false);
+const { user, logout } = useAuth();
 
-const navItems = [
+type NavItem = { label: string; to: string; icon: LucideIcon };
+
+const navItems: NavItem[] = [
   { label: "组织架构", to: "/employees", icon: Users },
   { label: "工作中心", to: "/dashboard", icon: Home },
   { label: "技能中心", to: "/skills", icon: Blocks },
   { label: "集成中心", to: "/integrations", icon: Plug },
-  { label: "安全中心", to: "/security", icon: ShieldCheck }
+  { label: "安全中心", to: "/security", icon: ShieldCheck },
+  { label: "用户管理", to: "/users", icon: UserCog },
 ];
 
 function isActive(path: string): boolean {
@@ -65,6 +72,15 @@ function isActive(path: string): boolean {
       </nav>
 
       <div class="mt-auto space-y-0.5 border-t border-sidebar-border px-3 py-3">
+        <div v-if="user" class="flex items-center gap-3 rounded-lg px-3 py-2" :class="collapsed && 'justify-center px-0'">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+            {{ user.displayName?.charAt(0) ?? '?' }}
+          </div>
+          <div v-if="!collapsed" class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-sidebar-foreground">{{ user.displayName }}</p>
+            <p class="truncate text-[11px] text-sidebar-muted">{{ user.role }}</p>
+          </div>
+        </div>
         <NuxtLink
           to="/integrations"
           class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-sidebar-muted transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
@@ -73,6 +89,14 @@ function isActive(path: string): boolean {
           <Settings class="h-[18px] w-[18px] shrink-0" :stroke-width="1.8" />
           <span v-if="!collapsed">设置</span>
         </NuxtLink>
+        <button
+          class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-sidebar-muted transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          :class="collapsed && 'justify-center px-0'"
+          @click="logout"
+        >
+          <LogOut class="h-[18px] w-[18px] shrink-0" :stroke-width="1.8" />
+          <span v-if="!collapsed">退出登录</span>
+        </button>
         <button
           class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-sidebar-muted transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
           :class="collapsed && 'justify-center px-0'"
