@@ -5,7 +5,7 @@ description: "发送钉钉消息通知，支持群机器人通知（text/markdow
 metadata:
   nextclaw:
     emoji: "🔔"
-    category: "solutions"
+    category: ""
 ---
 
 # 钉钉通知技能

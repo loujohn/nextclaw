@@ -136,6 +136,23 @@ describe("EmployeeLifecycleService", () => {
     for (const j of jobs) expect(j.enabled).toBe(false);
   });
 
+  it("excludes archived employee skills from skill usage statistics", async () => {
+    const homeDir = createTempDir("lifecycle-skill-usage-");
+    const { db, lifecycleService, skillRepo } = buildTestStack(homeDir);
+    await ensurePlatformDatabase(db);
+
+    const created = await lifecycleService.createEmployee({
+      employee: { name: "技能员工", code: "skill-delete", description: "", systemPrompt: "" },
+      skillNames: ["weather-query"]
+    });
+
+    expect((await skillRepo.listAllWithEmployeeNames()).filter((item) => item.skillName === "weather-query")).toHaveLength(1);
+
+    await lifecycleService.deleteEmployee(created.id);
+
+    expect((await skillRepo.listAllWithEmployeeNames()).filter((item) => item.skillName === "weather-query")).toHaveLength(0);
+  });
+
   it("updates employee info and schedule", async () => {
     const homeDir = createTempDir("lifecycle-update-");
     const { db, lifecycleService } = buildTestStack(homeDir);
@@ -155,7 +172,7 @@ describe("EmployeeLifecycleService", () => {
 
     expect(updated.employee.name).toBe("更新后");
     expect(updated.employee.description).toBe("新描述");
-    expect(updated.skills.some((s: { skillName: string }) => s.skillName === "data-analysis")).toBe(true);
+    expect((updated.skills as Array<{ skillName: string }>).some((s) => s.skillName === "data-analysis")).toBe(true);
     expect(updated.jobs).toHaveLength(1);
   });
 
