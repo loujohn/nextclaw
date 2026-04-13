@@ -7,6 +7,7 @@ import json
 import subprocess
 import glob
 import platform
+import shutil
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -20,13 +21,65 @@ TIMEOUT = int(os.environ.get("PM_TIMEOUT", "120000"))
 
 _is_windows = platform.system() == "Windows"
 
-if _is_windows:
-    MCPORTER_CMD = "mcporter"
-else:
-    MCPORTER_CMD = "/usr/local/bin/mcporter"
-
 TEMP_DIR = os.path.expanduser("~/nextclaw-temp")
 SKILL_NAME = "business-management-analysis"
+
+
+def find_mcporter():
+    """
+    动态查找 mcporter 命令的位置，按以下优先级：
+    1. 环境变量 MCPORTER_PATH（如果设置）
+    2. 系统 PATH 中的 mcporter
+    3. 常见固定路径
+    4. 返回命令名本身（让 shell 解析）
+    """
+    # 1. 检查环境变量（最高优先级，允许用户显式指定）
+    env_path = os.environ.get("MCPORTER_PATH", "").strip()
+    if env_path:
+        if os.path.isfile(env_path):
+            if _is_windows or os.access(env_path, os.X_OK):
+                print(f"[mcporter] 使用环境变量 MCPORTER_PATH: {env_path}", file=sys.stderr)
+                return env_path
+        print(f"[mcporter] 警告: MCPORTER_PATH 设置的路径无效: {env_path}", file=sys.stderr)
+
+    # 2. 在系统 PATH 中查找
+    # shutil.which 会处理 Windows 的 .exe 扩展名
+    path_found = shutil.which("mcporter")
+    if path_found:
+        print(f"[mcporter] 在 PATH 中找到: {path_found}", file=sys.stderr)
+        return path_found
+
+    # 3. 检查常见固定路径（fallback）
+    common_paths = [
+        "/usr/bin/mcporter",
+        "/usr/local/bin/mcporter",
+        "/opt/mcporter/bin/mcporter",
+        "/opt/bin/mcporter",
+        os.path.expanduser("~/.local/bin/mcporter"),
+    ]
+
+    if _is_windows:
+        common_paths.extend([
+            r"C:\Program Files\mcporter\mcporter.exe",
+            r"C:\Program Files (x86)\mcporter\mcporter.exe",
+            r"C:\mcporter\mcporter.exe",
+            os.path.expanduser(r"~\AppData\Local\mcporter\mcporter.exe"),
+        ])
+
+    for path in common_paths:
+        if os.path.isfile(path):
+            if _is_windows or os.access(path, os.X_OK):
+                print(f"[mcporter] 在固定路径中找到: {path}", file=sys.stderr)
+                return path
+
+    # 4. 都没找到，返回命令名本身，让 shell 去尝试解析
+    print("[mcporter] 警告: 未找到 mcporter，将尝试直接使用命令名 'mcporter'", file=sys.stderr)
+    return "mcporter"
+
+
+# 动态获取 mcporter 路径（模块加载时执行，打印路径信息）
+MCPORTER_CMD = find_mcporter()
+print(f"[mcporter] 最终使用的路径: {MCPORTER_CMD}", file=sys.stderr)
 
 
 def clean_previous_output(specific_file=None):
