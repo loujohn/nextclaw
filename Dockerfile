@@ -15,7 +15,6 @@ COPY packages/nextclaw-digital-employee/skills ./dist/skills/
 COPY packages/nextclaw-digital-employee/templates ./templates/
 COPY packages/nextclaw-digital-employee/docker-entrypoint.sh /entrypoint.sh
 COPY packages/nextclaw-digital-employee/.env /data/.env
-COPY packages/nextclaw-digital-employee/dist/_runtime-deploy/node_modules/ ./node_modules/
 COPY packages/nextclaw-digital-employee/dist/_compat-deploy/node_modules/ ./plugins-runtime/node_modules/
 RUN chmod +x /entrypoint.sh && mkdir -p /data && pip install --break-system-packages http://172.31.2.108:8080/zentaopms_cli-1.0.0-py3-none-any.whl && pip install --break-system-packages http://172.31.2.108:8080/projectmgt-1.0.0-py3-none-any.whl
 ENTRYPOINT ["/entrypoint.sh"]
