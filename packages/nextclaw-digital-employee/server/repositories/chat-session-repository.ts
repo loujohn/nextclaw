@@ -116,16 +116,19 @@ export class ChatSessionRepository {
   }): Promise<ChatSessionPage> {
     const limit = Math.max(1, Math.min(params.limit ?? 30, 100));
     const before = decodeCursor(params.before);
+    const lastMessageSubquery = this.db(PLATFORM_TABLES.chatMessages)
+      .select("session_id")
+      .max(`${PLATFORM_TABLES.chatMessages}.created_at as last_message_at`)
+      .groupBy("session_id")
+      .as("session_message_stats");
     let query = this.db<ChatSessionRecord>(PLATFORM_TABLES.chatSessions)
       .leftJoin(
-        PLATFORM_TABLES.chatMessages,
+        lastMessageSubquery,
         `${PLATFORM_TABLES.chatSessions}.id`,
-        `${PLATFORM_TABLES.chatMessages}.session_id`
+        "session_message_stats.session_id"
       )
       .where(`${PLATFORM_TABLES.chatSessions}.employee_id`, params.employeeId)
-      .groupBy(`${PLATFORM_TABLES.chatSessions}.id`)
-      .select(`${PLATFORM_TABLES.chatSessions}.*`)
-      .max<{ last_message_at?: string | null }[]>(`${PLATFORM_TABLES.chatMessages}.created_at as last_message_at`);
+      .select(`${PLATFORM_TABLES.chatSessions}.*`, "session_message_stats.last_message_at");
     if (before) {
       query = query.andWhere((builder) => {
         builder.where(`${PLATFORM_TABLES.chatSessions}.updated_at`, "<", before.updatedAt)
