@@ -83,11 +83,28 @@ export type ChatReplyStatusView = {
   tone: StatusBadgeTone;
 };
 
+export type ChatAttachmentPreviewType = "text" | "pdf" | "office" | "image" | "binary";
+
+export type ChatAttachmentView = {
+  token?: string;
+  originalName: string;
+  storedName: string;
+  relativePath: string;
+  mimeType: string;
+  size: number;
+  previewType: ChatAttachmentPreviewType;
+  uploadDate: string;
+  sourceText?: string;
+  sourceSessionKey?: string;
+  sourceMessageId?: string;
+};
+
 export type ChatMessageView = {
   id?: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp?: string;
+  attachments?: ChatAttachmentView[];
   toolCalls?: ChatToolCallView[];
   reasoning?: string;
   replyStatus?: ChatReplyStatusView;

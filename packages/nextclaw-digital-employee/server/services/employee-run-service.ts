@@ -16,9 +16,12 @@ import {
   normalizeChatMessageContent,
   normalizeChatMessageTimestamp,
 } from "../chat/chat-message-normalization";
+import type { ChatAttachmentView } from "../../shared/ui-models";
 import { prepareEmployeeRuntime } from "./employee-runtime-preparation";
 import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
+import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
+import { EmployeeUploadFileService } from "./employee-upload-file-service";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -56,6 +59,15 @@ type StoredRunMetadata = {
   runStatus: string;
 };
 
+function normalizeChatAttachments(rawItems: unknown[] | undefined): ChatAttachmentView[] {
+  if (!rawItems?.length) {
+    return [];
+  }
+  return rawItems
+    .map((item) => normalizeChatAttachment(item))
+    .filter((item): item is ChatAttachmentView => Boolean(item));
+}
+
 function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") {
     return true;
@@ -89,11 +101,13 @@ function toUiMessage(message: PersistedChatMessageView, inferredRunStatus?: stri
   const resolvedRunStatus = typeof message.metadata?.runStatus === "string"
     ? message.metadata.runStatus
     : inferredRunStatus;
+  const attachments = normalizeChatAttachments(Array.isArray(message.metadata?.attachments) ? message.metadata.attachments : undefined);
   return {
     id: message.id,
     role: message.role,
     content: message.content,
     timestamp: message.createdAt,
+    ...(attachments.length > 0 ? { attachments } : {}),
     ...(message.metadata && Array.isArray(message.metadata.toolCalls)
       ? {
           toolCalls: message.metadata.toolCalls
@@ -439,6 +453,7 @@ export class EmployeeRunService {
   async streamChatTurn(params: {
     employeeId: string;
     message: string;
+    attachments?: ChatAttachmentView[];
     sessionKey?: string;
     signal?: AbortSignal;
     onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
@@ -453,14 +468,37 @@ export class EmployeeRunService {
       sessionKey: session.sessionKey
     });
     const userMessageCreatedAt = normalizeChatMessageTimestamp();
+    const uploadService = new EmployeeUploadFileService(this.employeeRepo, messageRepo, this.gateway.homeDir);
+    const normalizedAttachments = normalizeChatAttachments(params.attachments);
+    const attachmentSnapshots = normalizedAttachments.map((attachment) => ({
+      ...attachment,
+      sourceText: params.message,
+      sourceSessionKey: session.sessionKey,
+      sourceMessageId: randomUUID()
+    }));
+    for (const attachment of attachmentSnapshots) {
+      await uploadService.readUploadedFile({
+        employeeId: employee.id,
+        relativePath: attachment.relativePath,
+        rawUrl: "",
+        downloadUrl: ""
+      });
+    }
+    const userMessageId = attachmentSnapshots[0]?.sourceMessageId ?? randomUUID();
+    const userMessageAttachments = attachmentSnapshots.map((attachment) => ({
+      ...attachment,
+      sourceMessageId: userMessageId
+    }));
     await messageRepo.createMany([{
+      id: userMessageId,
       sessionId: session.id,
       role: "user",
       content: params.message,
       createdAt: userMessageCreatedAt,
       metadata: {
         runId: run.id,
-        runStatus: RunStatus.Running
+        runStatus: RunStatus.Running,
+        ...(userMessageAttachments.length > 0 ? { attachments: userMessageAttachments } : {})
       }
     }]);
     await sessionRepo.touchWithMessage({
@@ -523,7 +561,7 @@ export class EmployeeRunService {
         agentId: employee.code,
         sessionKey: session.sessionKey,
         workspace,
-        message: params.message,
+        message: buildAttachmentPromptText(params.message, userMessageAttachments),
         model: employee.model || undefined,
         requestedSkills: skillNames.length > 0 ? skillNames : undefined,
         onAssistantDelta: (delta) => {

@@ -58,7 +58,7 @@ const { data: listData, refresh: refreshList, pending: listPending } = useLazyFe
   { key: computed(() => `employee-workspace-list:${employeeId.value}`) }
 );
 
-const files = computed(() => listData.value?.data.files ?? []);
+const files = computed(() => listData.value?.data.coreFiles ?? []);
 
 const selectedFilename = ref<string | null>(null);
 const mode = ref<"preview" | "edit">("preview");
@@ -109,8 +109,8 @@ async function saveFile() {
   saveError.value = null;
   saveSuccess.value = false;
   try {
-    await $fetch(`/api/employees/${employeeId.value}/workspace/${selectedFilename.value}`, {
-      method: "PUT",
+    await $fetch(`/api/employees/${employeeId.value}/workspace/${selectedFilename.value}` as string, {
+      method: "PUT" as any,
       body: { content: editorContent.value }
     });
     saveSuccess.value = true;

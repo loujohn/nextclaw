@@ -110,6 +110,33 @@ describe("buildChatDisplayMessages", () => {
     ]);
   });
 
+  it("keeps user attachments when building display messages", () => {
+    const grouped = buildChatDisplayMessages([
+      {
+        id: "user-attachment-1",
+        role: "user",
+        content: "请看附件",
+        attachments: [{
+          originalName: "报价单.pdf",
+          storedName: "up_abc_报价单.pdf",
+          relativePath: "uploadFile/2026-04-14/up_abc_报价单.pdf",
+          mimeType: "application/pdf",
+          size: 1024,
+          previewType: "pdf",
+          uploadDate: "2026-04-14"
+        }]
+      }
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.attachments).toEqual([
+      expect.objectContaining({
+        originalName: "报价单.pdf",
+        previewType: "pdf"
+      })
+    ]);
+  });
+
   it("deduplicates repeated tool records while preserving the final assistant content", () => {
     const messages: ChatMessageView[] = [
       {

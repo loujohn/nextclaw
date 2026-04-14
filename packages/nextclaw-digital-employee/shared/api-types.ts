@@ -1,4 +1,4 @@
-import type { SkillCatalogEntryView } from "./ui-models";
+import type { ChatAttachmentPreviewType, ChatAttachmentView, SkillCatalogEntryView } from "./ui-models";
 
 export type SkillCatalogEntry = SkillCatalogEntryView;
 
@@ -58,8 +58,51 @@ export type WorkspaceFile = {
   writable: boolean;
 };
 
-export type FileListPayload = { ok: boolean; data: { files: WorkspaceFile[] } };
+export type UploadWorkspaceFileNode = ChatAttachmentView & {
+  kind: "file";
+  label: string;
+};
+
+export type UploadWorkspaceTreeNode =
+  | { kind: "year" | "month" | "day"; label: string; children: UploadWorkspaceTreeNode[] }
+  | UploadWorkspaceFileNode;
+
+export type FileListPayload = {
+  ok: boolean;
+  data: {
+    coreFiles: WorkspaceFile[];
+    uploadedFilesTree: UploadWorkspaceTreeNode[];
+  };
+};
+
 export type FileContentPayload = { ok: boolean; data: { filename: string; content: string } };
+
+export type UploadedWorkspaceFilePayload = {
+  ok: boolean;
+  data: {
+    filename: string;
+    storedName: string;
+    relativePath: string;
+    mimeType: string;
+    size: number;
+    previewType: ChatAttachmentPreviewType;
+    content?: string;
+    rawUrl: string;
+    downloadUrl: string;
+    source?: {
+      sessionKey?: string;
+      messageId?: string;
+      text?: string;
+    };
+  };
+};
+
+export type UploadFilesPayload = {
+  ok: true;
+  data: {
+    items: ChatAttachmentView[];
+  };
+};
 
 export type ScheduleJob = {
   id: string;

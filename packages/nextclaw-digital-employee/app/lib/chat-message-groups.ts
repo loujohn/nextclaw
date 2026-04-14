@@ -21,6 +21,7 @@ export type ChatDisplayMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
+  attachments: ChatMessageView["attachments"];
   reasoning?: string;
   replyStatus?: ChatMessageView["replyStatus"];
   toolCalls: ChatToolCallView[];
@@ -152,6 +153,7 @@ function createAssistantGroup(seed: ChatMessageView | undefined, index: number):
     role: "assistant",
     content: seed?.role === "assistant" ? seed.content?.trim() ?? "" : "",
     timestamp: seed?.timestamp,
+    attachments: [],
     reasoning: seed?.role === "assistant" ? seed.reasoning?.trim() : undefined,
     replyStatus: seed?.replyStatus,
     toolCalls: seed?.role === "assistant" ? [...(seed.toolCalls ?? [])] : [],
@@ -216,6 +218,7 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
         role: message.role,
         content: message.content,
         timestamp: message.timestamp,
+        attachments: message.attachments ?? [],
         toolCalls: [],
         toolResults: [],
         toolSteps: [],

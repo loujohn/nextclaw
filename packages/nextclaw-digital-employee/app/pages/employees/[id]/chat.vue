@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatRunStatusMeta, type ChatMessageView } from "~~/shared/ui-models";
+import { formatRunStatusMeta, type ChatAttachmentView, type ChatMessageView } from "~~/shared/ui-models";
+import type { UploadFilesPayload } from "~~/shared/api-types";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { buildChatDisplayMessages } from "~/lib/chat-message-groups";
 import { resolveInitialChatSelection } from "~/lib/chat-session-bootstrap";
@@ -19,14 +20,17 @@ import {
   Brain,
   ChevronDown,
   ChevronRight,
+  FolderOpen,
   Loader2,
   MessageCircle,
+  Paperclip,
   Plus,
   Send,
   StopCircle,
   Terminal,
   User,
-  Wrench
+  Wrench,
+  X
 } from "lucide-vue-next";
 
 type ChatSessionListItem = LocalChatSessionListItem;
@@ -147,11 +151,14 @@ const activeRunId = ref("");
 const threadEl = ref<HTMLElement | null>(null);
 const sessionListEl = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
+const fileInputEl = ref<HTMLInputElement | null>(null);
 const streamAbortController = ref<AbortController | null>(null);
 const streamingAssistantId = ref<string | null>(null);
 const shouldStickToBottom = ref(true);
 const restoringHistoryScroll = ref(false);
 const suppressNextSessionLoad = ref(false);
+const pendingUploads = ref<ChatAttachmentView[]>([]);
+const uploadingFiles = ref(false);
 const SESSION_PAGE_SIZE = 30;
 const { data: employee, refresh: refreshEmployee } = useEmployeeDetail(employeeId);
 const { refresh: refreshRuns } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
@@ -186,6 +193,66 @@ function syncStickToBottomState() {
   shouldStickToBottom.value = distanceFromBottom <= 24;
 }
 
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function openUploadPicker() {
+  if (sending.value || uploadingFiles.value) {
+    return;
+  }
+  fileInputEl.value?.click();
+}
+
+function removePendingUpload(relativePath: string) {
+  pendingUploads.value = pendingUploads.value.filter((item) => item.relativePath !== relativePath);
+}
+
+function openAttachmentWorkspace(attachment: ChatAttachmentView) {
+  void navigateTo({
+    path: `/employees/${employeeId.value}/workspace`,
+    query: {
+      type: "upload",
+      path: attachment.relativePath,
+      ...(attachment.sourceSessionKey ? { sessionKey: attachment.sourceSessionKey } : {}),
+      ...(attachment.sourceMessageId ? { messageId: attachment.sourceMessageId } : {})
+    }
+  });
+}
+
+async function handleFileSelection(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = [...(input.files ?? [])];
+  if (files.length === 0) {
+    return;
+  }
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  uploadingFiles.value = true;
+  errorMessage.value = "";
+  try {
+    const payload = await $fetch<UploadFilesPayload>(`/api/employees/${employeeId.value}/upload-files`, {
+      method: "POST",
+      body: formData
+    });
+    const existing = new Set(pendingUploads.value.map((item) => item.relativePath));
+    pendingUploads.value = [
+      ...pendingUploads.value,
+      ...payload.data.items.filter((item) => !existing.has(item.relativePath))
+    ];
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    uploadingFiles.value = false;
+    input.value = "";
+  }
+}
 function scrollToBottom(force = false) {
   nextTick(() => {
     if (threadEl.value && (force || shouldStickToBottom.value)) {
@@ -459,9 +526,10 @@ async function loadOlderMessages() {
 // eslint-disable-next-line max-lines-per-function
 async function sendMessage(input = draft.value) {
   const message = input.trim();
-  if (!message || sending.value) {
+  if (!message || sending.value || uploadingFiles.value) {
     return;
   }
+  const attachments = pendingUploads.value.map((item) => ({ ...item }));
   const draftSessionKey = isDraftChatSessionKey(activeSessionKey.value) ? activeSessionKey.value : "";
   const persistedActiveSessionKey = draftSessionKey ? "" : activeSessionKey.value;
   const initialMessageCount = messages.value.length;
@@ -472,6 +540,7 @@ async function sendMessage(input = draft.value) {
     id: makeLocalId("user"),
     role: "user",
     content: message,
+    ...(attachments.length > 0 ? { attachments } : {}),
     timestamp: new Date().toISOString()
   };
   messages.value = [...messages.value, optimisticMessage];
@@ -484,6 +553,7 @@ async function sendMessage(input = draft.value) {
   streamAbortController.value = controller;
   let finalSessionKey = persistedActiveSessionKey;
   let terminalStatus: string | null = null;
+  let acceptedByServer = false;
 
   try {
     const response = await fetch(`/api/employees/${employeeId.value}/chat`, {
@@ -494,6 +564,7 @@ async function sendMessage(input = draft.value) {
       },
       body: JSON.stringify({
         message,
+        attachments,
         ...(persistedActiveSessionKey ? { sessionKey: persistedActiveSessionKey } : {})
       }),
       signal: controller.signal
@@ -516,6 +587,7 @@ async function sendMessage(input = draft.value) {
         case "run_started": {
           activeRunId.value = streamEvent.data.runId;
           finalSessionKey = streamEvent.data.sessionKey;
+          acceptedByServer = true;
           break;
         }
         case "thinking": {
@@ -630,6 +702,9 @@ async function sendMessage(input = draft.value) {
       suppressNextSessionLoad.value = true;
       activeSessionKey.value = finalSessionKey;
     }
+    if (acceptedByServer) {
+      pendingUploads.value = [];
+    }
     removeEmptyStreamingAssistantMessage();
     if (shouldCommitLocalChatSessionUpdate(terminalStatus)) {
       syncLocalSessionAfterRun({
@@ -651,6 +726,9 @@ async function sendMessage(input = draft.value) {
       } else {
         messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
       }
+      if (acceptedByServer) {
+        pendingUploads.value = [];
+      }
     }
   } catch (error) {
     if (controller.signal.aborted) {
@@ -660,6 +738,9 @@ async function sendMessage(input = draft.value) {
         await loadMessages(sessionKeyToRestore);
       } else {
         messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
+      }
+      if (acceptedByServer) {
+        pendingUploads.value = [];
       }
       if (!errorMessage.value) {
         errorMessage.value = "本次对话已取消";
@@ -672,6 +753,9 @@ async function sendMessage(input = draft.value) {
         await loadMessages(sessionKeyToRestore);
       } else {
         messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
+      }
+      if (acceptedByServer) {
+        pendingUploads.value = [];
       }
     }
   } finally {
@@ -846,6 +930,19 @@ watch(messages, () => {
               <div class="rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm break-words overflow-hidden">
                 <div v-html="renderMarkdown(msg.content)" />
               </div>
+              <div v-if="msg.attachments?.length" class="flex flex-wrap justify-end gap-2">
+                <button
+                  v-for="attachment in msg.attachments"
+                  :key="attachment.relativePath"
+                  class="inline-flex items-center gap-2 rounded-2xl border border-primary-foreground/20 bg-primary-foreground/10 px-3 py-2 text-left text-xs text-primary-foreground/95 transition-colors hover:bg-primary-foreground/20"
+                  @click="openAttachmentWorkspace(attachment)"
+                >
+                  <Paperclip class="h-3.5 w-3.5 shrink-0" />
+                  <span class="max-w-[14rem] truncate">{{ attachment.originalName }}</span>
+                  <span class="text-primary-foreground/70">{{ formatAttachmentSize(attachment.size) }}</span>
+                  <FolderOpen class="h-3.5 w-3.5 shrink-0" />
+                </button>
+              </div>
             </div>
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
               <User class="h-4 w-4 text-primary" :stroke-width="2" />
@@ -956,6 +1053,14 @@ watch(messages, () => {
       </div>
 
       <div class="rounded-2xl border border-border bg-card p-3.5 shadow-sm transition-all duration-150 focus-within:border-primary/30 focus-within:shadow-md">
+        <input
+          ref="fileInputEl"
+          type="file"
+          class="hidden"
+          multiple
+          accept=".txt,.md,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+          @change="handleFileSelection"
+        />
         <textarea
           ref="textareaEl"
           v-model="draft"
@@ -966,13 +1071,40 @@ watch(messages, () => {
           @keydown="handleKeydown"
           @input="autoResize"
         />
+        <div v-if="pendingUploads.length > 0" class="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+          <div
+            v-for="attachment in pendingUploads"
+            :key="attachment.relativePath"
+            class="inline-flex items-center gap-2 rounded-2xl border border-border bg-muted/40 px-3 py-2 text-xs text-foreground"
+          >
+            <Paperclip class="h-3.5 w-3.5 text-primary" />
+            <span class="max-w-[14rem] truncate font-medium">{{ attachment.originalName }}</span>
+            <span class="text-muted-foreground">{{ formatAttachmentSize(attachment.size) }}</span>
+            <button
+              class="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              :disabled="sending"
+              @click="removePendingUpload(attachment.relativePath)"
+            >
+              <X class="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
         <div class="mt-2.5 flex items-center justify-between border-t border-border pt-2.5">
-          <div class="text-[11px] text-muted-foreground">
+          <div class="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <button
+              class="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              :disabled="sending || uploadingFiles"
+              @click="openUploadPicker"
+            >
+              <Paperclip class="h-3.5 w-3.5" />
+              {{ uploadingFiles ? '上传中…' : '上传文件' }}
+            </button>
+            <span v-if="pendingUploads.length > 0">待发送 {{ pendingUploads.length }} 个文件</span>
           </div>
           <button
             class="btn-primary rounded-xl px-5"
             :class="sending ? 'bg-destructive hover:bg-destructive/90' : ''"
-            :disabled="!sending && !draft.trim()"
+            :disabled="(!sending && !draft.trim()) || uploadingFiles"
             @click="sending ? cancelMessage() : sendMessage()"
           >
             <StopCircle v-if="sending" class="h-3.5 w-3.5" />
