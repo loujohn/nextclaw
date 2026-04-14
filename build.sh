@@ -18,13 +18,16 @@ fi
 # ── Install knex-dm / dmdb runtime deps (CJS drivers that Nitro cannot bundle) ──
 DE_DIST_SERVER="packages/nextclaw-digital-employee/dist/server"
 echo -e "\033[34m[deploy] 安装 knex-dm 运行时依赖...\033[0m"
-echo '{"private":true,"dependencies":{"knex-dm":"^1.0.48662","dmdb":"^1.0.48286","knex":"^3.1.0"}}' > "$DE_DIST_SERVER/package.json"
-npm install --omit=dev --prefix "$DE_DIST_SERVER" --registry https://registry.npmmirror.com
+KNEX_TMP=$(mktemp -d)
+echo '{"private":true,"dependencies":{"knex-dm":"^1.0.48662","dmdb":"^1.0.48286","knex":"^3.1.0"}}' > "$KNEX_TMP/package.json"
+(cd "$KNEX_TMP" && npm install --omit=dev --registry https://registry.npmmirror.com)
 if [ $? -ne 0 ]; then
+  rm -rf "$KNEX_TMP"
   echo -e "\033[31m[deploy] knex-dm 依赖安装失败!\033[0m"
   exit 1
 fi
-rm -f "$DE_DIST_SERVER/package.json" "$DE_DIST_SERVER/package-lock.json"
+cp -r "$KNEX_TMP/node_modules" "$DE_DIST_SERVER/node_modules"
+rm -rf "$KNEX_TMP"
 echo -e "\033[32m[deploy] knex-dm 运行时依赖安装完成!\033[0m"
 
 # ── Channel plugin runtime: pnpm deploy --prod ──────────────────────────────
