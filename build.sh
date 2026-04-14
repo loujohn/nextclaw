@@ -16,7 +16,10 @@ else
 fi
 
 # ── Install knex-dm / dmdb runtime deps (CJS drivers that Nitro cannot bundle) ──
-DE_DIST_SERVER="packages/nextclaw-digital-employee/dist/server"
+# 安装到 dist/node_modules/（对应容器 /app/node_modules/），该目录 Nitro 不会创建，
+# 不存在与 dist/server/node_modules/ 合并冲突的问题。
+# createRequire(resolve(process.cwd(), "index.js")) 恰好从 /app/node_modules/ 解析。
+DE_DIST_DIR="packages/nextclaw-digital-employee/dist"
 echo -e "\033[34m[deploy] 安装 knex-dm 运行时依赖...\033[0m"
 KNEX_TMP=$(mktemp -d)
 echo '{"private":true,"dependencies":{"knex-dm":"^1.0.48662","dmdb":"^1.0.48286","knex":"^3.1.0"}}' > "$KNEX_TMP/package.json"
@@ -26,7 +29,8 @@ if [ $? -ne 0 ]; then
   echo -e "\033[31m[deploy] knex-dm 依赖安装失败!\033[0m"
   exit 1
 fi
-cp -r "$KNEX_TMP/node_modules" "$DE_DIST_SERVER/node_modules"
+# dist/node_modules/ 不存在时 cp -r 直接创建，不会产生嵌套
+cp -r "$KNEX_TMP/node_modules" "$DE_DIST_DIR/node_modules"
 rm -rf "$KNEX_TMP"
 echo -e "\033[32m[deploy] knex-dm 运行时依赖安装完成!\033[0m"
 
