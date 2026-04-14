@@ -41,12 +41,6 @@ export default defineNuxtConfig({
         target: "es2022"
       }
     },
-    externals: {
-      // knex-dm and dmdb are CJS-only native DB drivers loaded via createRequire.
-      // Nitro cannot bundle them; traceInclude copies them into dist/server/node_modules/
-      // so Node's module resolution finds them without any manual copy or NODE_PATH hacks.
-      traceInclude: ["knex-dm", "dmdb"]
-    },
     serverAssets: [
       {
         baseName: "skills",

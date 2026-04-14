@@ -8,7 +8,7 @@ if [ $? -ne 0 ];then
   exit 1
 fi
 pnpm --filter @nextclaw/digital-employee build
-if [ $? -eq 0 ] && [ -d $CACHEADDR/dist ];then
+if [ $? -eq 0 ] && [ -d packages/nextclaw-digital-employee/dist ]; then
    echo -e "\033[32m项目构建成功!\033[0m"
 else
   echo -e "\033[31mpackages/nextclaw-digital-employee编译失败!\033[0m"
@@ -18,6 +18,18 @@ fi
 # ── Channel plugin runtime: pnpm deploy --prod ──────────────────────────────
 # compat-deploy 放在 dist/_compat-deploy/ 内，确保随 dist 缓存一起被 deploy 阶段恢复
 COMPAT_DEPLOY_DIR="packages/nextclaw-digital-employee/dist/_compat-deploy"
+RUNTIME_DEPLOY_DIR="packages/nextclaw-digital-employee/dist/_runtime-deploy"
+
+# 清理旧产物，避免残留依赖造成运行时模块解析异常
+rm -rf "$RUNTIME_DEPLOY_DIR" "$COMPAT_DEPLOY_DIR"
+
+echo -e "\033[34m[deploy] 生成 digital-employee 运行时生产依赖...\033[0m"
+pnpm --filter @nextclaw/digital-employee deploy --prod "$RUNTIME_DEPLOY_DIR"
+if [ $? -ne 0 ]; then
+  echo -e "\033[31m[deploy] digital-employee 运行时依赖生成失败!\033[0m"
+  exit 1
+fi
+
 echo -e "\033[34m[deploy] 生成 openclaw-compat 生产依赖包...\033[0m"
 pnpm --filter @nextclaw/openclaw-compat deploy --prod "$COMPAT_DEPLOY_DIR"
 if [ $? -ne 0 ]; then
@@ -49,6 +61,5 @@ for pair in "packages/nextclaw-core:core" "packages/extensions/nextclaw-channel-
     echo "  copied $src/dist -> $dest/dist"
   fi
 done
-
 
 echo -e "\033[32m[deploy] channel plugin runtime 构建完成!\033[0m"
