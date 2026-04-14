@@ -2,9 +2,12 @@
 import { formatRunStatusMeta, type ChatMessageView } from "~~/shared/ui-models";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { buildChatDisplayMessages } from "~/lib/chat-message-groups";
+import { resolveInitialChatSelection } from "~/lib/chat-session-bootstrap";
 import { renderMarkdown, formatTime } from "~/lib/utils";
 import StatusBadge from "~/components/StatusBadge.vue";
 import {
+  createLocalDraftChatSession,
+  isDraftChatSessionKey,
   refreshChatAfterRun,
   shouldCommitLocalChatSessionUpdate,
   upsertLocalChatSession,
@@ -33,15 +36,6 @@ type SessionListPayload = {
   data: {
     items: ChatSessionListItem[];
     nextCursor: string | null;
-  };
-};
-
-type SessionCreatePayload = {
-  ok: boolean;
-  data: {
-    sessionKey: string;
-    title: string;
-    createdAt: string;
   };
 };
 
@@ -142,7 +136,6 @@ const sending = ref(false);
 const loadingSessions = ref(false);
 const loadingMoreSessions = ref(false);
 const loadingMessages = ref(false);
-const creatingSession = ref(false);
 const loadingMore = ref(false);
 const errorMessage = ref("");
 const messages = ref<ChatMessageView[]>([]);
@@ -158,6 +151,7 @@ const streamAbortController = ref<AbortController | null>(null);
 const streamingAssistantId = ref<string | null>(null);
 const shouldStickToBottom = ref(true);
 const restoringHistoryScroll = ref(false);
+const suppressNextSessionLoad = ref(false);
 const SESSION_PAGE_SIZE = 30;
 const { data: employee, refresh: refreshEmployee } = useEmployeeDetail(employeeId);
 const { refresh: refreshRuns } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
@@ -299,13 +293,19 @@ function getLatestSessionPreviewFallback(fallback: string): string {
   return fallback;
 }
 
-function syncLocalSessionAfterRun(params: { sessionKey: string; titleSeed: string; messageCountIncrement: number }) {
+function syncLocalSessionAfterRun(params: {
+  sessionKey: string;
+  previousSessionKey?: string;
+  titleSeed: string;
+  messageCountIncrement: number;
+}) {
   if (!params.sessionKey) {
     return;
   }
   sessions.value = upsertLocalChatSession({
     sessions: sessions.value,
     sessionKey: params.sessionKey,
+    previousSessionKey: params.previousSessionKey,
     latestContent: getLatestSessionPreviewFallback(params.titleSeed),
     occurredAt: new Date().toISOString(),
     titleSeed: params.titleSeed,
@@ -356,23 +356,26 @@ async function loadMoreSessions() {
 }
 
 async function createSession(selectAfterCreate = true): Promise<string> {
-  creatingSession.value = true;
-  try {
-    const response = await $fetch<SessionCreatePayload>(`/api/employees/${employeeId.value}/sessions`, {
-      method: "POST"
-    });
-    await fetchSessions();
-    if (selectAfterCreate) {
-      activeSessionKey.value = response.data.sessionKey;
-    }
-    return response.data.sessionKey;
-  } finally {
-    creatingSession.value = false;
+  const existingDraft = sessions.value.find((session) => session.isDraft);
+  const draft = existingDraft ?? createLocalDraftChatSession(new Date().toISOString());
+  if (!existingDraft) {
+    sessions.value = [draft, ...sessions.value];
   }
+  messages.value = [];
+  nextCursor.value = null;
+  errorMessage.value = "";
+  if (selectAfterCreate) {
+    activeSessionKey.value = draft.sessionKey;
+  }
+  return draft.sessionKey;
 }
 
 async function loadMessages(sessionKey: string, before?: string | null) {
-  if (!sessionKey) {
+  if (!sessionKey || isDraftChatSessionKey(sessionKey)) {
+    if (!before) {
+      messages.value = [];
+      nextCursor.value = null;
+    }
     return;
   }
   const previousScrollTop = before ? threadEl.value?.scrollTop ?? 0 : 0;
@@ -415,15 +418,18 @@ async function loadMessages(sessionKey: string, before?: string | null) {
 async function initializeChat() {
   errorMessage.value = "";
   const items = await fetchSessions();
-  if (items.length === 0) {
-    const createdSessionKey = await createSession(false);
-    activeSessionKey.value = createdSessionKey;
-    await loadMessages(createdSessionKey);
+  const initialSelection = resolveInitialChatSelection({
+    activeSessionKey: activeSessionKey.value,
+    sessions: items
+  });
+  activeSessionKey.value = initialSelection.sessionKey;
+  if (!initialSelection.shouldLoadMessages) {
+    messages.value = [];
+    nextCursor.value = null;
     return;
   }
-  const targetSessionKey = activeSessionKey.value || items[0]?.sessionKey || "";
-  activeSessionKey.value = targetSessionKey;
-  await loadMessages(targetSessionKey);
+  suppressNextSessionLoad.value = true;
+  await loadMessages(initialSelection.sessionKey);
 }
 
 async function refreshAfterRun() {
@@ -456,6 +462,8 @@ async function sendMessage(input = draft.value) {
   if (!message || sending.value) {
     return;
   }
+  const draftSessionKey = isDraftChatSessionKey(activeSessionKey.value) ? activeSessionKey.value : "";
+  const persistedActiveSessionKey = draftSessionKey ? "" : activeSessionKey.value;
   const initialMessageCount = messages.value.length;
   sending.value = true;
   errorMessage.value = "";
@@ -474,7 +482,7 @@ async function sendMessage(input = draft.value) {
 
   const controller = new AbortController();
   streamAbortController.value = controller;
-  let finalSessionKey = activeSessionKey.value;
+  let finalSessionKey = persistedActiveSessionKey;
   let terminalStatus: string | null = null;
 
   try {
@@ -486,7 +494,7 @@ async function sendMessage(input = draft.value) {
       },
       body: JSON.stringify({
         message,
-        ...(activeSessionKey.value ? { sessionKey: activeSessionKey.value } : {})
+        ...(persistedActiveSessionKey ? { sessionKey: persistedActiveSessionKey } : {})
       }),
       signal: controller.signal
     });
@@ -508,9 +516,6 @@ async function sendMessage(input = draft.value) {
         case "run_started": {
           activeRunId.value = streamEvent.data.runId;
           finalSessionKey = streamEvent.data.sessionKey;
-          if (!activeSessionKey.value) {
-            activeSessionKey.value = finalSessionKey;
-          }
           break;
         }
         case "thinking": {
@@ -622,21 +627,24 @@ async function sendMessage(input = draft.value) {
     }
 
     if (finalSessionKey && activeSessionKey.value !== finalSessionKey) {
+      suppressNextSessionLoad.value = true;
       activeSessionKey.value = finalSessionKey;
     }
     removeEmptyStreamingAssistantMessage();
     if (shouldCommitLocalChatSessionUpdate(terminalStatus)) {
       syncLocalSessionAfterRun({
         sessionKey: finalSessionKey,
+        previousSessionKey: draftSessionKey || undefined,
         titleSeed: message,
         messageCountIncrement: Math.max(0, messages.value.length - initialMessageCount)
       });
       await refreshAfterRun();
     } else {
-      await fetchSessions();
-      const sessionKeyToReload = finalSessionKey || activeSessionKey.value;
+      const sessionKeyToReload = finalSessionKey || persistedActiveSessionKey;
       if (sessionKeyToReload) {
+        await fetchSessions();
         if (activeSessionKey.value !== sessionKeyToReload) {
+          suppressNextSessionLoad.value = true;
           activeSessionKey.value = sessionKeyToReload;
         }
         await loadMessages(sessionKeyToReload);
@@ -646,19 +654,22 @@ async function sendMessage(input = draft.value) {
     }
   } catch (error) {
     if (controller.signal.aborted) {
-      const sessionKeyToRestore = finalSessionKey || activeSessionKey.value;
+      const sessionKeyToRestore = finalSessionKey || persistedActiveSessionKey;
       if (sessionKeyToRestore) {
         await fetchSessions();
         await loadMessages(sessionKeyToRestore);
+      } else {
+        messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
       }
       if (!errorMessage.value) {
         errorMessage.value = "本次对话已取消";
       }
     } else {
       errorMessage.value = error instanceof Error ? error.message : String(error);
-      await fetchSessions();
-      if (activeSessionKey.value) {
-        await loadMessages(activeSessionKey.value);
+      const sessionKeyToRestore = finalSessionKey || persistedActiveSessionKey;
+      if (sessionKeyToRestore) {
+        await fetchSessions();
+        await loadMessages(sessionKeyToRestore);
       } else {
         messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
       }
@@ -727,6 +738,10 @@ watch(activeSessionKey, async (sessionKey, previous) => {
   if (!sessionKey || sessionKey === previous) {
     return;
   }
+  if (suppressNextSessionLoad.value) {
+    suppressNextSessionLoad.value = false;
+    return;
+  }
   await loadMessages(sessionKey);
 });
 
@@ -746,9 +761,8 @@ watch(messages, () => {
           <span class="section-label">会话</span>
           <h2 class="mt-0.5 text-lg font-semibold">聊天会话</h2>
         </div>
-        <button class="btn-secondary rounded-xl px-3" :disabled="sending || creatingSession" @click="createSession()">
-          <Loader2 v-if="creatingSession" class="h-3.5 w-3.5 animate-spin" />
-          <Plus v-else class="h-3.5 w-3.5" />
+        <button class="btn-secondary rounded-xl px-3" :disabled="sending" @click="createSession()">
+          <Plus class="h-3.5 w-3.5" />
           新建
         </button>
       </div>
@@ -785,7 +799,7 @@ watch(messages, () => {
           v-if="!loadingSessions && sessions.length === 0"
           class="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground"
         >
-          还没有对话，先新建一个会话吧。
+          还没有对话。输入第一条消息开始，或手动新建会话。
         </div>
 
         <div v-if="loadingMoreSessions" class="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground">

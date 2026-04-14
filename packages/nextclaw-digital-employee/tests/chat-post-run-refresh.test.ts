@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createLocalDraftChatSession,
+  isDraftChatSessionKey,
   refreshChatAfterRun,
   shouldCommitLocalChatSessionUpdate,
   upsertLocalChatSession
@@ -89,6 +91,35 @@ describe("upsertLocalChatSession", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.sessionKey).toBe("session-new");
     expect(result[0]?.title).toBe("第一条消息");
+  });
+
+  it("发送第一条消息后用真实 sessionKey 替换本地草稿会话", () => {
+    const draft = createLocalDraftChatSession("2026-04-08T11:20:00.000Z");
+
+    const result = upsertLocalChatSession({
+      sessions: [draft],
+      sessionKey: "employee:1:chat:real-session",
+      previousSessionKey: draft.sessionKey,
+      latestContent: "第一条真实消息",
+      occurredAt: "2026-04-08T11:30:00.000Z",
+      titleSeed: "第一条真实消息",
+      messageCountIncrement: 1
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.sessionKey).toBe("employee:1:chat:real-session");
+    expect(result[0]?.isDraft).toBe(false);
+    expect(result[0]?.messageCount).toBe(1);
+  });
+});
+
+describe("draft chat sessions", () => {
+  it("本地草稿会话使用前端临时 key 标识", () => {
+    const draft = createLocalDraftChatSession("2026-04-08T11:20:00.000Z");
+
+    expect(isDraftChatSessionKey(draft.sessionKey)).toBe(true);
+    expect(draft.title).toBe("新对话");
+    expect(draft.messageCount).toBe(0);
   });
 });
 

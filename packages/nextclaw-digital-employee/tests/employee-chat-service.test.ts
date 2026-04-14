@@ -141,7 +141,7 @@ describe("EmployeeRunService chat session persistence", () => {
 
   it("paginates chat sessions by updated time and keeps ordering stable", async () => {
     const homeDir = createTempDir("chat-sessions-page-");
-    const { employee, service, chatSessionRepo } = await createService(homeDir);
+    const { employee, service, chatSessionRepo, chatMessageRepo } = await createService(homeDir);
 
     const alpha = await chatSessionRepo.create({
       employeeId: employee.id,
@@ -174,6 +174,12 @@ describe("EmployeeRunService chat session persistence", () => {
       messageCountIncrement: 1,
       latestContent: "C1"
     });
+    await chatMessageRepo.createMany([
+      { sessionId: alpha.id, role: "assistant", content: "A-old", createdAt: "2026-01-01T00:00:00.000Z" },
+      { sessionId: beta.id, role: "user", content: "B-old", createdAt: "2026-01-02T00:00:00.000Z" },
+      { sessionId: beta.id, role: "assistant", content: "B-new", createdAt: "2026-01-03T00:00:00.000Z" },
+      { sessionId: gamma.id, role: "assistant", content: "C-only", createdAt: "2026-01-04T00:00:00.000Z" }
+    ]);
 
     const firstPage = await service.listChatSessions({
       employeeId: employee.id,
@@ -181,7 +187,9 @@ describe("EmployeeRunService chat session persistence", () => {
     });
     expect(firstPage.items).toHaveLength(2);
     expect(firstPage.items[0]?.sessionKey).toBe("session-gamma");
+    expect(firstPage.items[0]?.lastMessageAt).toBe("2026-01-04T00:00:00.000Z");
     expect(firstPage.items[1]?.sessionKey).toBe("session-beta");
+    expect(firstPage.items[1]?.lastMessageAt).toBe("2026-01-03T00:00:00.000Z");
     expect(firstPage.nextCursor).toBeTruthy();
 
     const secondPage = await service.listChatSessions({
@@ -190,6 +198,7 @@ describe("EmployeeRunService chat session persistence", () => {
       before: firstPage.nextCursor
     });
     expect(secondPage.items.map((item) => item.sessionKey)).toEqual(["session-alpha"]);
+    expect(secondPage.items[0]?.lastMessageAt).toBe("2026-01-01T00:00:00.000Z");
     expect(secondPage.nextCursor).toBeNull();
   });
 
