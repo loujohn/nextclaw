@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type ChatMessageRecord } from "../db/schema";
-import { dbNow } from "../db/knex";
+import { normalizeChatMessageTimestamp } from "../chat/chat-message-normalization";
 
 export type ChatMessageView = {
   id: string;
@@ -81,7 +81,7 @@ export class ChatMessageRepository {
       tool_name: input.toolName ?? null,
       tool_call_id: input.toolCallId ?? null,
       metadata_json: JSON.stringify(input.metadata ?? {}),
-      created_at: input.createdAt ?? dbNow()
+      created_at: normalizeChatMessageTimestamp(input.createdAt)
     }));
     await this.db<ChatMessageRecord>(PLATFORM_TABLES.chatMessages).insert(rows);
     return rows.map(toView);
