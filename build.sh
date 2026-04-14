@@ -8,16 +8,35 @@ if [ $? -ne 0 ];then
   exit 1
 fi
 pnpm --filter @nextclaw/digital-employee build
-if [ $? -eq 0 ] && [ -d $CACHEADDR/dist ];then
+if [ $? -eq 0 ] && [ -d packages/nextclaw-digital-employee/dist ]; then
    echo -e "\033[32m项目构建成功!\033[0m"
 else
   echo -e "\033[31mpackages/nextclaw-digital-employee编译失败!\033[0m"
   exit 1
 fi
 
+# ── Install knex-dm / dmdb runtime deps (CJS drivers that Nitro cannot bundle) ──
+DE_DIST_SERVER="packages/nextclaw-digital-employee/dist/server"
+echo -e "\033[34m[deploy] 安装 knex-dm 运行时依赖...\033[0m"
+KNEX_TMP=$(mktemp -d)
+echo '{"private":true,"dependencies":{"knex-dm":"^1.0.48662","dmdb":"^1.0.48286","knex":"^3.1.0"}}' > "$KNEX_TMP/package.json"
+(cd "$KNEX_TMP" && npm install --omit=dev --registry https://registry.npmmirror.com)
+if [ $? -ne 0 ]; then
+  rm -rf "$KNEX_TMP"
+  echo -e "\033[31m[deploy] knex-dm 依赖安装失败!\033[0m"
+  exit 1
+fi
+cp -r "$KNEX_TMP/node_modules" "$DE_DIST_SERVER/node_modules"
+rm -rf "$KNEX_TMP"
+echo -e "\033[32m[deploy] knex-dm 运行时依赖安装完成!\033[0m"
+
 # ── Channel plugin runtime: pnpm deploy --prod ──────────────────────────────
 # compat-deploy 放在 dist/_compat-deploy/ 内，确保随 dist 缓存一起被 deploy 阶段恢复
 COMPAT_DEPLOY_DIR="packages/nextclaw-digital-employee/dist/_compat-deploy"
+
+# 清理旧产物，避免残留依赖造成运行时模块解析异常
+rm -rf "$COMPAT_DEPLOY_DIR"
+
 echo -e "\033[34m[deploy] 生成 openclaw-compat 生产依赖包...\033[0m"
 pnpm --filter @nextclaw/openclaw-compat deploy --prod "$COMPAT_DEPLOY_DIR"
 if [ $? -ne 0 ]; then
@@ -49,6 +68,5 @@ for pair in "packages/nextclaw-core:core" "packages/extensions/nextclaw-channel-
     echo "  copied $src/dist -> $dest/dist"
   fi
 done
-
 
 echo -e "\033[32m[deploy] channel plugin runtime 构建完成!\033[0m"
