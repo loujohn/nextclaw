@@ -13,8 +13,11 @@ fi
 
 if [ -f "/app/server/.env" ]; then
   echo "[env] Loading /app/server/.env"
-  set -a
-  . /app/server/.env
-  set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '#'*|'') continue ;;
+    esac
+    export "$line"
+  done < /app/server/.env
 fi
 exec node server/index.mjs
