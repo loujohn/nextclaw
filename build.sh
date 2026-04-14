@@ -30,6 +30,15 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# pnpm deploy 产生的 node_modules 内包含指向 .pnpm/ 虚拟存储的符号链接。
+# Docker COPY 只复制 node_modules/ 目录，不含同级的 .pnpm/，导致链接断裂。
+# 用 cp -rL 将符号链接展开为真实文件，确保 Docker 镜像中模块可正常加载。
+echo -e "\033[34m[deploy] 展开 runtime node_modules 符号链接...\033[0m"
+cp -rL "$RUNTIME_DEPLOY_DIR/node_modules" "$RUNTIME_DEPLOY_DIR/node_modules_flat"
+rm -rf "$RUNTIME_DEPLOY_DIR/node_modules"
+mv "$RUNTIME_DEPLOY_DIR/node_modules_flat" "$RUNTIME_DEPLOY_DIR/node_modules"
+echo -e "\033[32m[deploy] runtime node_modules 符号链接展开完成!\033[0m"
+
 echo -e "\033[34m[deploy] 生成 openclaw-compat 生产依赖包...\033[0m"
 pnpm --filter @nextclaw/openclaw-compat deploy --prod "$COMPAT_DEPLOY_DIR"
 if [ $? -ne 0 ]; then
