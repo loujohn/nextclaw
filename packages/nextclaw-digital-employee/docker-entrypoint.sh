@@ -11,9 +11,10 @@ else
   ls -la /app/server/node_modules/ 2>/dev/null || echo "[boot] /app/server/node_modules/ does not exist"
 fi
 
-if [ -f "/data/.env" ]; then
-  echo "[env] Loading /data/.env"
-  exec node --env-file=/data/.env server/index.mjs
-else
-  exec node server/index.mjs
+if [ -f "/app/server/.env" ]; then
+  echo "[env] Loading /app/server/.env into environment"
+  set -a
+  . /app/server/.env
+  set +a
 fi
+exec node server/index.mjs
