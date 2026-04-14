@@ -1,7 +1,11 @@
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import knex, { type Knex } from "knex";
 
-const _require = createRequire(import.meta.url);
+// import.meta.url 在 Nitro/Rollup 打包后会被替换为虚拟入口路径 /_entry.js，
+// 导致 createRequire 从根目录 / 解析模块。使用 process.cwd() 确保始终从
+// 应用工作目录（/app）解析，兼容开发和生产环境。
+const _require = createRequire(resolve(process.cwd(), "index.js"));
 
 export type DmConnectionConfig = {
   connectString: string;
