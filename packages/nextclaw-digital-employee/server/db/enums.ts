@@ -9,6 +9,7 @@ export const RunStatus = {
   Pending: "pending",
   Running: "running",
   Completed: "completed",
+  Aborted: "aborted",
   Failed: "failed",
   Interrupted: "interrupted",
 } as const;

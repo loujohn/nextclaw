@@ -16,6 +16,14 @@ import { EmployeeRunService } from "./employee-run-service";
 import type { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { resolveEmployeeWorkspace } from "../engine/employee-workspace";
 
+function buildScheduledSessionKey(employeeId: string, scope: string): string {
+  return `employee:${employeeId}:scheduled:${scope}`;
+}
+
+function buildScheduledSessionTitle(title: string): string {
+  return `定时任务 · ${title}`;
+}
+
 export class AutomationService {
   private started = false;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
@@ -49,7 +57,9 @@ export class AutomationService {
           employeeId: schedJob.employeeId,
           message,
           triggerType: "scheduled",
-          triggerSource: schedJob.id
+          triggerSource: schedJob.id,
+          sessionKey: buildScheduledSessionKey(schedJob.employeeId, `job:${schedJob.id}`),
+          sessionTitle: buildScheduledSessionTitle(schedJob.name)
         });
         return result.reply;
       }
@@ -64,7 +74,9 @@ export class AutomationService {
           employeeId,
           message,
           triggerType: "scheduled",
-          triggerSource: "cron"
+          triggerSource: "cron",
+          sessionKey: buildScheduledSessionKey(employeeId, "legacy-schedule"),
+          sessionTitle: buildScheduledSessionTitle("默认计划")
         });
         return result.reply;
       }
@@ -80,7 +92,9 @@ export class AutomationService {
           employeeId: employee.id,
           message,
           triggerType: "scheduled",
-          triggerSource: job.id
+          triggerSource: job.id,
+          sessionKey: buildScheduledSessionKey(employee.id, `runtime:${job.id}`),
+          sessionTitle: buildScheduledSessionTitle(job.name || "对话创建任务")
         });
         return result.reply;
       }
@@ -120,7 +134,7 @@ export class AutomationService {
 
       if (job.scheduleKind === "heartbeat") {
         const intervalS = job.heartbeatIntervalS ?? undefined;
-        this.startJobHeartbeat(job.id, job.employeeId, employee.code, intervalS, job.taskPrompt);
+        this.startJobHeartbeat(job.id, job.employeeId, employee.code, intervalS, job.taskPrompt, job.name);
         continue;
       }
 
@@ -158,7 +172,9 @@ export class AutomationService {
           employeeId,
           message: prompt,
           triggerType: "scheduled",
-          triggerSource: "heartbeat"
+          triggerSource: "heartbeat",
+          sessionKey: buildScheduledSessionKey(employeeId, "heartbeat"),
+          sessionTitle: buildScheduledSessionTitle("心跳巡检")
         });
         return result.reply;
       },
@@ -182,7 +198,8 @@ export class AutomationService {
     employeeId: string,
     employeeCode: string,
     intervalS?: number,
-    taskPrompt?: string
+    taskPrompt?: string,
+    jobName?: string
   ): void {
     const existing = this.jobHeartbeats.get(jobId);
     if (existing) {
@@ -197,7 +214,9 @@ export class AutomationService {
           employeeId,
           message,
           triggerType: "scheduled",
-          triggerSource: "heartbeat"
+          triggerSource: "heartbeat",
+          sessionKey: buildScheduledSessionKey(employeeId, `job-heartbeat:${jobId}`),
+          sessionTitle: buildScheduledSessionTitle(jobName || "心跳任务")
         });
         return result.reply;
       },
@@ -340,7 +359,7 @@ export class AutomationService {
         enabled: input.enabled ?? true
       });
       if (input.enabled !== false) {
-        this.startJobHeartbeat(job.id, input.employeeId, employee.code, intervalS, input.taskPrompt);
+        this.startJobHeartbeat(job.id, input.employeeId, employee.code, intervalS, input.taskPrompt, input.name);
       }
       return job;
     }
@@ -418,7 +437,8 @@ export class AutomationService {
         existing.employeeId,
         employee.code,
         intervalS,
-        input.taskPrompt ?? existing.taskPrompt
+        input.taskPrompt ?? existing.taskPrompt,
+        input.name ?? existing.name
       );
       return (await this.jobRepo.getById(jobId)) ?? updated;
     }

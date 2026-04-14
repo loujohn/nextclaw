@@ -5,7 +5,7 @@ export async function up(knex: Knex): Promise<void> {
 
   if (!(await knex.schema.hasColumn("users", "auth_provider"))) {
     await knex.schema.alterTable("users", (t) => {
-      t.text("auth_provider").notNullable().defaultTo("keycloak");
+      t.string("auth_provider").notNullable().defaultTo("keycloak");
     });
   }
 

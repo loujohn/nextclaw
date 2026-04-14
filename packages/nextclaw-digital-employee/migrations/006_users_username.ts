@@ -6,7 +6,7 @@ export async function up(knex: Knex): Promise<void> {
 
   if (!(await knex.schema.hasColumn("users", "username"))) {
     await knex.schema.alterTable("users", (t) => {
-      t.text("username").notNullable().defaultTo("");
+      t.string("username").notNullable().defaultTo("");
     });
 
     await knex("users")

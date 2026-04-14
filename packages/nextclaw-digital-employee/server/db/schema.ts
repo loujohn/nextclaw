@@ -9,6 +9,8 @@ export const PLATFORM_TABLES = {
   integrationConnections: "integration_connections",
   runRecords: "run_records",
   runEvents: "run_events",
+  chatSessions: "chat_sessions",
+  chatMessages: "chat_messages",
   orgSyncConfig: "org_sync_config",
   secrets: "secrets",
   users: "users",
@@ -85,6 +87,7 @@ export type SkillInstallationRecord = {
 export type RunRecord = {
   id: string;
   employee_id: string | null;
+  session_key: string | null;
   trigger_type: string;
   trigger_source: string;
   status: string;
@@ -100,6 +103,28 @@ export type RunEventRecord = {
   seq: number;
   event_type: string;
   payload_json: string;
+  created_at: string;
+};
+
+export type ChatSessionRecord = {
+  id: string;
+  employee_id: string;
+  session_key: string;
+  title: string;
+  preview: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  tool_name: string | null;
+  tool_call_id: string | null;
+  metadata_json: string;
   created_at: string;
 };
 

@@ -21,6 +21,8 @@ import { EmployeeScheduleJobRepository } from "../repositories/employee-schedule
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { HumanEmployeeRepository } from "../repositories/human-employee-repository";
 import { RunRecordRepository } from "../repositories/run-record-repository";
+import { ChatSessionRepository } from "../repositories/chat-session-repository";
+import { ChatMessageRepository } from "../repositories/chat-message-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
 import { SecretsRepository } from "../repositories/secrets-repository";
@@ -40,6 +42,8 @@ type PlatformContext = {
   employeeScheduleRepo: EmployeeScheduleRepository;
   employeeScheduleJobRepo: EmployeeScheduleJobRepository;
   runRepo: RunRecordRepository;
+  chatSessionRepo: ChatSessionRepository;
+  chatMessageRepo: ChatMessageRepository;
   skillInstallationRepo: SkillInstallationRepository;
   integrationConnectionRepo: IntegrationConnectionRepository;
   secretsRepo: SecretsRepository;
@@ -147,9 +151,19 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const employeeScheduleRepo = new EmployeeScheduleRepository(db);
       const employeeScheduleJobRepo = new EmployeeScheduleJobRepository(db);
       const runRepo = new RunRecordRepository(db);
+      const chatSessionRepo = new ChatSessionRepository(db);
+      const chatMessageRepo = new ChatMessageRepository(db);
       const skillInstallationRepo = new SkillInstallationRepository(db);
       const skillInstallService = new SkillInstallService(skillInstallationRepo, gateway);
-      const employeeRunService = new EmployeeRunService(employeeRepo, employeeSkillRepo, runRepo, gateway, skillInstallationRepo);
+      const employeeRunService = new EmployeeRunService(
+        employeeRepo,
+        employeeSkillRepo,
+        runRepo,
+        gateway,
+        skillInstallationRepo,
+        chatSessionRepo,
+        chatMessageRepo
+      );
       const channelRuntime = new DigitalEmployeeChannelRuntime({
         gateway,
         employeeRepo,
@@ -233,6 +247,8 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeScheduleRepo,
         employeeScheduleJobRepo,
         runRepo,
+        chatSessionRepo,
+        chatMessageRepo,
         skillInstallationRepo,
         integrationConnectionRepo,
         secretsRepo,

@@ -5,24 +5,24 @@ export async function up(knex: Knex): Promise<void> {
   if (await knex.schema.hasTable("users")) return;
 
   await knex.schema.createTable("users", (t) => {
-    t.text("id").primary();
-    t.text("keycloak_sub").notNullable().defaultTo("");
-    t.text("username").notNullable().defaultTo("");
-    t.text("email").notNullable();
-    t.text("display_name").notNullable().defaultTo("");
+    t.string("id").primary();
+    t.string("keycloak_sub").notNullable().defaultTo("");
+    t.string("username").notNullable().defaultTo("");
+    t.string("email").notNullable();
+    t.string("display_name").notNullable().defaultTo("");
     t.text("avatar_url").notNullable().defaultTo("");
-    t.text("role").notNullable().defaultTo("user");
+    t.string("role").notNullable().defaultTo("user");
     t.integer("is_active").notNullable().defaultTo(1);
-    t.text("department_id").nullable()
+    t.string("department_id").nullable()
       .references("id").inTable("departments").onDelete("SET NULL");
-    t.text("human_employee_id").nullable()
+    t.string("human_employee_id").nullable()
       .references("id").inTable("human_employees").onDelete("SET NULL");
     t.text("preferences").notNullable().defaultTo("{}");
-    t.text("auth_provider").notNullable().defaultTo("local");
+    t.string("auth_provider").notNullable().defaultTo("local");
     t.text("password_hash").nullable();
-    t.text("last_login_at").nullable();
-    t.text("created_at").notNullable();
-    t.text("updated_at").notNullable();
+    t.timestamp("last_login_at").nullable();
+    t.timestamp("created_at").notNullable();
+    t.timestamp("updated_at").notNullable();
   });
 
   await createIndexIfNotExists(knex, "idx_users_keycloak_sub",
