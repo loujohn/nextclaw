@@ -20,6 +20,7 @@ import {
   HeartbeatService
 } from "@nextclaw/core";
 import { buildPlatformRuntimeConfig } from "../runtime/openclaw-runtime";
+import { normalizeChatMessageContent } from "../chat/chat-message-normalization";
 import type { SecretsRepository } from "../repositories/secrets-repository";
 
 export type NextclawEngineGatewayOptions = {
@@ -470,7 +471,7 @@ export class NextclawEngineGateway {
 
   private mapSessionMessage(message: Record<string, unknown>): SessionHistoryMessage | null {
     const role = String(message.role ?? "");
-    const content = typeof message.content === "string" ? message.content : "";
+    const content = normalizeChatMessageContent(message.content);
     const timestamp = typeof message.timestamp === "string" ? message.timestamp : undefined;
 
     if (role === "user" || role === "system") {

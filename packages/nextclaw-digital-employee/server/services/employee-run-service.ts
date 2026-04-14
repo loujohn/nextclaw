@@ -12,6 +12,10 @@ import {
   type ChatMessageView,
   type ChatResultCardView
 } from "../../shared/ui-models";
+import {
+  normalizeChatMessageContent,
+  normalizeChatMessageTimestamp,
+} from "../chat/chat-message-normalization";
 import { prepareEmployeeRuntime } from "./employee-runtime-preparation";
 import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
@@ -448,7 +452,7 @@ export class EmployeeRunService {
       triggerSource: "chat",
       sessionKey: session.sessionKey
     });
-    const userMessageCreatedAt = new Date().toISOString();
+    const userMessageCreatedAt = normalizeChatMessageTimestamp();
     await messageRepo.createMany([{
       sessionId: session.id,
       role: "user",
@@ -574,7 +578,7 @@ export class EmployeeRunService {
           if (message.role === "tool") {
             streamedToolResults = mergeToolResultMessages(streamedToolResults, {
               role: "tool",
-              content: typeof message.content === "string" ? message.content : "",
+              content: normalizeChatMessageContent(message.content),
               ...(typeof message.tool_call_id === "string" ? { toolCallId: message.tool_call_id } : {}),
               ...(typeof message.name === "string" ? { toolName: message.name } : {})
             });
@@ -584,7 +588,7 @@ export class EmployeeRunService {
                 runId: run.id,
                 toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
                 name: typeof message.name === "string" ? message.name : "工具结果",
-                output: typeof message.content === "string" ? message.content : ""
+                output: normalizeChatMessageContent(message.content)
               }
             });
           }
