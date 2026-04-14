@@ -13,6 +13,8 @@ fi
 
 if [ -f "/app/server/.env" ]; then
   echo "[env] Loading /app/server/.env"
-  export $(grep -v '^#' /app/server/.env | grep -v '^$' | xargs)
+  set -a
+  . /app/server/.env
+  set +a
 fi
 exec node server/index.mjs
