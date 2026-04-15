@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     const a = Buffer.from(provided);
     const b = Buffer.from(employee.webhookSecret);
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      logger.warn(`Webhook token mismatch for employee ${code}`);
+      logger.warn(`员工 ${code} 的 Webhook 密钥不匹配`);
       throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
     }
   }
@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
     `## 请求头\n\`\`\`json\n${JSON.stringify(headers, null, 2)}\n\`\`\`\n\n` +
     `## 请求体\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``;
 
-  logger.info(`Webhook received for employee ${code}, dispatching...`);
+  logger.info(`收到员工 ${code} 的 Webhook 请求，分派处理中...`);
 
   ctx.employeeRunService
     .runEmployeeTurn({
@@ -64,10 +64,10 @@ export default defineEventHandler(async (event) => {
       sessionTitle: `Webhook · ${new Date().toISOString().slice(0, 16)}`,
     })
     .then((result) => {
-      logger.info(`Webhook task completed for ${code} (runId: ${result.runId})`);
+      logger.info(`员工 ${code} 的 Webhook 任务完成 (runId: ${result.runId})`);
     })
     .catch((err) => {
-      logger.error(`Webhook task failed for ${code}:`, err);
+      logger.error(`员工 ${code} 的 Webhook 任务失败:`, err);
     });
 
   return {

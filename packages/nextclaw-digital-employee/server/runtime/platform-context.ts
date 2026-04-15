@@ -162,7 +162,8 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         gateway,
         skillInstallationRepo,
         chatSessionRepo,
-        chatMessageRepo
+        chatMessageRepo,
+        integrationConnectionRepo
       );
       const channelRuntime = new DigitalEmployeeChannelRuntime({
         gateway,
