@@ -7,6 +7,7 @@ import { ChatSessionRepository, type ChatSessionPage, type ChatSessionView } fro
 import { ChatMessageRepository, type ChatMessageView as PersistedChatMessageView } from "../repositories/chat-message-repository";
 import { NextclawEngineGateway, type SessionHistoryMessage, type ToolCallView } from "../engine/NextclawEngineGateway";
 import {
+  buildChatFailureMessage,
   buildChatResultCards,
   formatRunStatusMeta,
   type ChatMessageView,
@@ -239,6 +240,31 @@ function buildAbortedStreamMessages(params: {
   }
 
   return [...messages, ...params.toolResults];
+}
+
+function buildFailedStreamMessages(params: {
+  partialReply: string;
+  reasoning?: string;
+  toolCalls: ToolCallView[];
+  toolResults: SessionHistoryMessage[];
+  errorMessage: string;
+}): SessionHistoryMessage[] {
+  return [
+    ...buildAbortedStreamMessages(params),
+    {
+      role: "assistant",
+      content: buildChatFailureMessage(params.errorMessage)
+    }
+  ];
+}
+
+function buildFailedAutomationMessages(params: {
+  errorMessage: string;
+}): SessionHistoryMessage[] {
+  return [{
+    role: "assistant",
+    content: buildChatFailureMessage(params.errorMessage)
+  }];
 }
 
 function buildRunIntervals(runs: RunRecordView[]): Array<{ status: string; startedAtMs: number; nextStartedAtMs: number | null }> {
@@ -743,6 +769,25 @@ export class EmployeeRunService {
       }
 
       const classified = classifyError(error);
+      const failedMessages = buildFailedStreamMessages({
+        partialReply: deltaParts.join(""),
+        reasoning: streamedReasoning,
+        toolCalls: streamedToolCalls,
+        toolResults: streamedToolResults,
+        errorMessage: classified.message
+      });
+      const persistedMessages = await this.persistChatMessages(session.id, failedMessages, {
+        runId: run.id,
+        runStatus: RunStatus.Failed
+      });
+      if (persistedMessages.length > 0) {
+        await sessionRepo.touchWithMessage({
+          sessionId: session.id,
+          messageCountIncrement: persistedMessages.length,
+          latestContent: pickLatestPreview(failedMessages, buildChatFailureMessage(classified.message)),
+          titleSeed: params.message
+        });
+      }
       await this.runRepo.complete(run.id, {
         status: RunStatus.Failed,
         summary: classified.message,
@@ -882,11 +927,29 @@ export class EmployeeRunService {
       };
     } catch (error) {
       const classified = classifyError(error);
+      if (automatedChatSession && persistence) {
+        const failedMessages = buildFailedAutomationMessages({
+          errorMessage: classified.message
+        });
+        const persistedMessages = await this.persistChatMessages(automatedChatSession.id, failedMessages, {
+          runId: run.id,
+          runStatus: RunStatus.Failed
+        });
+        if (persistedMessages.length > 0) {
+          await persistence.sessionRepo.touchWithMessage({
+            sessionId: automatedChatSession.id,
+            messageCountIncrement: persistedMessages.length,
+            latestContent: pickLatestPreview(failedMessages, buildChatFailureMessage(classified.message)),
+            titleSeed: params.sessionTitle ?? params.message
+          });
+        }
+      }
       await this.runRepo.complete(run.id, {
         status: RunStatus.Failed,
         summary: String(error),
         result: {
-          error: classified.toJSON()
+          error: classified.toJSON(),
+          ...(automatedChatSession?.sessionKey ? { sessionKey: automatedChatSession.sessionKey } : {})
         }
       });
       throw classified;

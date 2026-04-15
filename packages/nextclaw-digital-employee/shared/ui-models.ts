@@ -488,6 +488,17 @@ export function formatRunStatusMeta(status: string): ChatReplyStatusView {
   return { value: status, label: "等待中", tone: "slate" };
 }
 
+export function buildChatFailureMessage(message?: string): string {
+  const trimmed = message?.trim() ?? "";
+  if (!trimmed) {
+    return "执行失败，请稍后重试。";
+  }
+  if (/^执行失败[：:，,]?/.test(trimmed)) {
+    return trimmed;
+  }
+  return `执行失败：${trimmed}`;
+}
+
 export function formatRunStatusLabel(status: string): string {
   return formatRunStatusMeta(status).label;
 }

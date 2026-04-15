@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
-import { basename, extname, join, relative } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { basename, dirname, extname, join, relative } from "node:path";
 import type { EmployeeRepository } from "../repositories/employee-repository";
 import type { ChatMessageRepository } from "../repositories/chat-message-repository";
 import type { UploadWorkspaceTreeNode, UploadedWorkspaceFilePayload } from "../../shared/api-types";
@@ -133,6 +133,30 @@ export class EmployeeUploadFileService {
         uploadDate
       } satisfies ChatAttachmentView;
     });
+  }
+
+  async deleteUploadedFile(params: { employeeId: string; relativePath: string }): Promise<{ deleted: boolean }> {
+    const employee = await this.getEmployeeOrThrow(params.employeeId);
+    const workspaceDir = resolveEmployeeWorkspace(this.homeDir, employee.code);
+    const normalizedPath = normalizeRelativeUploadPath(params.relativePath);
+    const attachmentRefs = await this.chatMessageRepo.listAttachmentReferencesByEmployeeId(employee.id);
+    if (attachmentRefs.some((item) => item.relativePath === normalizedPath)) {
+      throw new Error("该附件已关联会话消息，不能删除");
+    }
+    const absolutePath = resolveUploadedFilePath(workspaceDir, normalizedPath);
+    if (!existsSync(absolutePath)) {
+      return { deleted: false };
+    }
+    rmSync(absolutePath, { force: true });
+    const uploadDateDir = dirname(absolutePath);
+    if (existsSync(uploadDateDir) && readdirSync(uploadDateDir).length === 0) {
+      rmSync(uploadDateDir, { recursive: true, force: true });
+    }
+    const uploadRoot = resolveEmployeeUploadRoot(this.homeDir, employee.code);
+    if (existsSync(uploadRoot) && readdirSync(uploadRoot).length === 0) {
+      rmSync(uploadRoot, { recursive: true, force: true });
+    }
+    return { deleted: true };
   }
 
   async listUploadedFiles(params: { employeeId: string }): Promise<UploadWorkspaceTreeNode[]> {
