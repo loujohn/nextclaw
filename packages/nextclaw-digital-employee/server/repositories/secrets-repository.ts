@@ -4,11 +4,14 @@ import { join } from "node:path";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type SecretRecord } from "../db/schema";
 import { dbNow } from "../db/knex";
+import { createLogger } from "../utils/logger";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const ENCRYPTION_VERSION = 0x01;
+const INVALID_SECRET_MASK = "[invalid secret]";
+const secretsLog = createLogger("SecretsRepository");
 
 export type SecretView = {
   id: string;
@@ -70,12 +73,23 @@ function decrypt(ciphertext: string, key: Buffer): string {
   return decryptRaw(data, key, 0);
 }
 
+function tryDecrypt(record: SecretRecord, key: Buffer, logFailure = false): string | null {
+  try {
+    return decrypt(record.value, key);
+  } catch (error) {
+    if (logFailure) {
+      secretsLog.warn(`skip invalid secret key=${record.key} scope=${record.scope}`, error);
+    }
+    return null;
+  }
+}
+
 function toView(record: SecretRecord, key: Buffer): SecretView {
-  const plain = decrypt(record.value, key);
+  const plain = tryDecrypt(record, key);
   return {
     id: record.id,
     key: record.key,
-    maskedValue: maskValue(plain),
+    maskedValue: plain === null ? INVALID_SECRET_MASK : maskValue(plain),
     scope: record.scope,
     description: record.description,
     createdAt: record.created_at,
@@ -134,7 +148,11 @@ export class SecretsRepository {
     const rows = await this.db<SecretRecord>(PLATFORM_TABLES.secrets).whereIn("scope", scopes);
     const result = new Map<string, string>();
     for (const row of rows) {
-      result.set(row.key, decrypt(row.value, this.encryptionKey));
+      const decrypted = tryDecrypt(row, this.encryptionKey, true);
+      if (decrypted === null) {
+        continue;
+      }
+      result.set(row.key, decrypted);
     }
     return result;
   }
