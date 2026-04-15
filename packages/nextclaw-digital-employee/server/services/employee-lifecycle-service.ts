@@ -101,6 +101,8 @@ export class EmployeeLifecycleService {
       skillNames?: string[];
       schedule?: { scheduleKind: string; cronExpr?: string; everyMs?: number };
       workspaceFiles?: Record<string, string>;
+      webhookEnabled?: boolean;
+      webhookSecret?: string | null;
     }
   ): Promise<{ employee: EmployeeView; skills: unknown[]; jobs: unknown[] }> {
     const existing = await this.employeeRepo.getById(id);
@@ -109,13 +111,22 @@ export class EmployeeLifecycleService {
     }
 
     const name = input.name?.trim() || existing.name;
-    const updated = await this.employeeRepo.updateById(id, {
+    const updateInput: Parameters<EmployeeRepository["updateById"]>[1] = {
       name,
       description: input.description ?? existing.description,
       systemPrompt: input.systemPrompt ?? existing.systemPrompt,
       model: input.model ?? existing.model,
-      departmentId: input.departmentId !== undefined ? input.departmentId : undefined,
-    });
+    };
+    if (input.departmentId !== undefined) {
+      updateInput.departmentId = input.departmentId;
+    }
+    if (input.webhookEnabled !== undefined) {
+      updateInput.webhookEnabled = input.webhookEnabled;
+    }
+    if (input.webhookSecret !== undefined) {
+      updateInput.webhookSecret = input.webhookSecret;
+    }
+    const updated = await this.employeeRepo.updateById(id, updateInput);
     if (!updated) {
       throw Object.assign(new Error(`employee not found: ${id}`), { statusCode: 404 });
     }

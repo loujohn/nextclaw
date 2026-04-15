@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileText, Download, Eye, Pencil, Save, RefreshCw, Lock, Bot, ChevronDown, ChevronRight, FolderOpen } from "lucide-vue-next";
+import { FileText, Download, Eye, Pencil, Save, RefreshCw, Lock, Bot, ChevronDown, ChevronRight, FolderOpen, Webhook, Copy, Check, ShieldCheck, RotateCw } from "lucide-vue-next";
 import { renderMarkdown } from "~/lib/utils";
 
 const route = useRoute();
@@ -265,7 +265,80 @@ watchEffect(() => {
   }
 });
 
-const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
+const configTab = ref<'dingtalk' | 'workspace' | 'webhook'>('dingtalk');
+
+// ── Webhook ──────────────────────────────────────────────────────────────────
+const { data: employeeDetail, refresh: refreshEmployee } = useLazyFetch<{
+  ok: boolean;
+  data: {
+    code: string;
+    webhookEnabled: boolean;
+    webhookSecret: string | null;
+  };
+}>(() => `/api/employees/${employeeId.value}`);
+
+const webhookEnabled = ref(false);
+const webhookSecret = ref("");
+const webhookSaving = ref(false);
+const webhookSaved = ref(false);
+const webhookCopied = ref(false);
+
+watchEffect(() => {
+  if (employeeDetail.value?.data) {
+    webhookEnabled.value = employeeDetail.value.data.webhookEnabled;
+    webhookSecret.value = employeeDetail.value.data.webhookSecret ?? "";
+  }
+});
+
+const webhookUrl = computed(() => {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const code = employeeDetail.value?.data?.code ?? "";
+  const base = `${origin}/api/webhooks/e/${code}`;
+  if (webhookSecret.value) {
+    return `${base}?token=${encodeURIComponent(webhookSecret.value)}`;
+  }
+  return base;
+});
+
+function generateSecret() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  for (const byte of arr) {
+    result += chars[byte % chars.length];
+  }
+  webhookSecret.value = result;
+}
+
+async function saveWebhook() {
+  webhookSaving.value = true;
+  webhookSaved.value = false;
+  try {
+    await $fetch(`/api/employees/${employeeId.value}`, {
+      method: "PATCH",
+      body: {
+        webhookEnabled: webhookEnabled.value,
+        webhookSecret: webhookSecret.value || null,
+      },
+    });
+    await refreshEmployee();
+    webhookSaved.value = true;
+    setTimeout(() => { webhookSaved.value = false; }, 2500);
+  } finally {
+    webhookSaving.value = false;
+  }
+}
+
+async function copyWebhookUrl() {
+  try {
+    await navigator.clipboard.writeText(webhookUrl.value);
+    webhookCopied.value = true;
+    setTimeout(() => { webhookCopied.value = false; }, 2000);
+  } catch {
+    /* clipboard API unavailable in insecure context */
+  }
+}
 </script>
 
 <template>
@@ -282,6 +355,11 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
         :class="configTab === 'workspace' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:text-foreground'"
         @click="configTab = 'workspace'"
       >工作空间</button>
+      <button
+        class="rounded-full px-4 py-2 text-sm font-medium transition-colors"
+        :class="configTab === 'webhook' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:text-foreground'"
+        @click="configTab = 'webhook'"
+      >Webhook</button>
     </nav>
 
     <!-- ── 钉钉配置 ──────────────────────────────────────────────────── -->
@@ -351,6 +429,91 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
     <div v-else class="rounded-xl border border-border bg-card shadow-sm px-6 py-10 text-center text-sm text-muted-foreground">
       钉钉渠道未配置，请先在集成中心启用钉钉机器人。
     </div>
+    </template>
+
+    <!-- ── Webhook 配置 ──────────────────────────────────────────────── -->
+    <template v-if="configTab === 'webhook'">
+      <section class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div class="flex items-center gap-3">
+            <Webhook class="h-5 w-5 text-primary" />
+            <div>
+              <span class="section-label">外部触发</span>
+              <h2 class="mt-0.5 text-base font-semibold">Webhook 配置</h2>
+            </div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input v-model="webhookEnabled" type="checkbox" class="sr-only peer" />
+            <div class="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+          </label>
+        </div>
+        <div class="p-5 space-y-5">
+          <p class="text-sm text-muted-foreground leading-relaxed">
+            启用后，外部系统（如 GitLab、GitHub 等）可通过 Webhook URL 向该员工发送事件，员工将根据已安装的技能自动处理请求。
+          </p>
+
+          <!-- Webhook URL -->
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-foreground">Webhook URL</label>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 flex items-center rounded-lg border border-border bg-muted/30 px-3 py-2.5 font-mono text-xs text-foreground select-all overflow-x-auto">
+                {{ webhookUrl }}
+              </div>
+              <button
+                class="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2.5 text-xs font-medium transition-colors"
+                :class="webhookCopied ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'"
+                @click="copyWebhookUrl"
+              >
+                <component :is="webhookCopied ? Check : Copy" class="h-3.5 w-3.5" />
+                {{ webhookCopied ? "已复制" : "复制" }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Webhook Secret -->
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-foreground flex items-center gap-1.5">
+              <ShieldCheck class="h-4 w-4 text-muted-foreground" />
+              鉴权密钥
+              <span class="text-xs text-muted-foreground font-normal">（可选）</span>
+            </label>
+            <div class="flex items-center gap-2">
+              <input
+                v-model="webhookSecret"
+                type="text"
+                placeholder="留空则不校验鉴权"
+                class="flex-1 rounded-lg border border-input bg-background px-3 py-2.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                class="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                title="生成随机密钥"
+                @click="generateSecret"
+              >
+                <RotateCw class="h-3.5 w-3.5" />
+                生成
+              </button>
+            </div>
+            <p class="text-[11px] text-muted-foreground leading-relaxed">
+              配置密钥后，请求需携带 <code class="font-mono bg-muted px-1 py-0.5 rounded">?token=密钥</code> 或请求头 <code class="font-mono bg-muted px-1 py-0.5 rounded">x-webhook-secret: 密钥</code>。
+            </p>
+          </div>
+
+          <!-- Save Button -->
+          <div class="flex items-center gap-3 pt-2">
+            <button
+              class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+              :class="webhookSaved
+                ? 'bg-primary/80 text-primary-foreground'
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'"
+              :disabled="webhookSaving"
+              @click="saveWebhook"
+            >
+              <component :is="webhookSaved ? Check : Save" class="h-3.5 w-3.5" />
+              {{ webhookSaving ? "保存中…" : webhookSaved ? "已保存" : "保存" }}
+            </button>
+          </div>
+        </div>
+      </section>
     </template>
 
     <!-- ── 工作空间文件 ──────────────────────────────────────────────── -->

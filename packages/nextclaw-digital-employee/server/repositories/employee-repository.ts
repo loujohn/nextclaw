@@ -19,6 +19,8 @@ export type UpdateEmployeeInput = {
   systemPrompt: string;
   model?: string;
   departmentId?: string | null;
+  webhookEnabled?: boolean;
+  webhookSecret?: string | null;
 };
 
 export type EmployeeView = {
@@ -30,6 +32,8 @@ export type EmployeeView = {
   model: string;
   status: string;
   departmentId: string | null;
+  webhookEnabled: boolean;
+  webhookSecret: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -44,6 +48,8 @@ function toEmployeeView(record: EmployeeRecord): EmployeeView {
     model: record.model || "",
     status: record.status,
     departmentId: record.department_id ?? null,
+    webhookEnabled: record.webhook_enabled === 1,
+    webhookSecret: record.webhook_secret ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   };
@@ -63,6 +69,8 @@ export class EmployeeRepository {
       model: input.model?.trim() ?? "",
       status: EmployeeStatus.Active,
       department_id: input.departmentId ?? null,
+      webhook_enabled: 0,
+      webhook_secret: null,
       created_at: now,
       updated_at: now
     };
@@ -116,6 +124,12 @@ export class EmployeeRepository {
     };
     if ("departmentId" in input) {
       patch.department_id = input.departmentId ?? null;
+    }
+    if (input.webhookEnabled !== undefined) {
+      patch.webhook_enabled = input.webhookEnabled ? 1 : 0;
+    }
+    if ("webhookSecret" in input) {
+      patch.webhook_secret = input.webhookSecret ?? null;
     }
     const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees).where({ id }).update(patch);
     if (!affected) {

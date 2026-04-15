@@ -135,20 +135,47 @@ python scripts/gitlab-api.py get-commits \
 
 ---
 
+## Webhook 事件处理
+
+当你收到外部 Webhook 请求时，按以下规则判断是否需要执行 Code Review：
+
+### 1. 识别来源
+
+检查请求头中的 `x-gitlab-event` 字段：
+- 存在 → 这是 GitLab 发送的事件，继续处理
+- 不存在 → 非 GitLab 事件，回复"此请求非 GitLab webhook 事件，已忽略"
+
+### 2. 事件过滤
+
+检查请求体中的 `object_kind` 字段：
+
+| object_kind | 条件 | 动作 |
+|---|---|---|
+| `merge_request` | `object_attributes.action` 为 `open`/`update`/`reopen` 且 `state` 不是 `merged`/`closed` | 执行 MR Code Review |
+| `push` | 有 `commits` 数组 | 执行 Push Code Review |
+| 其他 | — | 回复"事件类型 `{object_kind}` 不需要 Code Review，已忽略" |
+
+### 3. 提取关键信息
+
+从 webhook payload 中提取以下信息用于后续步骤：
+- **项目 ID**：`project.id`
+- **项目名称**：`project.path_with_namespace`
+- **项目链接**：`project.web_url`
+- **MR IID**（MR 事件）：`object_attributes.iid`
+- **MR 标题**（MR 事件）：`object_attributes.title`
+- **分支信息**（MR 事件）：`object_attributes.source_branch` → `object_attributes.target_branch`
+- **MR 链接**（MR 事件）：`object_attributes.url`
+- **Before/After SHA**（Push 事件）：`before`、`after`
+- **分支**（Push 事件）：`ref`
+- **提交者**：`user_name` 或 `user_username`
+
+---
+
 ## Code Review 执行流程
 
-当收到 GitLab webhook 事件时，按以下步骤执行 Code Review：
+通过上述 Webhook 事件处理确认需要执行 Code Review 后，按以下步骤操作：
 
-### 步骤 1：解析事件
-
-从 webhook payload 中提取：
-
-- 事件类型（`merge_request` 或 `push`）
-- 项目 ID（`project.id`）
-- MR IID（`object_attributes.iid`，仅 MR 事件）
-- Commit 信息（`commits` 或 `object_attributes`）
-
-### 步骤 2：获取代码变更与提交信息
+### 步骤 1：获取代码变更与提交信息
 
 **MR 事件 — 获取 diff：**
 
@@ -177,7 +204,7 @@ python scripts/gitlab-api.py get-push-diff \
   --before "<before_commit>" --after "<after_commit>"
 ```
 
-### 步骤 3：执行 Code Review（Subagent 模式）
+### 步骤 2：执行 Code Review（Subagent 模式）
 
 使用 Code Reviewer 视角对代码变更进行结构化审查。按以下流程操作：
 
@@ -229,7 +256,7 @@ python scripts/gitlab-api.py get-push-diff \
 - 异常场景覆盖
 - 数据一致性
 
-### 步骤 4：发表评论
+### 步骤 3：发表评论
 
 #### 行级评论（针对具体问题）
 
@@ -316,7 +343,7 @@ python scripts/gitlab-api.py post-note \
 _此评论由 AI 自动生成，仅供参考。_
 ```
 
-### 步骤 5：返回结构化审查结果
+### 步骤 4：返回结构化审查结果
 
 审查完成后，必须返回以下结构化摘要（作为最终回复）：
 
