@@ -77,6 +77,54 @@ export type FileListPayload = {
 
 export type FileContentPayload = { ok: boolean; data: { filename: string; content: string } };
 
+export type WorkspaceEditableMode = "none" | "text";
+
+export type WorkspaceFileNode = {
+  kind: "file";
+  name: string;
+  relativePath: string;
+  sizeBytes: number;
+  previewType: ChatAttachmentPreviewType;
+  canPreview: boolean;
+  editable: boolean;
+  editableMode: WorkspaceEditableMode;
+  origin: "workspace" | "upload";
+  sourceLabel?: string;
+};
+
+export type WorkspaceDirectoryNode = {
+  kind: "directory";
+  name: string;
+  relativePath: string;
+  children: WorkspaceTreeNode[];
+};
+
+export type WorkspaceTreeNode = WorkspaceDirectoryNode | WorkspaceFileNode;
+
+export type WorkspaceTreePayload = {
+  ok: boolean;
+  data: {
+    tree: WorkspaceTreeNode[];
+  };
+};
+
+export type WorkspaceFilePayload = {
+  ok: boolean;
+  data: {
+    entry: WorkspaceFileNode;
+    content?: string;
+    rawUrl: string;
+    downloadUrl: string;
+    previewNotice?: string;
+    source?: {
+      sessionKey?: string;
+      messageId?: string;
+      text?: string;
+      createdAt?: string;
+    };
+  };
+};
+
 export type UploadedWorkspaceFilePayload = {
   ok: boolean;
   data: {

@@ -164,6 +164,9 @@ export function normalizeChatAttachment(value: unknown): ChatAttachmentView | nu
       : {}),
     ...(typeof raw.sourceMessageId === "string" && raw.sourceMessageId.trim()
       ? { sourceMessageId: raw.sourceMessageId.trim() }
+      : {}),
+    ...(typeof raw.sourceCreatedAt === "string" && raw.sourceCreatedAt.trim()
+      ? { sourceCreatedAt: raw.sourceCreatedAt.trim() }
       : {})
   };
 }

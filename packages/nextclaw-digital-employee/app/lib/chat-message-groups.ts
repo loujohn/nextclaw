@@ -185,7 +185,8 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
     const hasVisibleContent = Boolean(activeAssistant.content.trim())
       || Boolean(activeAssistant.reasoning?.trim())
       || activeAssistant.toolCalls.length > 0
-      || activeAssistant.toolResults.length > 0;
+      || activeAssistant.toolResults.length > 0
+      || Boolean(activeAssistant.replyStatus);
     if (hasVisibleContent) {
       output.push({
         ...activeAssistant,
