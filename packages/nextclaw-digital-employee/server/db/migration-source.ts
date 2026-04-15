@@ -8,6 +8,7 @@ import * as m005 from "../../migrations/005_users_local_auth";
 import * as m006 from "../../migrations/006_users_username";
 import * as m007 from "../../migrations/007_seed_default_admin";
 import * as m008 from "../../migrations/008_chat_sessions_messages";
+import * as m009 from "../../migrations/009_employee_webhook";
 
 type MigrationEntry = {
   name: string;
@@ -24,6 +25,7 @@ const migrations: MigrationEntry[] = [
   { name: "006_users_username.ts", ...m006 },
   { name: "007_seed_default_admin.ts", ...m007 },
   { name: "008_chat_sessions_messages.ts", ...m008 },
+  { name: "009_employee_webhook.ts", ...m009 },
 ];
 
 /**
