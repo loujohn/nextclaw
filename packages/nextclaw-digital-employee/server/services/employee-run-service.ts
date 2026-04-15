@@ -23,6 +23,8 @@ import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
 import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
 import { EmployeeUploadFileService } from "./employee-upload-file-service";
+import type { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
+import { buildChannelNotificationHint } from "../utils/channel-notification-hint";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -316,7 +318,8 @@ export class EmployeeRunService {
     private readonly gateway: NextclawEngineGateway,
     private readonly skillInstallationRepo?: SkillInstallationRepository,
     private readonly chatSessionRepo?: ChatSessionRepository,
-    private readonly chatMessageRepo?: ChatMessageRepository
+    private readonly chatMessageRepo?: ChatMessageRepository,
+    private readonly integrationConnectionRepo?: IntegrationConnectionRepository
   ) {}
 
   private requireChatPersistence(): {
@@ -821,6 +824,8 @@ export class EmployeeRunService {
     }
   }
 
+  private static readonly HEADLESS_TRIGGER_TYPES = new Set(["webhook", "scheduled"]);
+
   async runEmployeeTurn(params: {
     employeeId: string;
     message: string;
@@ -839,6 +844,12 @@ export class EmployeeRunService {
           title: params.sessionTitle
         })
       : null;
+
+    let message = params.message;
+    if (EmployeeRunService.HEADLESS_TRIGGER_TYPES.has(params.triggerType) && this.integrationConnectionRepo) {
+      const hint = await buildChannelNotificationHint(this.integrationConnectionRepo, employee.code);
+      if (hint) message = message + hint;
+    }
 
     const run = await this.runRepo.create({
       employeeId: employee.id,
@@ -873,7 +884,7 @@ export class EmployeeRunService {
         employeeId: employee.id,
         agentId: employee.code,
         workspace,
-        message: params.message,
+        message,
         model: employee.model || undefined,
         requestedSkills: skillNames.length > 0 ? skillNames : undefined,
         disableCronTool: params.triggerType === "scheduled"
