@@ -97,6 +97,7 @@ export type ChatAttachmentView = {
   sourceText?: string;
   sourceSessionKey?: string;
   sourceMessageId?: string;
+  sourceCreatedAt?: string;
 };
 
 export type ChatMessageView = {
