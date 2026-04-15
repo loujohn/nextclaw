@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type ChatMessageRecord } from "../db/schema";
 import { normalizeChatMessageTimestamp } from "../chat/chat-message-normalization";
+import type { ChatAttachmentView } from "../../shared/ui-models";
+import { normalizeChatAttachment } from "../chat/chat-attachments";
 
 export type ChatMessageView = {
   id: string;
@@ -20,6 +22,7 @@ export type ChatMessagePage = {
 };
 
 export type CreateChatMessageInput = {
+  id?: string;
   sessionId: string;
   role: ChatMessageView["role"];
   content: string;
@@ -27,6 +30,11 @@ export type CreateChatMessageInput = {
   toolCallId?: string;
   metadata?: Record<string, unknown>;
   createdAt?: string;
+};
+
+export type ChatAttachmentSourceView = {
+  relativePath: string;
+  attachment: ChatAttachmentView;
 };
 
 type CursorToken = {
@@ -74,7 +82,7 @@ export class ChatMessageRepository {
       return [];
     }
     const rows: ChatMessageRecord[] = inputs.map((input) => ({
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       session_id: input.sessionId,
       role: input.role,
       content: input.content,
@@ -117,5 +125,51 @@ export class ChatMessageRepository {
           })
         : null
     };
+  }
+
+  async listAttachmentReferencesByEmployeeId(employeeId: string): Promise<ChatAttachmentSourceView[]> {
+    type AttachmentRow = {
+      message_id: string;
+      session_key: string;
+      source_text: string;
+      metadata_json: string;
+    };
+    const rows = await this.db(`${PLATFORM_TABLES.chatMessages} as messages`)
+      .innerJoin(`${PLATFORM_TABLES.chatSessions} as sessions`, "messages.session_id", "sessions.id")
+      .where("sessions.employee_id", employeeId)
+      .andWhere("messages.role", "user")
+      .orderBy("messages.created_at", "asc")
+      .select<AttachmentRow[]>([
+        "messages.id as message_id",
+        "sessions.session_key as session_key",
+        "messages.content as source_text",
+        "messages.metadata_json as metadata_json"
+      ]);
+    const output: ChatAttachmentSourceView[] = [];
+    for (const row of rows) {
+      let metadata: Record<string, unknown> = {};
+      try {
+        metadata = row.metadata_json ? JSON.parse(row.metadata_json) as Record<string, unknown> : {};
+      } catch {
+        metadata = {};
+      }
+      const attachments = Array.isArray(metadata.attachments) ? metadata.attachments : [];
+      for (const entry of attachments) {
+        const attachment = normalizeChatAttachment(entry);
+        if (!attachment) {
+          continue;
+        }
+        output.push({
+          relativePath: attachment.relativePath,
+          attachment: {
+            ...attachment,
+            sourceText: attachment.sourceText ?? row.source_text,
+            sourceSessionKey: attachment.sourceSessionKey ?? row.session_key,
+            sourceMessageId: attachment.sourceMessageId ?? row.message_id
+          }
+        });
+      }
+    }
+    return output;
   }
 }

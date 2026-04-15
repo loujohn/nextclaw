@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getPlatformContext } from "../../../../runtime/platform-context";
 import { resolveEmployeeWorkspace } from "../../../../engine/employee-workspace";
+import { EmployeeUploadFileService } from "../../../../services/employee-upload-file-service";
 
 const ALL_FILES = ["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md", "SOUL.md", "IDENTITY.md"] as const;
 const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
@@ -15,6 +16,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Employee not found" });
   }
   const wsDir = resolveEmployeeWorkspace(ctx.gateway.homeDir, employee.code);
+  const uploadService = new EmployeeUploadFileService(ctx.employeeRepo, ctx.chatMessageRepo, ctx.gateway.homeDir);
   const files = ALL_FILES.map((filename) => {
     const filePath = join(wsDir, filename);
     const exists = existsSync(filePath);
@@ -26,5 +28,11 @@ export default defineEventHandler(async (event) => {
       writable: WRITABLE_FILES.has(filename),
     };
   });
-  return { ok: true, data: { files } };
+  return {
+    ok: true,
+    data: {
+      coreFiles: files,
+      uploadedFilesTree: await uploadService.listUploadedFiles({ employeeId: id })
+    }
+  };
 });

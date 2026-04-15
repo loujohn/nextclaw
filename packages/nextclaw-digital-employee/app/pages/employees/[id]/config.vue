@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileText, Download, Eye, Pencil, Save, RefreshCw, Lock, Bot } from "lucide-vue-next";
+import { FileText, Download, Eye, Pencil, Save, RefreshCw, Lock, Bot, ChevronDown, ChevronRight, FolderOpen } from "lucide-vue-next";
 import { renderMarkdown } from "~/lib/utils";
 
 const route = useRoute();
@@ -51,51 +51,157 @@ async function saveDingTalkBinding() {
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
-import type { FileListPayload, FileContentPayload } from "~~/shared/api-types";
+import type {
+  FileListPayload,
+  FileContentPayload,
+  UploadedWorkspaceFilePayload,
+  UploadWorkspaceFileNode,
+  UploadWorkspaceTreeNode
+} from "~~/shared/api-types";
 
 const { data: listData, refresh: refreshList, pending: listPending } = useLazyFetch<FileListPayload>(
   () => `/api/employees/${employeeId.value}/workspace`,
   { key: computed(() => `employee-workspace-list:${employeeId.value}`) }
 );
 
-const files = computed(() => listData.value?.data.files ?? []);
+type ConfigWorkspaceSelection =
+  | { type: "core"; filename: string }
+  | { type: "upload"; relativePath: string };
 
-const selectedFilename = ref<string | null>(null);
+const files = computed(() => listData.value?.data.coreFiles ?? []);
+const uploadedFilesTree = computed(() => listData.value?.data.uploadedFilesTree ?? []);
+const workspaceSections = ref({ core: true, uploads: true });
+const expandedUploadTreeKeys = ref<Set<string>>(new Set());
+
+function findUploadedFileNode(nodes: UploadWorkspaceTreeNode[], relativePath: string): UploadWorkspaceFileNode | null {
+  for (const node of nodes) {
+    if (node.kind === "file" && node.relativePath === relativePath) {
+      return node;
+    }
+    if (node.kind !== "file") {
+      const match = findUploadedFileNode(node.children, relativePath);
+      if (match) {
+        return match;
+      }
+    }
+  }
+  return null;
+}
+
+function collectUploadTreeKeys(nodes: UploadWorkspaceTreeNode[], parentKey = ""): string[] {
+  const keys: string[] = [];
+  for (const node of nodes) {
+    if (node.kind === "file") {
+      continue;
+    }
+    const nodeKey = parentKey ? `${parentKey}/${node.label}` : `${node.kind}:${node.label}`;
+    keys.push(nodeKey, ...collectUploadTreeKeys(node.children, nodeKey));
+  }
+  return keys;
+}
+
+const selectedEntry = ref<ConfigWorkspaceSelection | null>(null);
 const mode = ref<"preview" | "edit">("preview");
 const editorContent = ref("");
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const saveSuccess = ref(false);
 
+const selectedCoreEntry = computed(() => selectedEntry.value?.type === "core" ? selectedEntry.value : null);
+const selectedUploadEntry = computed(() => selectedEntry.value?.type === "upload" ? selectedEntry.value : null);
+
 const fileUrl = computed(() =>
-  selectedFilename.value
-    ? `/api/employees/${employeeId.value}/workspace/${selectedFilename.value}`
+  selectedCoreEntry.value
+    ? `/api/employees/${employeeId.value}/workspace/${selectedCoreEntry.value.filename}`
     : `/api/employees/${employeeId.value}/workspace/_`
 );
 const { data: fileData, refresh: refreshFile, pending: filePending } = useLazyFetch<FileContentPayload>(
   fileUrl,
   {
-    key: computed(() => `employee-workspace-file:${employeeId.value}:${selectedFilename.value ?? ""}`),
+    key: computed(() => `employee-workspace-file:${employeeId.value}:${selectedCoreEntry.value?.filename ?? ""}`),
+    watch: false,
+    immediate: false,
+  }
+);
+
+const uploadedFileUrl = computed(() =>
+  selectedUploadEntry.value
+    ? `/api/employees/${employeeId.value}/workspace/uploaded?path=${encodeURIComponent(selectedUploadEntry.value.relativePath)}`
+    : `/api/employees/${employeeId.value}/workspace/uploaded?path=_`
+);
+const { data: uploadedFileData, refresh: refreshUploadedFile, pending: uploadedFilePending } = useLazyFetch<UploadedWorkspaceFilePayload>(
+  uploadedFileUrl,
+  {
+    key: computed(() => `employee-workspace-uploaded:${employeeId.value}:${selectedUploadEntry.value?.relativePath ?? ""}`),
     watch: false,
     immediate: false,
   }
 );
 
 const fileContent = computed(() => fileData.value?.data.content ?? "");
-const selectedFile = computed(() => files.value.find((f) => f.filename === selectedFilename.value) ?? null);
+const uploadedFileContent = computed(() => uploadedFileData.value?.data ?? null);
+const selectedFile = computed(() => selectedCoreEntry.value
+  ? files.value.find((file) => file.filename === selectedCoreEntry.value?.filename) ?? null
+  : null);
+const selectedUploadedFile = computed(() => selectedUploadEntry.value
+  ? findUploadedFileNode(uploadedFilesTree.value, selectedUploadEntry.value.relativePath)
+  : null);
 const isEditable = computed(() => selectedFile.value?.writable ?? false);
+const isUploadSelection = computed(() => selectedEntry.value?.type === "upload");
+const activeLoading = computed(() => isUploadSelection.value ? uploadedFilePending.value : filePending.value);
+const activeTitle = computed(() => {
+  if (selectedCoreEntry.value) {
+    return selectedCoreEntry.value.filename;
+  }
+  return uploadedFileContent.value?.filename ?? selectedUploadedFile.value?.originalName ?? "";
+});
 
 watch(fileContent, (val) => { editorContent.value = val; });
-watch(selectedFilename, (val) => {
+watch(selectedEntry, (value) => {
   mode.value = "preview";
   saveError.value = null;
   saveSuccess.value = false;
-  if (val) refreshFile();
-});
+  if (!value) {
+    return;
+  }
+  if (value.type === "core") {
+    void refreshFile();
+    return;
+  }
+  void refreshUploadedFile();
+}, { deep: true });
 
 function selectFile(filename: string) {
-  if (selectedFilename.value === filename) return;
-  selectedFilename.value = filename;
+  if (selectedCoreEntry.value?.filename === filename) return;
+  selectedEntry.value = { type: "core", filename };
+}
+
+function toggleWorkspaceSection(kind: "core" | "uploads") {
+  workspaceSections.value = {
+    ...workspaceSections.value,
+    [kind]: !workspaceSections.value[kind]
+  };
+}
+
+function isTreeExpanded(key: string): boolean {
+  return expandedUploadTreeKeys.value.has(key);
+}
+
+function toggleTreeKey(key: string) {
+  const next = new Set(expandedUploadTreeKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedUploadTreeKeys.value = next;
+}
+
+function selectUploadedFile(relativePath: string) {
+  if (selectedUploadEntry.value?.relativePath === relativePath) {
+    return;
+  }
+  selectedEntry.value = { type: "upload", relativePath };
 }
 
 function formatBytes(bytes: number): string {
@@ -104,13 +210,13 @@ function formatBytes(bytes: number): string {
 }
 
 async function saveFile() {
-  if (!selectedFilename.value || !isEditable.value) return;
+  if (!selectedCoreEntry.value || !isEditable.value) return;
   saving.value = true;
   saveError.value = null;
   saveSuccess.value = false;
   try {
-    await $fetch(`/api/employees/${employeeId.value}/workspace/${selectedFilename.value}`, {
-      method: "PUT",
+    await $fetch(`/api/employees/${employeeId.value}/workspace/${selectedCoreEntry.value.filename}` as string, {
+      method: "PUT" as any,
       body: { content: editorContent.value }
     });
     saveSuccess.value = true;
@@ -125,21 +231,37 @@ async function saveFile() {
 }
 
 function downloadFile() {
-  if (!selectedFilename.value) return;
+  if (selectedUploadEntry.value) {
+    const downloadUrl = uploadedFileContent.value?.downloadUrl ?? uploadedFileContent.value?.rawUrl;
+    if (!downloadUrl) {
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.download = uploadedFileContent.value?.filename ?? selectedUploadedFile.value?.originalName ?? "file";
+    anchor.target = "_blank";
+    anchor.rel = "noopener";
+    anchor.click();
+    return;
+  }
+  if (!selectedCoreEntry.value) return;
   const content = mode.value === "edit" ? editorContent.value : fileContent.value;
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = selectedFilename.value;
+  a.download = selectedCoreEntry.value.filename;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 watchEffect(() => {
-  if (!selectedFilename.value && files.value.length > 0) {
+  if (expandedUploadTreeKeys.value.size === 0 && uploadedFilesTree.value.length > 0) {
+    expandedUploadTreeKeys.value = new Set(collectUploadTreeKeys(uploadedFilesTree.value));
+  }
+  if (!selectedEntry.value && files.value.length > 0) {
     const first = files.value.find((f) => f.exists);
-    if (first) selectedFilename.value = first.filename;
+    if (first) selectedEntry.value = { type: "core", filename: first.filename };
   }
 });
 
@@ -236,7 +358,7 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
       <div class="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
           <span class="section-label">工作空间</span>
-          <h2 class="mt-0.5 text-base font-semibold">核心配置文件</h2>
+          <h2 class="mt-0.5 text-base font-semibold">核心配置文件与上传文件</h2>
         </div>
         <button
           class="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -250,42 +372,106 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
 
       <div class="flex gap-0 min-h-[480px]">
         <!-- Left: file list -->
-        <aside class="w-56 shrink-0 border-r border-border">
-          <ul class="divide-y divide-border">
-            <li
-              v-for="file in files"
-              :key="file.filename"
-              class="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
-              :class="selectedFilename === file.filename
-                ? 'bg-primary/8 border-l-2 border-l-primary'
-                : 'hover:bg-secondary/60'"
-              @click="selectFile(file.filename)"
-            >
-              <FileText
-                class="h-4 w-4 shrink-0"
-                :class="selectedFilename === file.filename ? 'text-primary' : 'text-muted-foreground'"
-              />
-              <div class="min-w-0 flex-1">
-                <p
-                  class="text-sm font-medium truncate"
-                  :class="selectedFilename === file.filename ? 'text-primary' : 'text-foreground'"
+        <aside class="w-72 shrink-0 border-r border-border">
+          <div class="divide-y divide-border">
+            <div>
+              <button class="flex w-full items-center gap-2 px-4 py-3 text-left" @click="toggleWorkspaceSection('core')">
+                <component :is="workspaceSections.core ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
+                <span class="text-sm font-semibold text-foreground">核心配置文件</span>
+                <span class="ml-auto text-[11px] text-muted-foreground">{{ files.length }}</span>
+              </button>
+              <ul v-if="workspaceSections.core" class="divide-y divide-border">
+                <li
+                  v-for="file in files"
+                  :key="file.filename"
+                  class="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
+                  :class="selectedCoreEntry?.filename === file.filename
+                    ? 'bg-primary/8 border-l-2 border-l-primary'
+                    : 'hover:bg-secondary/60'"
+                  @click="selectFile(file.filename)"
                 >
-                  {{ file.filename }}
-                </p>
-                <p class="text-[11px] text-muted-foreground">
-                  {{ file.exists ? formatBytes(file.sizeBytes) : "空文件" }}
-                </p>
+                  <FileText
+                    class="h-4 w-4 shrink-0"
+                    :class="selectedCoreEntry?.filename === file.filename ? 'text-primary' : 'text-muted-foreground'"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <p
+                      class="text-sm font-medium truncate"
+                      :class="selectedCoreEntry?.filename === file.filename ? 'text-primary' : 'text-foreground'"
+                    >
+                      {{ file.filename }}
+                    </p>
+                    <p class="text-[11px] text-muted-foreground">
+                      {{ file.exists ? formatBytes(file.sizeBytes) : "空文件" }}
+                    </p>
+                  </div>
+                  <Lock v-if="!file.writable" class="h-3 w-3 shrink-0 text-muted-foreground/50" title="只读" />
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <button class="flex w-full items-center gap-2 px-4 py-3 text-left" @click="toggleWorkspaceSection('uploads')">
+                <component :is="workspaceSections.uploads ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
+                <span class="text-sm font-semibold text-foreground">上传文件</span>
+                <span class="ml-auto text-[11px] text-muted-foreground">{{ uploadedFilesTree.length }}</span>
+              </button>
+              <div v-if="workspaceSections.uploads" class="border-t border-border/60 px-4 py-3">
+                <div v-if="uploadedFilesTree.length === 0" class="py-4 text-xs text-muted-foreground">
+                  暂无上传文件
+                </div>
+                <div v-else class="space-y-1 text-xs">
+                  <template v-for="yearNode in uploadedFilesTree" :key="`${yearNode.kind}:${yearNode.label}`">
+                    <div v-if="yearNode.kind === 'year'">
+                      <button class="flex w-full items-center gap-2 py-1.5 text-left text-sm text-foreground" @click="toggleTreeKey(`year:${yearNode.label}`)">
+                        <component :is="isTreeExpanded(`year:${yearNode.label}`) ? ChevronDown : ChevronRight" class="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{{ yearNode.label }} 年</span>
+                      </button>
+                      <div v-if="isTreeExpanded(`year:${yearNode.label}`)" class="ml-3 border-l border-border pl-3">
+                        <template v-for="monthNode in yearNode.children" :key="`${yearNode.label}-${monthNode.label}`">
+                          <div v-if="monthNode.kind === 'month'">
+                            <button class="flex w-full items-center gap-2 py-1.5 text-left text-foreground/90" @click="toggleTreeKey(`year:${yearNode.label}/month:${monthNode.label}`)">
+                              <component :is="isTreeExpanded(`year:${yearNode.label}/month:${monthNode.label}`) ? ChevronDown : ChevronRight" class="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>{{ monthNode.label }} 月</span>
+                            </button>
+                            <div v-if="isTreeExpanded(`year:${yearNode.label}/month:${monthNode.label}`)" class="ml-3 border-l border-border pl-3">
+                              <template v-for="dayNode in monthNode.children" :key="`${yearNode.label}-${monthNode.label}-${dayNode.label}`">
+                                <div v-if="dayNode.kind === 'day'">
+                                  <button class="flex w-full items-center gap-2 py-1.5 text-left text-foreground/80" @click="toggleTreeKey(`year:${yearNode.label}/month:${monthNode.label}/day:${dayNode.label}`)">
+                                    <component :is="isTreeExpanded(`year:${yearNode.label}/month:${monthNode.label}/day:${dayNode.label}`) ? ChevronDown : ChevronRight" class="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span>{{ dayNode.label }} 日</span>
+                                  </button>
+                                  <div v-if="isTreeExpanded(`year:${yearNode.label}/month:${monthNode.label}/day:${dayNode.label}`)" class="ml-3 border-l border-border pl-3">
+                                    <button
+                                      v-for="fileNode in dayNode.children"
+                                      :key="fileNode.kind === 'file' ? fileNode.relativePath : `${fileNode.kind}:${fileNode.label}`"
+                                      class="flex w-full items-center gap-2 py-1.5 text-left transition-colors"
+                                      :class="fileNode.kind === 'file' && selectedUploadEntry?.relativePath === fileNode.relativePath ? 'text-primary' : 'text-foreground hover:text-primary'"
+                                      @click="fileNode.kind === 'file' && selectUploadedFile(fileNode.relativePath)"
+                                    >
+                                      <FolderOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                      <span v-if="fileNode.kind === 'file'" class="truncate">{{ fileNode.originalName }}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                </div>
               </div>
-              <Lock v-if="!file.writable" class="h-3 w-3 shrink-0 text-muted-foreground/50" title="只读" />
-            </li>
-          </ul>
+            </div>
+          </div>
         </aside>
 
         <!-- Right: content panel -->
         <div class="flex-1 min-w-0 flex flex-col">
           <!-- Empty state -->
           <div
-            v-if="!selectedFilename"
+            v-if="!selectedEntry"
             class="flex flex-1 items-center justify-center"
           >
             <div class="text-center space-y-2 py-12 px-6">
@@ -295,14 +481,14 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
           </div>
 
           <!-- File panel -->
-          <div v-else class="flex flex-col flex-1">
+          <div v-else class="flex flex-col flex-1 min-w-0">
             <!-- Toolbar -->
             <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-border shrink-0 bg-muted/20">
               <div class="flex items-center gap-2 min-w-0">
                 <FileText class="h-4 w-4 text-primary shrink-0" />
-                <span class="font-mono text-sm font-semibold truncate">{{ selectedFilename }}</span>
+                <span class="font-mono text-sm font-semibold truncate">{{ activeTitle }}</span>
                 <span
-                  v-if="!isEditable"
+                  v-if="isUploadSelection || !isEditable"
                   class="text-[10px] font-medium rounded-full bg-muted px-2 py-0.5 text-muted-foreground shrink-0"
                 >只读</span>
               </div>
@@ -310,7 +496,7 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
                 <div class="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
                   <button
                     class="px-3 py-1.5 transition-colors"
-                    :class="mode === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'"
+                    :class="mode === 'preview' || isUploadSelection ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'"
                     @click="mode = 'preview'"
                   >
                     <span class="flex items-center gap-1"><Eye class="h-3 w-3" />预览</span>
@@ -320,7 +506,7 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
                     :class="mode === 'edit'
                       ? 'bg-primary text-primary-foreground'
                       : isEditable ? 'text-muted-foreground hover:bg-secondary' : 'text-muted-foreground/40 cursor-not-allowed'"
-                    :disabled="!isEditable"
+                    :disabled="!isEditable || isUploadSelection"
                     @click="isEditable && (mode = 'edit')"
                   >
                     <span class="flex items-center gap-1"><Pencil class="h-3 w-3" />编辑</span>
@@ -335,7 +521,7 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
                   下载
                 </button>
                 <button
-                  v-if="mode === 'edit'"
+                  v-if="mode === 'edit' && !isUploadSelection"
                   class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
                   :class="saving
                     ? 'bg-primary/60 text-primary-foreground cursor-not-allowed'
@@ -355,12 +541,12 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
               {{ saveError }}
             </div>
 
-            <div v-if="filePending" class="flex-1 flex items-center justify-center p-8">
+            <div v-if="activeLoading" class="flex-1 flex items-center justify-center p-8">
               <p class="text-sm text-muted-foreground animate-pulse">加载中…</p>
             </div>
 
             <div
-              v-else-if="mode === 'preview'"
+              v-else-if="!isUploadSelection && mode === 'preview'"
               class="flex-1 overflow-auto px-6 py-5 prose prose-sm max-w-none"
             >
               <div
@@ -371,13 +557,46 @@ const configTab = ref<'dingtalk' | 'workspace'>('dingtalk');
               <p v-else class="text-sm text-muted-foreground italic">该文件为空。</p>
             </div>
 
-            <div v-else-if="mode === 'edit'" class="flex-1 flex flex-col min-h-0 p-4">
+            <div v-else-if="!isUploadSelection && mode === 'edit'" class="flex-1 flex flex-col min-h-0 p-4">
               <textarea
                 v-model="editorContent"
                 class="flex-1 w-full resize-none rounded-lg border border-input bg-background px-3 py-3 font-mono text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground min-h-[360px]"
                 placeholder="文件内容为空，在此处输入内容后保存…"
                 spellcheck="false"
               />
+            </div>
+
+            <div v-else-if="uploadedFileContent" class="flex-1 min-h-0 overflow-auto px-6 py-5">
+              <div v-if="uploadedFileContent.source" class="mb-4 rounded-lg border border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                <p>来源会话：{{ uploadedFileContent.source.sessionKey || '未记录' }}</p>
+                <p>来源消息：{{ uploadedFileContent.source.messageId || '未记录' }}</p>
+                <p v-if="uploadedFileContent.source.text" class="mt-1 leading-relaxed text-foreground/80">发送文本：{{ uploadedFileContent.source.text }}</p>
+              </div>
+
+              <div v-if="uploadedFileContent.previewType === 'text'" class="prose prose-sm max-w-none">
+                <div
+                  v-if="uploadedFileContent.content && uploadedFileContent.filename.toLowerCase().endsWith('.md')"
+                  class="markdown-body text-sm leading-relaxed text-foreground"
+                  v-html="renderMarkdown(uploadedFileContent.content)"
+                />
+                <pre v-else-if="uploadedFileContent.content" class="whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/10 p-4 text-sm leading-relaxed text-foreground">{{ uploadedFileContent.content }}</pre>
+                <p v-else class="text-sm italic text-muted-foreground">该文件为空。</p>
+              </div>
+
+              <div v-else-if="uploadedFileContent.previewType === 'image'" class="flex h-full items-center justify-center overflow-auto">
+                <img :src="uploadedFileContent.rawUrl" :alt="uploadedFileContent.filename" class="max-h-[60vh] w-auto rounded-lg border border-border object-contain" />
+              </div>
+
+              <div v-else-if="uploadedFileContent.previewType === 'pdf'" class="h-[60vh] overflow-hidden rounded-lg border border-border bg-white">
+                <iframe :src="uploadedFileContent.rawUrl" class="h-full w-full" title="上传文件 PDF 预览" />
+              </div>
+
+              <div v-else class="flex h-full min-h-[18rem] items-center justify-center">
+                <div class="max-w-sm text-center">
+                  <p class="text-sm font-medium text-foreground">当前项目暂不支持预览该文件类型</p>
+                  <p class="mt-2 text-xs leading-relaxed text-muted-foreground">你仍然可以使用上方“下载”按钮查看原文件。首期对 Office / 二进制文件只提供只读下载能力。</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

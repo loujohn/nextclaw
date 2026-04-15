@@ -15,6 +15,14 @@ export function resolveEmployeeWorkspace(homeDir: string, employeeCode: string):
   return resolve(homeDir, "agents", employeeCode);
 }
 
+export function resolveEmployeeUploadRoot(homeDir: string, employeeCode: string): string {
+  return join(resolveEmployeeWorkspace(homeDir, employeeCode), "uploadFile");
+}
+
+export function resolveEmployeeUploadDateDir(homeDir: string, employeeCode: string, dateLabel: string): string {
+  return join(resolveEmployeeUploadRoot(homeDir, employeeCode), dateLabel);
+}
+
 export function ensureEmployeeWorkspace(
   homeDir: string,
   employee: EmployeeIdentity,

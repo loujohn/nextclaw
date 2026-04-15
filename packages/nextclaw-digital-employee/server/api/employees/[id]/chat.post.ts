@@ -1,9 +1,11 @@
 import { createError, getRouterParam, readBody } from "h3";
 import { getPlatformContext } from "../../../runtime/platform-context";
+import type { ChatAttachmentView } from "../../../../shared/ui-models";
 
 type ChatBody = {
   message?: string;
   sessionKey?: string;
+  attachments?: ChatAttachmentView[];
 };
 
 function toSseFrame(event: string, data: unknown): string {
@@ -34,6 +36,7 @@ export default defineEventHandler(async (event) => {
         await ctx.employeeRunService.streamChatTurn({
           employeeId,
           message,
+          attachments: Array.isArray(body?.attachments) ? body.attachments : [],
           sessionKey: body?.sessionKey?.trim() || undefined,
           onEvent: (streamEvent) => {
             push(streamEvent.event, streamEvent.data);

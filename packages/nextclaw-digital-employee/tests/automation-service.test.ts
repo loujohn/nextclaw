@@ -56,6 +56,12 @@ function buildTestGateway(homeDir: string, reply = "定时任务已完成"): Nex
   });
 }
 
+function buildRejectingGateway(homeDir: string, message = "定时任务执行异常"): NextclawEngineGateway {
+  const gateway = buildTestGateway(homeDir);
+  vi.spyOn(gateway, "runEmployeeTurn").mockRejectedValue(new Error(message));
+  return gateway;
+}
+
 afterEach(() => {
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -397,8 +403,8 @@ describe("automation service - heartbeat schedule", () => {
 
   it("stores heartbeat runNow records in chat sessions", async () => {
     const homeDir = createTempDir("nextclaw-automation-heartbeat-chat-session-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
 
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
@@ -552,6 +558,139 @@ describe("automation service - heartbeat schedule", () => {
 
     automation.stop();
     vi.useRealTimers();
+    await db.destroy();
+  });
+});
+
+describe("automation service - chat persistence", () => {
+  it("persists manually triggered job replies into scheduled chat sessions", async () => {
+    const homeDir = createTempDir("nextclaw-automation-job-chat-session-");
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const chatSessionRepo = new ChatSessionRepository(db);
+    const chatMessageRepo = new ChatMessageRepository(db);
+    const employee = await employeeRepo.create({
+      name: "手动任务归档",
+      code: "manual-job-chat",
+      description: "验证立即执行任务写入聊天会话",
+      systemPrompt: "你是任务归档测试员"
+    });
+
+    const gateway = buildTestGateway(homeDir, "立即执行任务已完成");
+    const runService = new EmployeeRunService(
+      employeeRepo,
+      skillRepo,
+      runRepo,
+      gateway,
+      undefined,
+      chatSessionRepo,
+      chatMessageRepo
+    );
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    const job = await automation.createJob({
+      employeeId: employee.id,
+      name: "每日同步",
+      scheduleKind: "cron",
+      cronExpr: "0 9 * * *",
+      taskPrompt: "请执行每日同步并给出摘要",
+      enabled: true
+    });
+
+    const triggered = await automation.runJobNow(job.id);
+    expect(triggered).toBe(true);
+
+    const sessionKey = `employee:${employee.id}:scheduled:job:${job.id}`;
+    const sessions = await chatSessionRepo.listByEmployeeId(employee.id);
+    expect(sessions.some((session) => session.sessionKey === sessionKey)).toBe(true);
+
+    const storedSession = sessions.find((session) => session.sessionKey === sessionKey);
+    const page = await chatMessageRepo.listBySessionId({
+      sessionId: storedSession!.id,
+      limit: 10
+    });
+    expect(page.items.some((item) => item.role === "assistant" && item.content.includes("立即执行任务已完成"))).toBe(true);
+
+    automation.stop();
+    await db.destroy();
+  });
+
+  it("persists failed scheduled job replies into chat sessions", async () => {
+    const homeDir = createTempDir("nextclaw-automation-job-chat-failure-");
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const chatSessionRepo = new ChatSessionRepository(db);
+    const chatMessageRepo = new ChatMessageRepository(db);
+    const employee = await employeeRepo.create({
+      name: "失败任务归档",
+      code: "failed-job-chat",
+      description: "验证失败任务写入聊天会话",
+      systemPrompt: "你是失败任务测试员"
+    });
+
+    const gateway = buildRejectingGateway(homeDir, "engine crash");
+    const runService = new EmployeeRunService(
+      employeeRepo,
+      skillRepo,
+      runRepo,
+      gateway,
+      undefined,
+      chatSessionRepo,
+      chatMessageRepo
+    );
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    const job = await automation.createJob({
+      employeeId: employee.id,
+      name: "失败同步",
+      scheduleKind: "cron",
+      cronExpr: "0 9 * * *",
+      taskPrompt: "请执行失败同步",
+      enabled: true
+    });
+
+    await expect(automation.runJobNow(job.id)).rejects.toThrow("engine crash");
+
+    const sessionKey = `employee:${employee.id}:scheduled:job:${job.id}`;
+    const sessions = await chatSessionRepo.listByEmployeeId(employee.id);
+    expect(sessions.some((session) => session.sessionKey === sessionKey)).toBe(true);
+
+    const storedSession = sessions.find((session) => session.sessionKey === sessionKey);
+    const page = await chatMessageRepo.listBySessionId({
+      sessionId: storedSession!.id,
+      limit: 10
+    });
+    expect(page.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "assistant",
+        content: "执行失败：engine crash"
+      })
+    ]));
+
+    const runs = await runRepo.listByEmployeeIdAndSessionKey({
+      employeeId: employee.id,
+      sessionKey,
+      limit: 1
+    });
+    expect(runs[0]?.status).toBe("failed");
+
+    automation.stop();
     await db.destroy();
   });
 });

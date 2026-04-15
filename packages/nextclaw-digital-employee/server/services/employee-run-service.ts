@@ -7,6 +7,7 @@ import { ChatSessionRepository, type ChatSessionPage, type ChatSessionView } fro
 import { ChatMessageRepository, type ChatMessageView as PersistedChatMessageView } from "../repositories/chat-message-repository";
 import { NextclawEngineGateway, type SessionHistoryMessage, type ToolCallView } from "../engine/NextclawEngineGateway";
 import {
+  buildChatFailureMessage,
   buildChatResultCards,
   formatRunStatusMeta,
   type ChatMessageView,
@@ -16,9 +17,12 @@ import {
   normalizeChatMessageContent,
   normalizeChatMessageTimestamp,
 } from "../chat/chat-message-normalization";
+import type { ChatAttachmentView } from "../../shared/ui-models";
 import { prepareEmployeeRuntime } from "./employee-runtime-preparation";
 import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
+import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
+import { EmployeeUploadFileService } from "./employee-upload-file-service";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -56,6 +60,15 @@ type StoredRunMetadata = {
   runStatus: string;
 };
 
+function normalizeChatAttachments(rawItems: unknown[] | undefined): ChatAttachmentView[] {
+  if (!rawItems?.length) {
+    return [];
+  }
+  return rawItems
+    .map((item) => normalizeChatAttachment(item))
+    .filter((item): item is ChatAttachmentView => Boolean(item));
+}
+
 function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") {
     return true;
@@ -89,11 +102,13 @@ function toUiMessage(message: PersistedChatMessageView, inferredRunStatus?: stri
   const resolvedRunStatus = typeof message.metadata?.runStatus === "string"
     ? message.metadata.runStatus
     : inferredRunStatus;
+  const attachments = normalizeChatAttachments(Array.isArray(message.metadata?.attachments) ? message.metadata.attachments : undefined);
   return {
     id: message.id,
     role: message.role,
     content: message.content,
     timestamp: message.createdAt,
+    ...(attachments.length > 0 ? { attachments } : {}),
     ...(message.metadata && Array.isArray(message.metadata.toolCalls)
       ? {
           toolCalls: message.metadata.toolCalls
@@ -225,6 +240,31 @@ function buildAbortedStreamMessages(params: {
   }
 
   return [...messages, ...params.toolResults];
+}
+
+function buildFailedStreamMessages(params: {
+  partialReply: string;
+  reasoning?: string;
+  toolCalls: ToolCallView[];
+  toolResults: SessionHistoryMessage[];
+  errorMessage: string;
+}): SessionHistoryMessage[] {
+  return [
+    ...buildAbortedStreamMessages(params),
+    {
+      role: "assistant",
+      content: buildChatFailureMessage(params.errorMessage)
+    }
+  ];
+}
+
+function buildFailedAutomationMessages(params: {
+  errorMessage: string;
+}): SessionHistoryMessage[] {
+  return [{
+    role: "assistant",
+    content: buildChatFailureMessage(params.errorMessage)
+  }];
 }
 
 function buildRunIntervals(runs: RunRecordView[]): Array<{ status: string; startedAtMs: number; nextStartedAtMs: number | null }> {
@@ -439,6 +479,7 @@ export class EmployeeRunService {
   async streamChatTurn(params: {
     employeeId: string;
     message: string;
+    attachments?: ChatAttachmentView[];
     sessionKey?: string;
     signal?: AbortSignal;
     onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
@@ -453,14 +494,37 @@ export class EmployeeRunService {
       sessionKey: session.sessionKey
     });
     const userMessageCreatedAt = normalizeChatMessageTimestamp();
+    const uploadService = new EmployeeUploadFileService(this.employeeRepo, messageRepo, this.gateway.homeDir);
+    const normalizedAttachments = normalizeChatAttachments(params.attachments);
+    const attachmentSnapshots = normalizedAttachments.map((attachment) => ({
+      ...attachment,
+      sourceText: params.message,
+      sourceSessionKey: session.sessionKey,
+      sourceMessageId: randomUUID()
+    }));
+    for (const attachment of attachmentSnapshots) {
+      await uploadService.readUploadedFile({
+        employeeId: employee.id,
+        relativePath: attachment.relativePath,
+        rawUrl: "",
+        downloadUrl: ""
+      });
+    }
+    const userMessageId = attachmentSnapshots[0]?.sourceMessageId ?? randomUUID();
+    const userMessageAttachments = attachmentSnapshots.map((attachment) => ({
+      ...attachment,
+      sourceMessageId: userMessageId
+    }));
     await messageRepo.createMany([{
+      id: userMessageId,
       sessionId: session.id,
       role: "user",
       content: params.message,
       createdAt: userMessageCreatedAt,
       metadata: {
         runId: run.id,
-        runStatus: RunStatus.Running
+        runStatus: RunStatus.Running,
+        ...(userMessageAttachments.length > 0 ? { attachments: userMessageAttachments } : {})
       }
     }]);
     await sessionRepo.touchWithMessage({
@@ -523,7 +587,7 @@ export class EmployeeRunService {
         agentId: employee.code,
         sessionKey: session.sessionKey,
         workspace,
-        message: params.message,
+        message: buildAttachmentPromptText(params.message, userMessageAttachments),
         model: employee.model || undefined,
         requestedSkills: skillNames.length > 0 ? skillNames : undefined,
         onAssistantDelta: (delta) => {
@@ -705,6 +769,25 @@ export class EmployeeRunService {
       }
 
       const classified = classifyError(error);
+      const failedMessages = buildFailedStreamMessages({
+        partialReply: deltaParts.join(""),
+        reasoning: streamedReasoning,
+        toolCalls: streamedToolCalls,
+        toolResults: streamedToolResults,
+        errorMessage: classified.message
+      });
+      const persistedMessages = await this.persistChatMessages(session.id, failedMessages, {
+        runId: run.id,
+        runStatus: RunStatus.Failed
+      });
+      if (persistedMessages.length > 0) {
+        await sessionRepo.touchWithMessage({
+          sessionId: session.id,
+          messageCountIncrement: persistedMessages.length,
+          latestContent: pickLatestPreview(failedMessages, buildChatFailureMessage(classified.message)),
+          titleSeed: params.message
+        });
+      }
       await this.runRepo.complete(run.id, {
         status: RunStatus.Failed,
         summary: classified.message,
@@ -844,11 +927,29 @@ export class EmployeeRunService {
       };
     } catch (error) {
       const classified = classifyError(error);
+      if (automatedChatSession && persistence) {
+        const failedMessages = buildFailedAutomationMessages({
+          errorMessage: classified.message
+        });
+        const persistedMessages = await this.persistChatMessages(automatedChatSession.id, failedMessages, {
+          runId: run.id,
+          runStatus: RunStatus.Failed
+        });
+        if (persistedMessages.length > 0) {
+          await persistence.sessionRepo.touchWithMessage({
+            sessionId: automatedChatSession.id,
+            messageCountIncrement: persistedMessages.length,
+            latestContent: pickLatestPreview(failedMessages, buildChatFailureMessage(classified.message)),
+            titleSeed: params.sessionTitle ?? params.message
+          });
+        }
+      }
       await this.runRepo.complete(run.id, {
         status: RunStatus.Failed,
         summary: String(error),
         result: {
-          error: classified.toJSON()
+          error: classified.toJSON(),
+          ...(automatedChatSession?.sessionKey ? { sessionKey: automatedChatSession.sessionKey } : {})
         }
       });
       throw classified;

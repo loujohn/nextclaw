@@ -59,8 +59,11 @@ export function createPlatformKnex(config: PlatformDbConfig): Knex {
       password: config.connection.password,
     },
     pool: {
-      min: 2,
+      min: 0,
       max: 10,
+      idleTimeoutMillis: 15_000,
+      reapIntervalMillis: 5_000,
+      acquireTimeoutMillis: 30_000,
       afterCreate(conn: { execute: (sql: string, params: unknown[], cb: (err: unknown) => void) => void }, cb: (err: unknown, conn: unknown) => void) {
         if (!_dmSchemaReady) {
           cb(null, conn);
@@ -70,7 +73,18 @@ export function createPlatformKnex(config: PlatformDbConfig): Knex {
           cb(err, conn);
         });
       },
-    },
+      // tarn.js validate — knex types 未导出此字段，但运行时有效
+      ...({ validate(conn: unknown) {
+        try {
+          if (conn && typeof (conn as Record<string, unknown>).checkClosed === "function") {
+            (conn as { checkClosed: () => void }).checkClosed();
+          }
+          return true;
+        } catch {
+          return false;
+        }
+      } }),
+    } as Record<string, unknown>,
     fetchAsString: ["DATE"],
   });
 }

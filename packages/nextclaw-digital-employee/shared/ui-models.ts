@@ -83,11 +83,28 @@ export type ChatReplyStatusView = {
   tone: StatusBadgeTone;
 };
 
+export type ChatAttachmentPreviewType = "text" | "pdf" | "office" | "image" | "binary";
+
+export type ChatAttachmentView = {
+  token?: string;
+  originalName: string;
+  storedName: string;
+  relativePath: string;
+  mimeType: string;
+  size: number;
+  previewType: ChatAttachmentPreviewType;
+  uploadDate: string;
+  sourceText?: string;
+  sourceSessionKey?: string;
+  sourceMessageId?: string;
+};
+
 export type ChatMessageView = {
   id?: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp?: string;
+  attachments?: ChatAttachmentView[];
   toolCalls?: ChatToolCallView[];
   reasoning?: string;
   replyStatus?: ChatReplyStatusView;
@@ -469,6 +486,17 @@ export function formatRunStatusMeta(status: string): ChatReplyStatusView {
     return { value: status, label: "已中断", tone: "slate" };
   }
   return { value: status, label: "等待中", tone: "slate" };
+}
+
+export function buildChatFailureMessage(message?: string): string {
+  const trimmed = message?.trim() ?? "";
+  if (!trimmed) {
+    return "执行失败，请稍后重试。";
+  }
+  if (/^执行失败[：:，,]?/.test(trimmed)) {
+    return trimmed;
+  }
+  return `执行失败：${trimmed}`;
 }
 
 export function formatRunStatusLabel(status: string): string {
