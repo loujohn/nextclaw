@@ -132,6 +132,7 @@ export class ChatMessageRepository {
       message_id: string;
       session_key: string;
       source_text: string;
+      source_created_at: string;
       metadata_json: string;
     };
     const rows = await this.db(`${PLATFORM_TABLES.chatMessages} as messages`)
@@ -143,6 +144,7 @@ export class ChatMessageRepository {
         "messages.id as message_id",
         "sessions.session_key as session_key",
         "messages.content as source_text",
+        "messages.created_at as source_created_at",
         "messages.metadata_json as metadata_json"
       ]);
     const output: ChatAttachmentSourceView[] = [];
@@ -165,7 +167,8 @@ export class ChatMessageRepository {
             ...attachment,
             sourceText: attachment.sourceText ?? row.source_text,
             sourceSessionKey: attachment.sourceSessionKey ?? row.session_key,
-            sourceMessageId: attachment.sourceMessageId ?? row.message_id
+            sourceMessageId: attachment.sourceMessageId ?? row.message_id,
+            sourceCreatedAt: attachment.sourceCreatedAt ?? row.source_created_at
           }
         });
       }

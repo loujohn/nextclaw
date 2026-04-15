@@ -143,10 +143,6 @@ export function useAuth() {
   const loading = computed(() => state.value.loading);
   const user = computed(() => state.value.user);
 
-  function getTokenEndpoint(): string {
-    return `${keycloakUrl}/realms/${realm}/protocol/openid-connect/token`;
-  }
-
   function getAuthEndpoint(): string {
     return `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth`;
   }
@@ -195,27 +191,18 @@ export function useAuth() {
     sessionStorage.removeItem(OAUTH_STATE_KEY);
 
     const redirectUri = `${window.location.origin}/auth/callback`;
-    const body = new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: clientId,
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
-    });
 
     try {
-      const res = await fetch(getTokenEndpoint(), {
+      const data = await $fetch<Record<string, unknown>>("/api/auth/token", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
+        body: {
+          grant_type: "authorization_code",
+          client_id: clientId,
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+        },
       });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        console.error("[auth] Token exchange failed:", res.status, errText);
-        return false;
-      }
-
-      const data = await res.json();
       await handleTokenResponse(data);
       return true;
     } catch (err) {
@@ -259,7 +246,7 @@ export function useAuth() {
       localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token as string);
     }
     if (data.id_token) {
-      sessionStorage.setItem(ID_TOKEN_KEY, data.id_token as string);
+      localStorage.setItem(ID_TOKEN_KEY, data.id_token as string);
     }
     await fetchMe();
     scheduleTokenRefresh((data.expires_in as number) ?? 300);
@@ -273,30 +260,24 @@ export function useAuth() {
       if (!rt) return false;
 
       try {
-        const body = new URLSearchParams({
-          grant_type: "refresh_token",
-          client_id: clientId,
-          refresh_token: rt,
-        });
-
-        const res = await fetch(getTokenEndpoint(), {
+        const data = await $fetch<Record<string, unknown>>("/api/auth/token", {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body,
+          body: {
+            grant_type: "refresh_token",
+            client_id: clientId,
+            refresh_token: rt,
+          },
         });
 
-        if (!res.ok) {
-          clearTokens();
-          return false;
-        }
-
-        const data = await res.json();
-        setAccessToken(data.access_token);
+        setAccessToken(data.access_token as string);
         if (data.refresh_token) {
-          localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+          localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token as string);
+        }
+        if (data.id_token) {
+          localStorage.setItem(ID_TOKEN_KEY, data.id_token as string);
         }
 
-        scheduleTokenRefresh(data.expires_in ?? 300);
+        scheduleTokenRefresh((data.expires_in as number) ?? 300);
         return true;
       } catch {
         clearTokens();
@@ -333,7 +314,7 @@ export function useAuth() {
     setAccessToken(null);
     state.value.user = null;
     localStorage.removeItem(REFRESH_TOKEN_KEY);
-    sessionStorage.removeItem(ID_TOKEN_KEY);
+    localStorage.removeItem(ID_TOKEN_KEY);
     if (_refreshTimer) {
       clearTimeout(_refreshTimer);
       _refreshTimer = null;
@@ -343,11 +324,12 @@ export function useAuth() {
 
   async function logout(): Promise<void> {
     const redirectUri = `${window.location.origin}/login`;
-    const idToken = sessionStorage.getItem(ID_TOKEN_KEY);
+    const idToken = localStorage.getItem(ID_TOKEN_KEY);
     clearTokens();
 
     if (keycloakUrl && realm) {
       const params = new URLSearchParams({
+        client_id: clientId,
         post_logout_redirect_uri: redirectUri,
       });
       if (idToken) {

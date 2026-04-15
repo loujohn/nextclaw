@@ -13,6 +13,8 @@ type UpdateEmployeeBody = {
   cronExpr?: string;
   everyMs?: number;
   workspaceFiles?: Record<string, string>;
+  webhookEnabled?: boolean;
+  webhookSecret?: string | null;
 };
 
 export default defineEventHandler(async (event) => {
@@ -36,6 +38,8 @@ export default defineEventHandler(async (event) => {
         ? { scheduleKind: body.scheduleKind, cronExpr: body.cronExpr, everyMs: body.everyMs }
         : undefined,
       workspaceFiles: body?.workspaceFiles,
+      webhookEnabled: body?.webhookEnabled,
+      webhookSecret: body?.webhookSecret,
     });
     return { ok: true, data: { ...result.employee, skills: result.skills, jobs: result.jobs } };
   } catch (err: unknown) {

@@ -759,4 +759,5 @@ describe("ChatMessageRepository - cursor-based pagination stability", () => {
     // 按时间升序最末尾的是最新消息
     expect(collected[totalCount - 1]).toBe(`消息${totalCount}`);
   });
+
 });
