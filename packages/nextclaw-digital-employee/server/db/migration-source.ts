@@ -17,6 +17,7 @@ import * as m007 from "../../migrations/007_seed_default_admin";
 import * as m008 from "../../migrations/008_chat_sessions_messages";
 import * as m009 from "../../migrations/009_employee_webhook";
 import * as m010 from "../../migrations/010_employee_skill_version";
+import * as m011 from "../../migrations/011_users_personnel_sync";
 
 type MigrationEntry = {
   name: string;
@@ -35,6 +36,7 @@ const migrations: MigrationEntry[] = [
   { name: "008_chat_sessions_messages.ts", ...m008 },
   { name: "009_employee_webhook.ts", ...m009 },
   { name: "010_employee_skill_version.ts", ...m010 },
+  { name: "011_users_personnel_sync.ts", ...m011 },
 ];
 
 class BundledMigrationSource implements Knex.MigrationSource<MigrationEntry> {

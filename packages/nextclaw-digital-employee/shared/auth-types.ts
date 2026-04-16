@@ -2,6 +2,8 @@ export type UserRole = "admin" | "manager" | "user";
 
 export type AuthProvider = "keycloak" | "local";
 
+export type UserSource = "manual" | "sync";
+
 export type UserView = {
   id: string;
   username: string;
@@ -11,9 +13,20 @@ export type UserView = {
   role: UserRole;
   isActive: boolean;
   authProvider: AuthProvider;
+  userSource: UserSource;
+  syncProvider: string | null;
+  externalUserId: string | null;
+  externalUserName: string;
+  externalName: string;
+  externalPostName: string;
+  externalRoleName: string;
+  externalDingTalkId: string;
+  externalPhone: string;
+  externalUserType: string;
   departmentId: string | null;
   humanEmployeeId: string | null;
   lastLoginAt: string | null;
+  lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

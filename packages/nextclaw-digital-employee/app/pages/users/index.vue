@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2 } from "lucide-vue-next";
+import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw } from "lucide-vue-next";
 import type { UserView, UserRole, UpdateUserInput } from "../../../shared/auth-types";
 
 const { getAccessToken, user: currentUser } = useAuth();
@@ -14,9 +14,30 @@ const filteredUsers = computed(() => {
   if (!search.value) return users.value;
   const q = search.value.toLowerCase();
   return users.value.filter(
-    (u) => u.displayName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+    (u) =>
+      u.displayName.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.externalUserId?.toLowerCase().includes(q) ||
+      u.externalUserName.toLowerCase().includes(q) ||
+      u.externalName.toLowerCase().includes(q) ||
+      u.externalPostName.toLowerCase().includes(q) ||
+      u.externalRoleName.toLowerCase().includes(q) ||
+      u.externalDingTalkId.toLowerCase().includes(q)
   );
 });
+
+function authProviderLabel(user: UserView): string {
+  return user.authProvider === "local" ? "本地登录" : "Keycloak";
+}
+
+function sourceBadgeClass(user: UserView): string {
+  return user.userSource === "sync" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700";
+}
+
+function sourceLabel(user: UserView): string {
+  return user.userSource === "sync" ? "外部同步" : "系统创建";
+}
 
 function authHeaders(): Record<string, string> {
   const t = getAccessToken();
@@ -28,6 +49,31 @@ async function loadUsers() {
     $fetch<{ ok: boolean; data: UserView[] }>("/api/users", { headers: authHeaders() })
   );
   if (res?.ok) users.value = res.data;
+}
+
+async function syncUsers() {
+  const confirmed = window.confirm(
+    "将从外部接口同步人员到用户表。\n\n已存在用户会更新资料，不存在用户会新增，系统已有但外部未返回的用户不会被删除。\n\n确定继续同步？"
+  );
+  if (!confirmed) return;
+
+  const res = await execute(() =>
+    $fetch<{ ok: boolean; data: { total: number; created: number; updated: number; skipped: number; failed: number; summary: string } }>(
+      "/api/users/sync-trigger",
+      {
+        method: "POST",
+        headers: authHeaders(),
+      }
+    )
+  );
+
+  if (res?.ok) {
+    toast.showToast(
+      "success",
+      `${res.data.summary}：新增 ${res.data.created}，更新 ${res.data.updated}，跳过 ${res.data.skipped}`
+    );
+    await loadUsers();
+  }
 }
 
 async function updateUser(id: string, input: UpdateUserInput) {
@@ -222,12 +268,21 @@ onMounted(() => {
         <h1 class="text-xl font-semibold text-foreground">用户管理</h1>
         <p class="text-sm text-muted-foreground">管理平台用户角色与权限</p>
       </div>
-      <button
-        class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-        @click="createDialogOpen = true"
-      >
-        <Plus class="h-4 w-4" /> 新建用户
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="loading"
+          @click="syncUsers"
+        >
+          <RefreshCw class="h-4 w-4" :class="loading ? 'animate-spin' : ''" /> 同步人员
+        </button>
+        <button
+          class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+          @click="createDialogOpen = true"
+        >
+          <Plus class="h-4 w-4" /> 新建用户
+        </button>
+      </div>
     </div>
 
     <div class="relative">
@@ -235,19 +290,20 @@ onMounted(() => {
       <input
         v-model="search"
         class="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
-        placeholder="搜索用户名或邮箱..."
+        placeholder="搜索姓名、用户名、邮箱、外部 ID、岗位..."
       />
     </div>
 
-    <div class="rounded-lg border border-border">
+    <div class="overflow-x-auto rounded-lg border border-border">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/50">
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">用户</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">用户名</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">标识</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">角色</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">来源</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">同步资料</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">关联员工</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">最后登录</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
@@ -264,10 +320,20 @@ onMounted(() => {
                 <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
                   {{ u.displayName?.charAt(0) ?? "?" }}
                 </div>
-                <span class="font-medium">{{ u.displayName }}</span>
+                <div class="min-w-0">
+                  <div class="font-medium">{{ u.displayName }}</div>
+                  <div v-if="u.externalName && u.externalName !== u.displayName" class="text-xs text-muted-foreground">
+                    外部姓名：{{ u.externalName }}
+                  </div>
+                </div>
               </div>
             </td>
-            <td class="px-4 py-3 text-muted-foreground">{{ u.username || u.email }}</td>
+            <td class="px-4 py-3 text-muted-foreground">
+              <div class="space-y-1">
+                <div>{{ u.username || "-" }}</div>
+                <div class="text-xs">{{ u.email }}</div>
+              </div>
+            </td>
             <td class="px-4 py-3">
               <select
                 :value="u.role"
@@ -289,12 +355,24 @@ onMounted(() => {
               </button>
             </td>
             <td class="px-4 py-3">
-              <span
-                class="rounded px-2 py-0.5 text-xs font-medium"
-                :class="u.authProvider === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'"
-              >
-                {{ u.authProvider === "local" ? "本地" : "SSO" }}
-              </span>
+              <div class="space-y-1">
+                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
+                  {{ sourceLabel(u) }}
+                </span>
+                <div class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</div>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <div v-if="u.userSource === 'sync'" class="min-w-[220px] space-y-1 text-xs text-muted-foreground">
+                <div>外部 ID：{{ u.externalUserId || '-' }}</div>
+                <div>外部用户名：{{ u.externalUserName || '-' }}</div>
+                <div>岗位：{{ u.externalPostName || '-' }}</div>
+                <div>外部角色：{{ u.externalRoleName || '-' }}</div>
+                <div>用户类型：{{ u.externalUserType || '-' }}</div>
+                <div>钉钉标识：{{ u.externalDingTalkId || '-' }}</div>
+                <div>最近同步：{{ u.lastSyncedAt ? new Date(u.lastSyncedAt).toLocaleString() : '-' }}</div>
+              </div>
+              <span v-else class="text-xs text-muted-foreground">-</span>
             </td>
             <td class="px-4 py-3">
               <span v-if="u.humanEmployeeId" class="inline-flex items-center gap-1 text-xs text-emerald-700">
@@ -391,6 +469,9 @@ onMounted(() => {
           <h3 class="text-lg font-semibold">编辑用户</h3>
           <p class="mt-1 text-sm text-muted-foreground">修改 {{ editTarget?.username || editTarget?.email }} 的信息</p>
           <div class="mt-4 space-y-3">
+            <div v-if="editTarget?.userSource === 'sync'" class="rounded bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              外部同步用户的资料会在下次同步时更新，建议仅维护平台侧角色、启停和必要展示字段。
+            </div>
             <div v-if="editTarget?.authProvider === 'local'">
               <label class="text-xs text-muted-foreground">用户名</label>
               <input v-model="editForm.username" type="text"

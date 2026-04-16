@@ -2,13 +2,38 @@ import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { PLATFORM_TABLES, type UserRecord } from "../db/schema";
 import { dbNow } from "../db/knex";
-import type { UserView, UserContext, UserRole, AuthProvider, UpdateUserInput } from "../../shared/auth-types";
+import type { UserView, UserContext, UserRole, AuthProvider, UpdateUserInput, UserSource } from "../../shared/auth-types";
 
 export type UpsertUserFromTokenInput = {
   keycloakSub: string;
   email: string;
   displayName: string;
   avatarUrl?: string;
+};
+
+export type CreateSyncedUserInput = {
+  username: string;
+  email: string;
+  displayName: string;
+  externalUserId: string;
+  externalUserName: string;
+  externalName: string;
+  externalPostName: string;
+  externalRoleName: string;
+  externalDingTalkId: string;
+  externalPhone: string;
+  externalUserType: string;
+};
+
+export type UpdateSyncedUserInput = {
+  displayName: string;
+  externalUserName: string;
+  externalName: string;
+  externalPostName: string;
+  externalRoleName: string;
+  externalDingTalkId: string;
+  externalPhone: string;
+  externalUserType: string;
 };
 
 function toUserView(record: UserRecord): UserView {
@@ -21,9 +46,20 @@ function toUserView(record: UserRecord): UserView {
     role: record.role as UserRole,
     isActive: record.is_active === 1,
     authProvider: (record.auth_provider ?? "keycloak") as AuthProvider,
+    userSource: (record.user_source ?? "manual") as UserSource,
+    syncProvider: record.sync_provider,
+    externalUserId: record.external_user_id,
+    externalUserName: record.external_user_name ?? "",
+    externalName: record.external_name ?? "",
+    externalPostName: record.external_post_name ?? "",
+    externalRoleName: record.external_role_name ?? "",
+    externalDingTalkId: record.external_dingtalk_id ?? "",
+    externalPhone: record.external_phone ?? "",
+    externalUserType: record.external_user_type ?? "",
     departmentId: record.department_id,
     humanEmployeeId: record.human_employee_id,
     lastLoginAt: record.last_login_at,
+    lastSyncedAt: record.last_synced_at,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   };
@@ -82,12 +118,23 @@ export class UserRepository {
       avatar_url: input.avatarUrl ?? "",
       role: "user",
       is_active: 1,
+      user_source: "manual",
+      sync_provider: null,
+      external_user_id: null,
+      external_user_name: "",
+      external_name: "",
+      external_post_name: "",
+      external_role_name: "",
+      external_dingtalk_id: "",
+      external_phone: "",
+      external_user_type: "",
       department_id: null,
       human_employee_id: null,
       preferences: "{}",
       auth_provider: "keycloak",
       password_hash: null,
       last_login_at: now,
+      last_synced_at: null,
       created_at: now,
       updated_at: now,
     };
@@ -118,6 +165,13 @@ export class UserRepository {
   async findById(id: string): Promise<UserView | null> {
     const record = await this.db(PLATFORM_TABLES.users)
       .where({ id })
+      .first<UserRecord | undefined>();
+    return record ? toUserView(record) : null;
+  }
+
+  async findByExternalUserId(externalUserId: string): Promise<UserView | null> {
+    const record = await this.db(PLATFORM_TABLES.users)
+      .where({ external_user_id: externalUserId })
       .first<UserRecord | undefined>();
     return record ? toUserView(record) : null;
   }
@@ -179,17 +233,90 @@ export class UserRepository {
       avatar_url: "",
       role: input.role ?? "user",
       is_active: 1,
+      user_source: "manual",
+      sync_provider: null,
+      external_user_id: null,
+      external_user_name: "",
+      external_name: "",
+      external_post_name: "",
+      external_role_name: "",
+      external_dingtalk_id: "",
+      external_phone: "",
+      external_user_type: "",
       department_id: null,
       human_employee_id: null,
       preferences: "{}",
       auth_provider: "local",
       password_hash: input.passwordHash,
       last_login_at: null,
+      last_synced_at: null,
       created_at: now,
       updated_at: now,
     };
     await this.db(PLATFORM_TABLES.users).insert(record);
     return toUserContext(record);
+  }
+
+  async createSyncedUser(input: CreateSyncedUserInput): Promise<UserView> {
+    const now = dbNow();
+    const record: UserRecord = {
+      id: randomUUID(),
+      keycloak_sub: "",
+      username: input.username,
+      email: input.email,
+      display_name: input.displayName,
+      avatar_url: "",
+      role: "user",
+      is_active: 1,
+      user_source: "sync",
+      sync_provider: "personnel-api",
+      external_user_id: input.externalUserId,
+      external_user_name: input.externalUserName,
+      external_name: input.externalName,
+      external_post_name: input.externalPostName,
+      external_role_name: input.externalRoleName,
+      external_dingtalk_id: input.externalDingTalkId,
+      external_phone: input.externalPhone,
+      external_user_type: input.externalUserType,
+      department_id: null,
+      human_employee_id: null,
+      preferences: "{}",
+      auth_provider: "keycloak",
+      password_hash: null,
+      last_login_at: null,
+      last_synced_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    await this.db(PLATFORM_TABLES.users).insert(record);
+    return toUserView(record);
+  }
+
+  async updateSyncedUser(id: string, input: UpdateSyncedUserInput): Promise<UserView | null> {
+    const now = dbNow();
+    const count = await this.db(PLATFORM_TABLES.users)
+      .where({ id })
+      .update({
+        display_name: input.displayName,
+        user_source: "sync",
+        sync_provider: "personnel-api",
+        auth_provider: "keycloak",
+        external_user_name: input.externalUserName,
+        external_name: input.externalName,
+        external_post_name: input.externalPostName,
+        external_role_name: input.externalRoleName,
+        external_dingtalk_id: input.externalDingTalkId,
+        external_phone: input.externalPhone,
+        external_user_type: input.externalUserType,
+        last_synced_at: now,
+        updated_at: now,
+      });
+
+    if (count === 0) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 
   async updateLastLogin(id: string): Promise<void> {
