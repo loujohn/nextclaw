@@ -22,14 +22,16 @@ export default defineEventHandler(async (event) => {
   ]);
   const scheduledRuns = recentRunsFull.filter((r) => r.triggerType === "scheduled");
 
-  // 附加版本对比信息
+  // 附加版本对比信息 & 全局技能是否已被删除
   const globalSkillsDir = join(ctx.workspaceDir, "skills");
   const skillsWithVersion = skills.map((skill) => {
     const latestVersion = readSkillVersion(join(globalSkillsDir, skill.skillName));
     return {
       ...skill,
       latestVersion,
-      hasUpdate: latestVersion != null && latestVersion !== skill.version
+      hasUpdate: latestVersion != null && latestVersion !== skill.version,
+      /** 全局技能已被删除（文件目录不存在），员工侧副本仍保留 */
+      installMissing: latestVersion === null
     };
   });
 

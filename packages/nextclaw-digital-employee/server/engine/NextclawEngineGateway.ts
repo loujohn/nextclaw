@@ -462,6 +462,11 @@ export class NextclawEngineGateway {
     });
   }
 
+  deleteSkill(skillName: string): void {
+    const installPath = join(this.workspaceDir, "skills", skillName);
+    rmSync(installPath, { recursive: true, force: true });
+  }
+
   async importFromLocalPath(sourcePath: string): Promise<ImportedSkillView> {
     const skillDir = findSkillDirectory(sourcePath);
     const skillFilePath = join(skillDir, "SKILL.md");
