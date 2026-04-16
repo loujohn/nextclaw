@@ -247,12 +247,38 @@ function processEntryBody(entry: ChatProcessTimelineEntry): string {
   switch (entry.kind) {
     case "reasoning":
     case "reply":
-      return entry.content;
+      return normalizeProcessEntryBody(entry.content);
     case "tool_call":
-      return tryParseJson(entry.arguments);
+      return normalizeProcessEntryBody(tryParseJson(entry.arguments));
     case "tool_result":
-      return entry.output;
+      return normalizeProcessEntryBody(entry.output);
   }
+}
+
+function normalizeProcessEntryBody(value: string): string {
+  return value
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n");
+}
+
+function processEntryUsesMarkdown(entry: ChatProcessTimelineEntry): boolean {
+  if (entry.kind === "tool_call") {
+    return false;
+  }
+  const body = processEntryBody(entry).trim();
+  if (!body) {
+    return false;
+  }
+  return /```/.test(body)
+    || /(^|\n)#{1,6}\s/.test(body)
+    || /(^|\n)\s*[-*+]\s/.test(body)
+    || /(^|\n)\s*\d+\.\s/.test(body)
+    || /\[[^\]]+\]\([^\)]+\)/.test(body)
+    || /(^|\n)\s*>\s/.test(body)
+    || /\*\*[^*]+\*\*/.test(body)
+    || /`[^`]+`/.test(body)
+    || /(^|\n)\s*\|.+\|/.test(body);
 }
 
 function formatProcessTimestamp(timestamp?: string): string {
@@ -274,7 +300,7 @@ function formatProcessTimestamp(timestamp?: string): string {
 }
 
 function processEntryUsesCodeBlock(entry: ChatProcessTimelineEntry): boolean {
-  return entry.kind === "tool_call" || entry.kind === "tool_result";
+  return entry.kind === "tool_call" || (entry.kind === "tool_result" && !processEntryUsesMarkdown(entry));
 }
 
 function isProcessTimelineExpanded(messageKey: string): boolean {
@@ -1304,7 +1330,12 @@ watch(messages, () => {
                         <pre
                           v-if="processEntryUsesCodeBlock(entry)"
                           class="mt-2 max-h-48 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/70 bg-muted/40 px-2.5 py-2 text-[10px] leading-snug text-slate-700"
-                        >{{ truncateStr(processEntryBody(entry), entry.kind === 'tool_result' ? 2000 : 700) }}</pre>
+                        >{{ processEntryBody(entry) }}</pre>
+                        <div
+                          v-else-if="processEntryUsesMarkdown(entry)"
+                          class="prose prose-slate mt-2 max-w-none break-words rounded-xl border border-border/70 bg-background px-3 py-2.5 text-xs"
+                          v-html="renderMarkdown(processEntryBody(entry))"
+                        />
                         <div
                           v-else
                           class="mt-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/85"
