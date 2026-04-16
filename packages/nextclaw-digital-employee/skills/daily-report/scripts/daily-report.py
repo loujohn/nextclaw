@@ -2,9 +2,17 @@
 # -*- coding: utf-8 -*-
 import sys
 import io
+import locale
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+if sys.platform == "win32":
+    import ctypes
+
+    ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
 
 """
 日报填写脚本
@@ -281,27 +289,29 @@ def main():
         "--submit",
         dest="submit",
         action="store_true",
-        help="生成预览并提交（需要 --confirm 确认）",
+        help="生成参数文件并提交",
     )
     parser.add_argument(
         "--validate", dest="validate", action="store_true", help="仅校验参数"
     )
-    parser.add_argument("--json", dest="json_data", help="JSON格式的日报参数")
     parser.add_argument(
-        "--json-file", dest="json_file", help="从文件读取日报参数（用于实际提交）"
+        "--json-file", dest="json_file", help="从文件读取日报参数（备用）"
     )
     parser.add_argument("--date", dest="date", help="日期（YYYY-MM-DD，默认当天）")
+    parser.add_argument("--project-code", dest="project_code", help="项目编号")
+    parser.add_argument("--project-name", dest="project_name", help="项目名称")
+    parser.add_argument("--project-stage", dest="project_stage", help="项目阶段")
+    parser.add_argument("--project-manager", dest="project_manager", help="项目经理")
     parser.add_argument(
-        "--dry-run",
-        dest="dry_run",
-        action="store_true",
-        help="仅显示预览",
+        "--day-summarize-now", dest="day_summarize_now", help="今日工作总结"
     )
+    parser.add_argument("--day-plan-next", dest="day_plan_next", help="明日工作计划")
     parser.add_argument(
-        "--confirm",
-        dest="confirm",
-        action="store_true",
-        help="确认提交（需与 --submit 一起使用）",
+        "--day-report-type",
+        dest="day_report_type",
+        type=int,
+        default=2,
+        help="日报类型（默认2）",
     )
     parser.add_argument("--base-url", dest="base_url", help="API基础URL")
     parser.add_argument("--username", dest="username", help="登录用户名")
@@ -322,20 +332,15 @@ def main():
     if (
         not args.submit
         and not args.validate
-        and not args.dry_run
         and not args.query_projects
         and not args.select
-        and not args.confirm
     ):
         print("""
 日报填写脚本
 
 用法:
-  python daily-report.py --submit --json '<json参数>'
-  python daily-report.py --validate --json '<json参数>'
-  python daily-report.py --dry-run --json '<json参数>'
   python daily-report.py --query-projects <项目名称关键词>
-  python daily-report.py --confirm --json-file <参数文件>
+  python daily-report.py --submit --project-code <编号> --project-name <名称> ...
 
 前置环境变量（与工时统计分析技能共用）：
   PM_BASE_URL   - 基础URL
@@ -350,7 +355,7 @@ def main():
     if args.query_projects:
         if not username or not password:
             print("错误: 需要设置 PM_USERNAME 和 PM_PASSWORD 环境变量", file=sys.stderr)
-            sys.exit(1)
+            return
         try:
             token = login(base_url, username, password)
             result = query_projects(base_url, token, args.query_projects)
@@ -369,10 +374,10 @@ def main():
                 )
             else:
                 print(f"查询失败: {result.get('message', '未知错误')}", file=sys.stderr)
-                sys.exit(1)
+                return
         except Exception as e:
             print(f"[日报] 错误: {e}", file=sys.stderr)
-            sys.exit(1)
+            return
         return
 
     if args.select:
@@ -382,7 +387,7 @@ def main():
                 "错误: 没有可选择的项目，请先使用 --query-projects 查询",
                 file=sys.stderr,
             )
-            sys.exit(1)
+            return
         with open(query_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             records = data.get("records", [])
@@ -391,26 +396,45 @@ def main():
             print(
                 f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
             )
-            sys.exit(1)
+            return
         print(json.dumps(project_info, ensure_ascii=False, indent=2))
         return
 
     if args.validate:
-        try:
-            if args.json_file:
+        report_data = {}
+        if args.json_file:
+            try:
                 with open(args.json_file, "r", encoding="utf-8") as f:
                     report_data = json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"错误: JSON格式解析失败: {e}", file=sys.stderr)
+                return
+        else:
+            if args.project_code:
+                report_data["projectCode"] = args.project_code
+            if args.project_name:
+                report_data["projectName"] = args.project_name
+            if args.project_stage:
+                report_data["projectStage"] = args.project_stage
+            if args.project_manager:
+                report_data["projectManager"] = args.project_manager
+            if args.day_summarize_now:
+                report_data["daySummarizeNow"] = args.day_summarize_now
+            if args.day_plan_next:
+                report_data["dayPlanNext"] = args.day_plan_next
+            if args.date:
+                report_data["date"] = args.date
+                report_data["dayReportTime"] = args.date
             else:
-                report_data = json.loads(args.json_data)
-        except json.JSONDecodeError as e:
-            print(f"错误: JSON格式解析失败: {e}", file=sys.stderr)
-            sys.exit(1)
+                report_data["date"] = datetime.now().strftime("%Y-%m-%d")
+                report_data["dayReportTime"] = report_data["date"]
+            report_data["dayReportType"] = args.day_report_type
 
         normalize_field_names(report_data)
         missing = validate_report_data(report_data)
         if missing:
             print(format_missing_fields_message(missing), file=sys.stderr)
-            sys.exit(1)
+            return
         print(
             json.dumps(
                 {"valid": True, "data": report_data}, ensure_ascii=False, indent=2
@@ -418,104 +442,42 @@ def main():
         )
         return
 
-    if args.confirm:
-        if not args.json_file:
-            print("错误: --confirm 需要配合 --json-file 使用", file=sys.stderr)
-            sys.exit(1)
+    report_data = {}
+    if args.json_file:
         try:
             with open(args.json_file, "r", encoding="utf-8") as f:
                 report_data = json.load(f)
-        except Exception as e:
-            print(f"错误: 读取参数文件失败: {e}", file=sys.stderr)
-            sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(f"错误: JSON格式解析失败: {e}", file=sys.stderr)
+            return
 
-        prepared_data = prepare_report_data(report_data)
-
-        print("=" * 50, flush=True)
-        print("日报预览：", flush=True)
-        print("=" * 50, flush=True)
-        print(f"日期：{prepared_data['date']}", flush=True)
-        print(f"项目：{prepared_data['chanceProjectName']}", flush=True)
-        print(f"编号：{prepared_data['projectCode']}", flush=True)
-        print(f"经理：{prepared_data['projectManager']}", flush=True)
-        print(f"阶段：{prepared_data['chanceProjectSchedule']}", flush=True)
-        print(f"工时：{prepared_data['workHourProportion']}", flush=True)
-        print(f"今日总结：{prepared_data['daySummarizeNow']}", flush=True)
-        print(f"明日计划：{prepared_data['dayPlanNext']}", flush=True)
-        print("=" * 50, flush=True)
-        print(flush=True)
-
-        if not username or not password:
-            print("错误: 需要设置 PM_USERNAME 和 PM_PASSWORD 环境变量", file=sys.stderr)
-            sys.exit(1)
-
-        try:
-            print("[日报] 正在登录...", flush=True)
-            token = login(base_url, username, password)
-            print("[日报] 登录成功", flush=True)
-
-            print("[日报] 正在提交日报...", flush=True)
-            sys.stdout.flush()
-            result = submit_report(base_url, token, prepared_data)
-
-            if result.get("code") == 0:
-                print("", flush=True)
-                print("==================================================", flush=True)
-                print("【成功】日报提交成功", flush=True)
-                print("==================================================", flush=True)
-            else:
-                error_msg = result.get("message", "提交失败")
-                try:
-                    inner_error = json.loads(error_msg)
-                    error_text = inner_error.get("msg", error_msg)
-                except:
-                    error_text = error_msg
-
-                print("", flush=True)
-                print("==================================================", flush=True)
-                print(f"【错误】{error_text}", flush=True)
-                print("==================================================", flush=True)
-                print("", flush=True)
-                print("请根据上述错误信息决定如何处理。", flush=True)
-                sys.exit(1)
-
-        except Exception as e:
-            print(f"[日报] 运行时错误: {e}", flush=True)
-            sys.exit(1)
-        return
-
-    if not args.json_data and not args.json_file:
-        print("错误: 需要提供 --json 或 --json-file 参数", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        if args.json_file:
-            with open(args.json_file, "r", encoding="utf-8") as f:
-                report_data = json.load(f)
-        else:
-            report_data = json.loads(args.json_data)
-    except json.JSONDecodeError as e:
-        print(f"错误: JSON格式解析失败: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    if args.project_code:
+        report_data["projectCode"] = args.project_code
+    if args.project_name:
+        report_data["projectName"] = args.project_name
+    if args.project_stage:
+        report_data["projectStage"] = args.project_stage
+    if args.project_manager:
+        report_data["projectManager"] = args.project_manager
+    if args.day_summarize_now:
+        report_data["daySummarizeNow"] = args.day_summarize_now
+    if args.day_plan_next:
+        report_data["dayPlanNext"] = args.day_plan_next
     if args.date:
-        report_data.setdefault("date", args.date)
-        report_data.setdefault("dayReportTime", args.date)
+        report_data["date"] = args.date
+        report_data["dayReportTime"] = args.date
+    elif "date" not in report_data:
+        report_data["date"] = datetime.now().strftime("%Y-%m-%d")
+        report_data["dayReportTime"] = report_data["date"]
 
-    if not report_data.get("date"):
-        today = datetime.now().strftime("%Y-%m-%d")
-        report_data["date"] = today
-        report_data["dayReportTime"] = today
-
-    if "dayReportType" not in report_data:
-        report_data["dayReportType"] = 2
+    report_data["dayReportType"] = args.day_report_type
 
     normalize_field_names(report_data)
     missing = validate_report_data(report_data)
 
     if missing:
         print(format_missing_fields_message(missing), file=sys.stderr)
-        sys.exit(1)
+        return
 
     prepared_data = prepare_report_data(report_data)
 
@@ -533,9 +495,6 @@ def main():
     print("=" * 50, flush=True)
     print(flush=True)
 
-    if args.dry_run:
-        return
-
     temp_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
     os.makedirs(temp_dir, exist_ok=True)
 
@@ -546,7 +505,44 @@ def main():
     with open(param_file, "w", encoding="utf-8") as f:
         json.dump(prepared_data, f, ensure_ascii=False, indent=2)
 
-    print('⚠️  请确认以上信息，确认无误后回复"确认"或"提交"', flush=True)
+    print(f"[日报] 参数文件已生成：{param_file}", flush=True)
+
+    if not username or not password:
+        print("错误: 需要设置 PM_USERNAME 和 PM_PASSWORD 环境变量", file=sys.stderr)
+        return
+
+    try:
+        print("[日报] 正在登录...", flush=True)
+        token = login(base_url, username, password)
+        print("[日报] 登录成功", flush=True)
+
+        print("[日报] 正在提交日报...", flush=True)
+        sys.stdout.flush()
+        result = submit_report(base_url, token, prepared_data)
+
+        if result.get("code") == 0:
+            print("", flush=True)
+            print("==================================================", flush=True)
+            print("【成功】日报提交成功", flush=True)
+            print("==================================================", flush=True)
+        else:
+            error_msg = result.get("message", "提交失败")
+            try:
+                inner_error = json.loads(error_msg)
+                error_text = inner_error.get("msg", error_msg)
+            except:
+                error_text = error_msg
+
+            print("", flush=True)
+            print("==================================================", flush=True)
+            print(f"【错误】{error_text}", flush=True)
+            print("==================================================", flush=True)
+            print("", flush=True)
+            return
+
+    except Exception as e:
+        print(f"[日报] 运行时错误: {e}", flush=True)
+        return
 
 
 if __name__ == "__main__":
