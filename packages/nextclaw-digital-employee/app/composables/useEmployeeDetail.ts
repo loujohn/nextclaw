@@ -20,7 +20,7 @@ export type EmployeeDetailPayload = {
     description: string;
     systemPrompt: string;
     departmentId: string | null;
-    skills: Array<{ id: string; skillName: string }>;
+    skills: Array<{ id: string; skillName: string; version: string | null; latestVersion: string | null; hasUpdate: boolean }>;
     schedule: {
       id: string;
       scheduleKind: string;

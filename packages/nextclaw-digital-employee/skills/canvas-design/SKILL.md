@@ -1,6 +1,7 @@
 ---
 name: canvas-design
 name_zh: 视觉画布设计
+version: 1.0.0
 description: 基于设计哲学创作高质量静态视觉作品（PNG/PDF）。当用户需要海报、插画、视觉设计或静态版式时使用，并坚持原创避免侵权。
 license: Complete terms in LICENSE.txt
 ---

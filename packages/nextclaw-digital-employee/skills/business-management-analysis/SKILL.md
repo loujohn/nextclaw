@@ -1,6 +1,7 @@
 ---
 name: business-management-analysis
 name_zh: 经营管理分析
+version: 1.0.0
 description: "利用 mcporter 连接经营管理 MCP 服务，进行数据分析、报表查询等经营管理工作。当需要进行经营管理数据分析、生成经营报表、或查询业务指标时使用。"
 metadata:
   nextclaw:

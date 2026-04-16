@@ -1,6 +1,7 @@
 ---
 name: mcp-builder
 name_zh: MCP 服务构建
+version: 1.0.0
 description: 用于设计和实现高质量 MCP（Model Context Protocol）服务，帮助大模型通过标准化工具接入外部 API/系统，适用于 Python（FastMCP）与 Node/TypeScript（MCP SDK）技术栈。
 license: Complete terms in LICENSE.txt
 ---

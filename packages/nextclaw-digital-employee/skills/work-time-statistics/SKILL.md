@@ -1,6 +1,7 @@
 ---
 name: work-time-statistics
 name_zh: 工时统计分析
+version: 1.0.0
 description: "查询项目工时数据，支持项目列表查询和项目人员工时明细查询。当需要获取项目列表、查询指定项目成员工时时使用。"
 metadata:
   nextclaw:

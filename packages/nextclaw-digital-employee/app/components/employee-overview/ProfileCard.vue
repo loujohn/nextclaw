@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ArrowUpCircle } from "lucide-vue-next";
 import type { AutomationSummaryView } from "~/composables/useEmployeeDetail";
 import { pickAvatarGradient } from "~~/shared/avatar-utils";
 
@@ -9,7 +10,13 @@ const props = defineProps<{
     code: string;
     description: string;
     departmentId?: string | null;
-    skills: Array<{ id: string; skillName: string }>;
+    skills: Array<{
+      id: string;
+      skillName: string;
+      version: string | null;
+      latestVersion: string | null;
+      hasUpdate: boolean;
+    }>;
     health: {
       hasPrompt: boolean;
       hasSkills: boolean;
@@ -22,13 +29,70 @@ const props = defineProps<{
   nextJobRun: { name: string; nextRunAt: string } | null;
 }>();
 
+const emit = defineEmits<{
+  skillUpgraded: [];
+}>();
+
 const avatarGradient = computed(() => pickAvatarGradient(props.employee.id));
-
 const avatarChar = computed(() => props.employee.name.charAt(0));
-
 const isRunning = computed(() =>
   props.employee.recentRuns.some((r) => r.status === "running")
 );
+
+const upgradingSkill = ref<string | null>(null);
+const upgradeError = ref<string | null>(null);
+const upgradingAll = ref(false);
+
+// 单个升级确认弹窗
+const confirmSingle = ref(false);
+const pendingSingleSkill = ref<string | null>(null);
+
+function askUpgradeSkill(skillName: string) {
+  pendingSingleSkill.value = skillName;
+  upgradeError.value = null;
+  confirmSingle.value = true;
+}
+
+async function doUpgradeSkill() {
+  const skillName = pendingSingleSkill.value;
+  if (!skillName) return;
+  upgradingSkill.value = skillName;
+  try {
+    await $fetch(`/api/employees/${props.employee.id}/skills/${skillName}/upgrade`, { method: "POST" });
+    confirmSingle.value = false;
+    emit("skillUpgraded");
+  } catch (e: unknown) {
+    upgradeError.value = e instanceof Error ? e.message : "升级失败";
+  } finally {
+    upgradingSkill.value = null;
+  }
+}
+
+// 升级全部确认弹窗
+const confirmAll = ref(false);
+
+function askUpgradeAll() {
+  upgradeError.value = null;
+  confirmAll.value = true;
+}
+
+async function doUpgradeAllSkills() {
+  const updatableSkills = props.employee.skills.filter(s => s.hasUpdate);
+  upgradingAll.value = true;
+  try {
+    for (const skill of updatableSkills) {
+      upgradingSkill.value = skill.skillName;
+      await $fetch(`/api/employees/${props.employee.id}/skills/${skill.skillName}/upgrade`, { method: "POST" });
+    }
+    confirmAll.value = false;
+    emit("skillUpgraded");
+  } catch (e: unknown) {
+    upgradeError.value = e instanceof Error ? e.message : "升级失败";
+  } finally {
+    upgradingSkill.value = null;
+    upgradingAll.value = false;
+  }
+}
 
 function formatNextRun(dateStr: string): string {
   const d = new Date(dateStr);
@@ -52,6 +116,8 @@ const healthChecks = computed(() => [
     label: `定时任务 · ${props.employee.automationSummary.countLabel} · ${props.employee.automationSummary.statusLabel}`,
   },
 ]);
+
+const updatableCount = computed(() => props.employee.skills.filter((s) => s.hasUpdate).length);
 </script>
 
 <template>
@@ -107,17 +173,47 @@ const healthChecks = computed(() => [
 
       <!-- Skills -->
       <div>
-        <p class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 mb-2">已绑定技能</p>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">已绑定技能</p>
+          <div v-if="updatableCount > 0" class="flex items-center gap-2">
+            <span class="text-[10px] font-semibold text-amber-500">{{ updatableCount }} 个可升级</span>
+            <button
+              class="flex items-center gap-0.5 rounded px-1.5 py-[2px] text-[10px] font-semibold bg-amber-50 text-amber-600 ring-1 ring-amber-200/80 hover:bg-amber-100 transition-colors disabled:opacity-40"
+              :disabled="upgradingAll"
+              @click="askUpgradeAll"
+            >
+              <ArrowUpCircle class="h-3 w-3" :class="upgradingAll ? 'animate-spin' : ''" />
+              升级全部
+            </button>
+          </div>
+        </div>
         <div v-if="employee.skills.length > 0" class="flex flex-wrap gap-[5px]">
-          <span
+          <div
             v-for="skill in employee.skills"
             :key="skill.id"
-            class="rounded-md bg-indigo-50/80 px-2.5 py-[3px] text-[11px] font-medium text-indigo-600 ring-1 ring-indigo-100/80"
+            class="group relative flex items-center gap-1 rounded-md px-2.5 py-[3px] text-[11px] font-medium ring-1"
+            :class="skill.hasUpdate
+              ? 'bg-amber-50/80 text-amber-700 ring-amber-200/80'
+              : 'bg-indigo-50/80 text-indigo-600 ring-indigo-100/80'"
           >
-            {{ skillDisplayNames.get(skill.skillName) || skill.skillName }}
-          </span>
+            <span>{{ skillDisplayNames.get(skill.skillName) || skill.skillName }}</span>
+            <span v-if="skill.version" class="opacity-50 font-normal">v{{ skill.version }}</span>
+            <button
+              v-if="skill.hasUpdate"
+              class="ml-0.5 rounded text-amber-500 hover:text-amber-700 transition-colors disabled:opacity-40"
+              :disabled="upgradingSkill === skill.skillName"
+              :title="`升级到 v${skill.latestVersion}`"
+              @click.stop="askUpgradeSkill(skill.skillName)"
+            >
+              <ArrowUpCircle
+                class="h-3.5 w-3.5"
+                :class="upgradingSkill === skill.skillName ? 'animate-spin' : ''"
+              />
+            </button>
+          </div>
         </div>
         <p v-else class="text-[11px] text-muted-foreground/60">还没有绑定技能</p>
+        <p v-if="upgradeError" class="mt-1.5 text-[11px] text-destructive">{{ upgradeError }}</p>
       </div>
 
       <!-- Next Run -->
@@ -130,4 +226,30 @@ const healthChecks = computed(() => [
       </div>
     </div>
   </div>
+
+  <!-- 单个技能升级确认弹窗 -->
+  <SharedConfirmDialog
+    :open="confirmSingle"
+    title="升级技能"
+    :message="`确定要将技能「${skillDisplayNames.get(pendingSingleSkill ?? '') || pendingSingleSkill}」升级到 v${employee.skills.find(s => s.skillName === pendingSingleSkill)?.latestVersion} 吗？`"
+    confirm-label="升级"
+    confirming-label="升级中..."
+    :confirming="upgradingSkill !== null"
+    :error="upgradeError ?? undefined"
+    @confirm="doUpgradeSkill"
+    @cancel="confirmSingle = false"
+  />
+
+  <!-- 升级全部确认弹窗 -->
+  <SharedConfirmDialog
+    :open="confirmAll"
+    title="升级全部技能"
+    :message="`确定要升级全部 ${updatableCount} 个可升级的技能吗？`"
+    confirm-label="全部升级"
+    confirming-label="升级中..."
+    :confirming="upgradingAll"
+    :error="upgradeError ?? undefined"
+    @confirm="doUpgradeAllSkills"
+    @cancel="confirmAll = false"
+  />
 </template>
