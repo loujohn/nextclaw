@@ -17,14 +17,9 @@ if sys.platform == "win32":
 """
 日报填写脚本
 
-前置环境变量（与工时统计分析技能共用）：
-  PM_BASE_URL   - 基础URL（默认：http://shangji.dcg-internal-services.dev.dcginner:10003）
-  PM_USERNAME   - 登录用户名
-  PM_PASSWORD   - 登录密码
-
 用法:
-  python daily-report.py --submit --json '<json参数>'
-  python daily-report.py --validate --json '<json参数>'
+  python daily-report.py --query-projects <项目名称关键词>
+  python daily-report.py --submit --project-code <编号> --project-name <名称> ...
 """
 
 import os
@@ -317,7 +312,14 @@ def main():
     parser.add_argument("--username", dest="username", help="登录用户名")
     parser.add_argument("--password", dest="password", help="登录密码")
     parser.add_argument(
-        "--query-projects", dest="query_projects", help="根据项目名称查询项目列表"
+        "-q",
+        "--query-projects",
+        dest="query_projects",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help="根据项目名称查询项目列表（可选，不传则查询全部）",
     )
     parser.add_argument(
         "--select", dest="select", help="从查询结果中选择项目（数字索引）"
@@ -332,7 +334,7 @@ def main():
     if (
         not args.submit
         and not args.validate
-        and not args.query_projects
+        and args.query_projects is None
         and not args.select
     ):
         print("""
@@ -341,20 +343,15 @@ def main():
 用法:
   python daily-report.py --query-projects <项目名称关键词>
   python daily-report.py --submit --project-code <编号> --project-name <名称> ...
-
-前置环境变量（与工时统计分析技能共用）：
-  PM_BASE_URL   - 基础URL
-  PM_USERNAME   - 登录用户名
-  PM_PASSWORD   - 登录密码
 """)
         return
 
     temp_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
     os.makedirs(temp_dir, exist_ok=True)
 
-    if args.query_projects:
+    if args.query_projects is not None:
         if not username or not password:
-            print("错误: 需要设置 PM_USERNAME 和 PM_PASSWORD 环境变量", file=sys.stderr)
+            print("错误: 需要登录凭据", file=sys.stderr)
             return
         try:
             token = login(base_url, username, password)
@@ -508,7 +505,7 @@ def main():
     print(f"[日报] 参数文件已生成：{param_file}", flush=True)
 
     if not username or not password:
-        print("错误: 需要设置 PM_USERNAME 和 PM_PASSWORD 环境变量", file=sys.stderr)
+        print("错误: 需要登录凭据", file=sys.stderr)
         return
 
     try:
