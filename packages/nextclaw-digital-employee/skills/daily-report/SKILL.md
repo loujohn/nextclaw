@@ -1,14 +1,14 @@
 ---
 name: daily-report
-name_zh: 日报填写
-description: "封装并提交日报数据至内部系统。自动完成登录鉴权、参数校验与接口调用。当需要填写日报、提交工作汇报或补充项目进度信息时使用。"
+name_zh: 项目日报生成
+description: "封装并提交项目日报数据至内部系统。自动完成登录鉴权、参数校验与接口调用。当需要生成项目日报、提交工作汇报或补充项目进度信息时使用。"
 metadata:
   nextclaw:
     emoji: "📝"
     category: "project-management"
 ---
 
-# 日报填写技能
+# 项目日报生成技能
 
 **⚠️ 重要：本技能使用 Python 编写，必须使用 `python` 命令调用，禁止使用 `node`！**
 
