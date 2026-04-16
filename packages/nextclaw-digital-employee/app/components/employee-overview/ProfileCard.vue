@@ -16,6 +16,7 @@ const props = defineProps<{
       version: string | null;
       latestVersion: string | null;
       hasUpdate: boolean;
+      installMissing: boolean;
     }>;
     health: {
       hasPrompt: boolean;
@@ -192,14 +193,21 @@ const updatableCount = computed(() => props.employee.skills.filter((s) => s.hasU
             v-for="skill in employee.skills"
             :key="skill.id"
             class="group relative flex items-center gap-1 rounded-md px-2.5 py-[3px] text-[11px] font-medium ring-1"
-            :class="skill.hasUpdate
-              ? 'bg-amber-50/80 text-amber-700 ring-amber-200/80'
-              : 'bg-indigo-50/80 text-indigo-600 ring-indigo-100/80'"
+            :class="skill.installMissing
+              ? 'bg-red-50/80 text-red-600 ring-red-200/80'
+              : skill.hasUpdate
+                ? 'bg-amber-50/80 text-amber-700 ring-amber-200/80'
+                : 'bg-indigo-50/80 text-indigo-600 ring-indigo-100/80'"
           >
             <span>{{ skillDisplayNames.get(skill.skillName) || skill.skillName }}</span>
             <span v-if="skill.version" class="opacity-50 font-normal">v{{ skill.version }}</span>
+            <!-- 全局已删除标签 -->
+            <span
+              v-if="skill.installMissing"
+              class="ml-0.5 rounded px-1 py-[1px] text-[9px] font-bold bg-red-100 text-red-500 ring-1 ring-red-200/80 leading-none"
+            >已删除</span>
             <button
-              v-if="skill.hasUpdate"
+              v-else-if="skill.hasUpdate"
               class="ml-0.5 rounded text-amber-500 hover:text-amber-700 transition-colors disabled:opacity-40"
               :disabled="upgradingSkill === skill.skillName"
               :title="`升级到 v${skill.latestVersion}`"
