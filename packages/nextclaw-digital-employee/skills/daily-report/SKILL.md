@@ -84,26 +84,24 @@ Body: {}（空对象）
 
 ### 错误示例（禁止使用）
 
-```json
-{
-  "workSummary": "完成工作", // ❌ 错误！应为 daySummarizeNow
-  "workPlan": "继续工作", // ❌ 错误！应为 dayPlanNext
-  "workRatio": 1.0 // ❌ 错误！应为 workHourProportion
-}
+```bash
+# ❌ 错误！字段名应为 kebab-case 格式
+--day-summarize-now "完成工作"   # ❌ 错误！应为 daySummarizeNow
+--day-plan-next "继续工作"       # ❌ 错误！应为 dayPlanNext
+--work-ratio 1.0                  # ❌ 错误！应为 dayReportType
 ```
 
-### 正确示例
+### 命令行参数示例
 
-```json
-{
-  "date": "2026-04-15",
-  "projectCode": "XM202503112160",
-  "projectName": "测试项目",
-  "projectStage": "开发中",
-  "projectManager": "张三",
-  "daySummarizeNow": "完成工作",
-  "dayPlanNext": "继续工作"
-}
+```bash
+python daily-report.py --submit \
+  --date "2026-04-15" \
+  --project-code "XM202503112160" \
+  --project-name "测试项目" \
+  --project-stage "开发中" \
+  --project-manager "张三" \
+  --day-summarize-now "完成工作" \
+  --day-plan-next "继续工作"
 ```
 
 ## 使用流程
@@ -112,24 +110,28 @@ Body: {}（空对象）
 2. **查询项目** → 如项目不明确，调用 `--query-projects` 查询并让用户选择
 3. **校验必填字段** → 检查是否所有必填字段都有值
 4. **反问缺失字段** → 如有缺失，向用户反问获取完整信息
-5. **生成预览** → 使用 `--submit --json-file <file>` 显示预览并生成参数文件
-6. **用户确认** → 用户确认后，AI 调用 `--confirm --json-file <file>` 提交
+5. **用户确认** → 信息完整后，用户确认提交
+6. **生成参数文件并提交** → 调用 `--submit` 生成参数文件并执行提交
 
 ## 调用脚本
 
 ### 命令行选项
 
-| 选项               | 说明                                 |
-| ------------------ | ------------------------------------ |
-| `--submit`         | 生成预览并生成参数文件，输出确认提示 |
-| `--confirm`        | 确认提交（需配合 --json-file）       |
-| `--dry-run`        | 仅显示预览，不生成文件不提交         |
-| `--validate`       | 仅校验参数，返回 JSON 格式校验结果   |
-| `--json`           | JSON 格式的日报参数                  |
-| `--json-file`      | 从文件读取日报参数                   |
-| `--date`           | 日期（默认当天，格式 YYYY-MM-DD）    |
-| `--query-projects` | 根据关键词查询项目列表               |
-| `--select`         | 从缓存的查询结果中选择项目           |
+| 选项                  | 说明                           |
+| --------------------- | ------------------------------ |
+| `--submit`            | 生成参数文件并提交             |
+| `--validate`          | 仅校验参数，返回 JSON 校验结果 |
+| `--json-file`         | 从文件读取日报参数（备用）     |
+| `--date`              | 日期（YYYY-MM-DD，默认当天）   |
+| `--project-code`      | 项目编号                       |
+| `--project-name`      | 项目名称                       |
+| `--project-stage`     | 项目阶段                       |
+| `--project-manager`   | 项目经理                       |
+| `--day-summarize-now` | 今日工作总结                   |
+| `--day-plan-next`     | 明日工作计划                   |
+| `--day-report-type`   | 日报类型（默认2）              |
+| `--query-projects`    | 根据关键词查询项目列表         |
+| `--select`            | 从缓存的查询结果中选择项目     |
 
 ### 使用示例
 
@@ -140,12 +142,11 @@ python daily-report.py --query-projects "测试"
 # 2. 选择项目（返回项目信息）
 python daily-report.py --select 1
 
-# 3. 生成预览并生成参数文件
-python daily-report.py --submit --json-file "日报参数.json"
-# 输出预览后，脚本自动生成参数文件，并提示用户确认
+# 3. 校验参数
+python daily-report.py --validate --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
 
-# 4. 用户确认后，AI 调用此命令提交
-python daily-report.py --confirm --json-file "参数文件路径.json"
+# 4. 生成参数文件并提交
+python daily-report.py --submit --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
 ```
 
 ## 交互式反问
@@ -167,24 +168,18 @@ python daily-report.py --confirm --json-file "参数文件路径.json"
 
 ## 流程说明
 
-**两步提交机制**：
+**两步流程**：
 
-1. **生成预览**（`--submit`）：校验参数 → 显示预览 → 自动生成参数文件 → 输出确认命令
-2. **确认提交**（`--confirm --json-file`）：读取参数文件 → 执行提交
+1. **交互收集信息**：与用户对话，补充完整日报信息（项目、总结、计划）
+2. **用户确认后提交**：调用 `--submit` 生成参数文件并执行提交
 
 ```bash
-# 第1步：生成预览（不实际提交）
-python daily-report.py --submit --json '{...}'
-
-# 第2步：使用脚本输出的确认命令提交
-python daily-report.py --submit --confirm --json-file "C:\Users\用户名\nextclaw-temp\daily-report\param_xxx.json"
+python daily-report.py --submit --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
 ```
 
 ## 参数文件
 
-**⚠️ 重要：所有临时文件必须放到指定目录，禁止随意存放！**
-
-**⚠️ 参数文件由脚本自动生成，不要手动创建！**
+**⚠️ 重要：参数文件在用户确认提交后由脚本自动生成，用于记录提交内容。**
 
 ### 文件位置
 
