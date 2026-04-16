@@ -178,12 +178,10 @@ const deletingUploadPaths = ref<Set<string>>(new Set());
 const uploadDeleteNotice = ref("");
 let uploadDeleteNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 const SESSION_PAGE_SIZE = 30;
-const CHAT_EXTERNAL_SYNC_INTERVAL_MS = 15_000;
 const { data: employee, refresh: refreshEmployee } = useEmployeeDetail(employeeId);
 const { refresh: refreshRuns } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
   key: computed(() => `employee-runs:${employeeId.value}`)
 });
-let externalSyncInterval: ReturnType<typeof setInterval> | null = null;
 
 const assistantLoadingVisible = computed(() => {
   if (!sending.value) {
@@ -537,30 +535,10 @@ async function syncChatWithExternalRuns() {
   }
 }
 
-function stopChatExternalSync() {
-  if (!externalSyncInterval) {
-    return;
-  }
-  clearInterval(externalSyncInterval);
-  externalSyncInterval = null;
-}
-
-function startChatExternalSync() {
-  if (externalSyncInterval) {
-    return;
-  }
-  externalSyncInterval = setInterval(() => {
-    void syncChatWithExternalRuns();
-  }, CHAT_EXTERNAL_SYNC_INTERVAL_MS);
-}
-
 function handleChatVisibilityChange() {
-  if (document.hidden) {
-    stopChatExternalSync();
-    return;
+  if (!document.hidden) {
+    void syncChatWithExternalRuns();
   }
-  void syncChatWithExternalRuns();
-  startChatExternalSync();
 }
 
 async function loadMoreSessions() {
@@ -968,12 +946,10 @@ function selectSession(sessionKey: string) {
 
 onMounted(() => {
   void initializeChat();
-  startChatExternalSync();
   document.addEventListener("visibilitychange", handleChatVisibilityChange);
 });
 
 onBeforeUnmount(() => {
-  stopChatExternalSync();
   document.removeEventListener("visibilitychange", handleChatVisibilityChange);
 });
 
