@@ -349,6 +349,10 @@ def main():
     temp_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
     os.makedirs(temp_dir, exist_ok=True)
 
+    query_file_name = (
+        f"daily_report_query_{username}.json" if username else "daily_report_query.json"
+    )
+
     if args.query_projects is not None:
         if not username or not password:
             print("错误: 需要登录凭据", file=sys.stderr)
@@ -359,7 +363,7 @@ def main():
             if result.get("code") == 0 and result.get("data"):
                 records = result["data"].get("records", [])
                 total = result["data"].get("total", 0)
-                query_file = os.path.join(temp_dir, "daily_report_query.json")
+                query_file = os.path.join(temp_dir, query_file_name)
                 with open(query_file, "w", encoding="utf-8") as f:
                     json.dump(
                         {"records": records, "total": total}, f, ensure_ascii=False
@@ -378,7 +382,7 @@ def main():
         return
 
     if args.select:
-        query_file = os.path.join(temp_dir, "daily_report_query.json")
+        query_file = os.path.join(temp_dir, query_file_name)
         if not os.path.exists(query_file):
             print(
                 "错误: 没有可选择的项目，请先使用 --query-projects 查询",
