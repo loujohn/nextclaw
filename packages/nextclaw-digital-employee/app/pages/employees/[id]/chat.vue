@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { buildChatFailureMessage, formatRunStatusMeta, type ChatAttachmentView, type ChatMessageView } from "~~/shared/ui-models";
+import {
+  buildChatFailureMessage,
+  formatRunStatusMeta,
+  type ChatAttachmentView,
+  type ChatMessageView,
+  type ChatProcessTimelineEntry
+} from "~~/shared/ui-models";
 import type { UploadFilesPayload } from "~~/shared/api-types";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { buildChatDisplayMessages } from "~/lib/chat-message-groups";
@@ -62,14 +68,6 @@ type StreamEvent =
   | { event: "run_failed"; data: { runId: string; message: string } }
   | { event: "run_aborted"; data: { runId: string; reason: string } }
   | { event: "done"; data: { runId: string; sessionKey: string; status: string } };
-
-const expandedProcess = ref<Set<string>>(new Set());
-
-function toggleProcess(key: string) {
-  const s = new Set(expandedProcess.value);
-  s.has(key) ? s.delete(key) : s.add(key);
-  expandedProcess.value = s;
-}
 
 function tryParseJson(raw: string): string {
   try {
@@ -148,6 +146,177 @@ function mergeTerminalMessage(existing: string, incoming: string): string {
   return `${currentText}\n\n${nextText}`;
 }
 
+function upsertProcessTimelineEntry(message: ChatMessageView, entry: ChatProcessTimelineEntry): ChatMessageView {
+  const currentTimeline = message.processTimeline ?? [];
+  const existingIndex = currentTimeline.findIndex((item) => item.id === entry.id);
+  if (existingIndex === -1) {
+    return {
+      ...message,
+      processTimeline: [...currentTimeline, entry]
+    };
+  }
+  const nextTimeline = [...currentTimeline];
+  nextTimeline[existingIndex] = {
+    ...nextTimeline[existingIndex],
+    ...entry
+  };
+  return {
+    ...message,
+    processTimeline: nextTimeline
+  };
+}
+
+function upsertStreamingReplyTimeline(message: ChatMessageView, content: string): ChatMessageView {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return message;
+  }
+  return upsertProcessTimelineEntry(message, {
+    id: `${message.id ?? "assistant"}-reply-live`,
+    kind: "reply",
+    timestamp: new Date().toISOString(),
+    content: trimmedContent
+  });
+}
+
+function upsertStreamingReasoningTimeline(message: ChatMessageView, content: string): ChatMessageView {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return message;
+  }
+  return {
+    ...message,
+    processTimeline: [
+      ...(message.processTimeline ?? []),
+      {
+        id: makeLocalId(`${message.id ?? "assistant"}-reasoning`),
+        kind: "reasoning",
+        timestamp: new Date().toISOString(),
+        content: trimmedContent
+      }
+    ]
+  };
+}
+
+function appendStreamingToolCallTimeline(message: ChatMessageView, params: {
+  toolCallId?: string;
+  name: string;
+  args: string;
+}): ChatMessageView {
+  return upsertProcessTimelineEntry(message, {
+    id: params.toolCallId || makeLocalId("tool-call-timeline"),
+    kind: "tool_call",
+    timestamp: new Date().toISOString(),
+    name: params.name,
+    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+    arguments: params.args
+  });
+}
+
+function appendStreamingToolResultTimeline(message: ChatMessageView, params: {
+  toolCallId?: string;
+  name: string;
+  output: string;
+}): ChatMessageView {
+  return upsertProcessTimelineEntry(message, {
+    id: params.toolCallId
+      ? `${params.toolCallId}-result`
+      : makeLocalId("tool-result-timeline"),
+    kind: "tool_result",
+    timestamp: new Date().toISOString(),
+    name: params.name,
+    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+    output: params.output
+  });
+}
+
+function processEntryLabel(entry: ChatProcessTimelineEntry): string {
+  switch (entry.kind) {
+    case "reasoning":
+      return "思考过程";
+    case "tool_call":
+      return "工具调用";
+    case "tool_result":
+      return "工具结果";
+    case "reply":
+      return "过程回复";
+  }
+}
+
+function processEntryBody(entry: ChatProcessTimelineEntry): string {
+  switch (entry.kind) {
+    case "reasoning":
+    case "reply":
+      return normalizeProcessEntryBody(entry.content);
+    case "tool_call":
+      return normalizeProcessEntryBody(tryParseJson(entry.arguments));
+    case "tool_result":
+      return normalizeProcessEntryBody(entry.output);
+  }
+}
+
+function normalizeProcessEntryBody(value: string): string {
+  return value
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n");
+}
+
+function processEntryUsesMarkdown(entry: ChatProcessTimelineEntry): boolean {
+  if (entry.kind === "tool_call") {
+    return false;
+  }
+  const body = processEntryBody(entry).trim();
+  if (!body) {
+    return false;
+  }
+  return /```/.test(body)
+    || /(^|\n)#{1,6}\s/.test(body)
+    || /(^|\n)\s*[-*+]\s/.test(body)
+    || /(^|\n)\s*\d+\.\s/.test(body)
+    || /\[[^\]]+\]\([^\)]+\)/.test(body)
+    || /(^|\n)\s*>\s/.test(body)
+    || /\*\*[^*]+\*\*/.test(body)
+    || /`[^`]+`/.test(body)
+    || /(^|\n)\s*\|.+\|/.test(body);
+}
+
+function formatProcessTimestamp(timestamp?: string): string {
+  if (!timestamp) {
+    return "";
+  }
+  const normalized = timestamp.includes("T") ? timestamp : timestamp.replace(" ", "T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}-${mo}-${d} ${h}:${m}:${s}`;
+}
+
+function processEntryUsesCodeBlock(entry: ChatProcessTimelineEntry): boolean {
+  return entry.kind === "tool_call" || (entry.kind === "tool_result" && !processEntryUsesMarkdown(entry));
+}
+
+function isProcessTimelineExpanded(messageKey: string): boolean {
+  return !collapsedProcessTimelineKeys.value.has(messageKey);
+}
+
+function toggleProcessTimeline(messageKey: string) {
+  const next = new Set(collapsedProcessTimelineKeys.value);
+  if (next.has(messageKey)) {
+    next.delete(messageKey);
+  } else {
+    next.add(messageKey);
+  }
+  collapsedProcessTimelineKeys.value = next;
+}
+
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
 const draft = ref("");
@@ -161,6 +330,7 @@ const messages = ref<ChatMessageView[]>([]);
 const sessions = ref<ChatSessionListItem[]>([]);
 const sessionNextCursor = ref<string | null>(null);
 const activeSessionKey = ref("");
+const collapsedProcessTimelineKeys = ref<Set<string>>(new Set());
 const nextCursor = ref<string | null>(null);
 const activeRunId = ref("");
 const threadEl = ref<HTMLElement | null>(null);
@@ -178,12 +348,10 @@ const deletingUploadPaths = ref<Set<string>>(new Set());
 const uploadDeleteNotice = ref("");
 let uploadDeleteNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 const SESSION_PAGE_SIZE = 30;
-const CHAT_EXTERNAL_SYNC_INTERVAL_MS = 15_000;
 const { data: employee, refresh: refreshEmployee } = useEmployeeDetail(employeeId);
 const { refresh: refreshRuns } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
   key: computed(() => `employee-runs:${employeeId.value}`)
 });
-let externalSyncInterval: ReturnType<typeof setInterval> | null = null;
 
 const assistantLoadingVisible = computed(() => {
   if (!sending.value) {
@@ -199,7 +367,8 @@ const assistantLoadingVisible = computed(() => {
   }
   return !assistantMessage.content.trim()
     && !(assistantMessage.reasoning?.trim())
-    && !(assistantMessage.toolCalls?.length);
+    && !(assistantMessage.toolCalls?.length)
+    && !(assistantMessage.processTimeline?.length);
 });
 
 const displayMessages = computed(() => buildChatDisplayMessages(messages.value));
@@ -371,6 +540,7 @@ function removeEmptyStreamingAssistantMessage() {
   const hasVisibleContent = Boolean(target.content.trim())
     || Boolean(target.reasoning?.trim())
     || Boolean(target.toolCalls?.length)
+    || Boolean(target.processTimeline?.length)
     || Boolean(target.replyStatus);
   if (!hasVisibleContent) {
     messages.value = messages.value.filter((message) => message.id !== assistantId);
@@ -379,8 +549,14 @@ function removeEmptyStreamingAssistantMessage() {
 
 function applyStreamingTerminalState(status: string, content?: string) {
   const assistantMessage = ensureStreamingAssistantMessage();
+  const nextMessage = content?.trim()
+    ? upsertStreamingReplyTimeline({
+        ...assistantMessage,
+        content: mergeTerminalMessage(assistantMessage.content, content)
+      }, mergeTerminalMessage(assistantMessage.content, content))
+    : assistantMessage;
   replaceMessage({
-    ...assistantMessage,
+    ...nextMessage,
     ...(content?.trim() ? { content: mergeTerminalMessage(assistantMessage.content, content) } : {}),
     replyStatus: formatRunStatusMeta(status)
   });
@@ -401,11 +577,13 @@ function appendLocalTerminalMessage(status: string, content: string) {
 }
 
 function shouldRenderAssistantMessage(message: ChatMessageView & {
+  processTimeline?: Array<unknown>;
   toolSteps?: Array<unknown>;
   toolResults?: Array<unknown>;
 }): boolean {
   const hasVisibleContent = Boolean(message.content.trim())
     || Boolean(message.reasoning?.trim())
+    || Boolean(message.processTimeline?.length)
     || Boolean(message.toolCalls?.length)
     || Boolean(message.toolSteps?.length)
     || Boolean(message.toolResults?.length)
@@ -414,17 +592,6 @@ function shouldRenderAssistantMessage(message: ChatMessageView & {
     return true;
   }
   return !(assistantLoadingVisible.value && message.id === streamingAssistantId.value);
-}
-
-function processSummary(msg: { reasoning?: string; toolSteps?: Array<unknown> }): string {
-  const segments: string[] = [];
-  if (msg.reasoning?.trim()) {
-    segments.push("已生成思考过程");
-  }
-  if ((msg.toolSteps?.length ?? 0) > 0) {
-    segments.push(`调用 ${(msg.toolSteps?.length ?? 0)} 个工具步骤`);
-  }
-  return segments.join(" · ");
 }
 
 function getLatestSessionPreviewFallback(fallback: string): string {
@@ -537,30 +704,10 @@ async function syncChatWithExternalRuns() {
   }
 }
 
-function stopChatExternalSync() {
-  if (!externalSyncInterval) {
-    return;
-  }
-  clearInterval(externalSyncInterval);
-  externalSyncInterval = null;
-}
-
-function startChatExternalSync() {
-  if (externalSyncInterval) {
-    return;
-  }
-  externalSyncInterval = setInterval(() => {
-    void syncChatWithExternalRuns();
-  }, CHAT_EXTERNAL_SYNC_INTERVAL_MS);
-}
-
 function handleChatVisibilityChange() {
-  if (document.hidden) {
-    stopChatExternalSync();
-    return;
+  if (!document.hidden) {
+    void syncChatWithExternalRuns();
   }
-  void syncChatWithExternalRuns();
-  startChatExternalSync();
 }
 
 async function loadMoreSessions() {
@@ -741,9 +888,13 @@ async function sendMessage(input = draft.value) {
         }
         case "thinking": {
           const assistantMessage = ensureStreamingAssistantMessage();
+          const nextReasoning = mergeProgressText(assistantMessage.reasoning, streamEvent.data.content);
           replaceMessage({
-            ...assistantMessage,
-            reasoning: mergeProgressText(assistantMessage.reasoning, streamEvent.data.content)
+            ...upsertStreamingReasoningTimeline(
+              assistantMessage,
+              streamEvent.data.content ?? ""
+            ),
+            reasoning: nextReasoning
           });
           break;
         }
@@ -751,7 +902,7 @@ async function sendMessage(input = draft.value) {
           const assistantMessage = ensureStreamingAssistantMessage();
           const toolCalls = assistantMessage.toolCalls ?? [];
           replaceMessage({
-            ...assistantMessage,
+            ...appendStreamingToolCallTimeline(assistantMessage, streamEvent.data),
             toolCalls: [
               ...toolCalls,
               {
@@ -764,24 +915,19 @@ async function sendMessage(input = draft.value) {
           break;
         }
         case "tool_result": {
+          const assistantMessage = ensureStreamingAssistantMessage();
           messages.value = [
-            ...messages.value,
-            {
-              id: makeLocalId("tool-result"),
-              role: "tool",
-              content: streamEvent.data.output,
-              toolCallId: streamEvent.data.toolCallId,
-              toolName: streamEvent.data.name,
-              timestamp: new Date().toISOString()
-            }
+            ...messages.value.filter((message) => message.id !== assistantMessage.id),
+            appendStreamingToolResultTimeline(assistantMessage, streamEvent.data)
           ];
           break;
         }
         case "reply_delta": {
           const assistantMessage = ensureStreamingAssistantMessage();
+          const nextContent = `${assistantMessage.content}${streamEvent.data.delta}`;
           replaceMessage({
-            ...assistantMessage,
-            content: `${assistantMessage.content}${streamEvent.data.delta}`
+            ...upsertStreamingReplyTimeline(assistantMessage, nextContent),
+            content: nextContent
           });
           scrollToBottom();
           break;
@@ -789,7 +935,7 @@ async function sendMessage(input = draft.value) {
         case "reply_final": {
           const assistantMessage = ensureStreamingAssistantMessage();
           replaceMessage({
-            ...assistantMessage,
+            ...upsertStreamingReplyTimeline(assistantMessage, streamEvent.data.content),
             content: streamEvent.data.content
           });
           break;
@@ -968,12 +1114,10 @@ function selectSession(sessionKey: string) {
 
 onMounted(() => {
   void initializeChat();
-  startChatExternalSync();
   document.addEventListener("visibilitychange", handleChatVisibilityChange);
 });
 
 onBeforeUnmount(() => {
-  stopChatExternalSync();
   document.removeEventListener("visibilitychange", handleChatVisibilityChange);
 });
 
@@ -1132,51 +1276,82 @@ watch(messages, () => {
                 <span class="text-[11px] text-muted-foreground">{{ formatTime(msg.timestamp) }}</span>
               </div>
 
-              <div class="space-y-2 rounded-[22px] border border-border/70 bg-card/70 px-3 py-3 shadow-sm backdrop-blur-sm">
-                <div v-if="msg.reasoning || msg.toolSteps?.length" class="rounded-2xl border border-indigo-200/60 bg-gradient-to-b from-indigo-50/60 to-white/80 dark:border-indigo-800/30 dark:from-indigo-950/20 dark:to-slate-950/10">
-                  <button
-                    class="flex w-full items-center gap-2 px-3 py-2 text-[11px] font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors rounded-2xl"
-                    @click="toggleProcess(msg.key)"
-                  >
-                    <Brain class="h-3 w-3" :stroke-width="2" />
-                    <span>执行过程</span>
-                    <span class="text-[10px] text-indigo-500/90 dark:text-indigo-300/70">{{ processSummary(msg) }}</span>
-                    <component :is="expandedProcess.has(msg.key) ? ChevronDown : ChevronRight" class="ml-auto h-3 w-3" />
-                  </button>
-
-                  <div v-if="expandedProcess.has(msg.key)" class="px-3 pb-3 space-y-2">
-                    <div v-if="msg.reasoning" class="rounded-xl border border-violet-200/60 bg-violet-50/60 px-3 py-2 dark:border-violet-800/30 dark:bg-violet-950/20">
-                      <div class="flex items-center gap-1.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
-                        <Brain class="h-3 w-3" :stroke-width="2" />
-                        <span>思考过程</span>
-                      </div>
-                      <div class="mt-1.5 text-xs text-violet-700/80 dark:text-violet-300/70 leading-relaxed whitespace-pre-wrap break-words">{{ msg.reasoning }}</div>
+              <div class="space-y-3 rounded-[22px] border border-border/70 bg-card/70 px-3 py-3 shadow-sm backdrop-blur-sm">
+                <div v-if="msg.processTimeline?.length" class="rounded-2xl border border-sky-200/70 bg-gradient-to-b from-sky-50/80 via-white/90 to-slate-50/70">
+                  <div class="flex items-center justify-between gap-3 border-b border-sky-200/60 px-3 py-2.5">
+                    <div class="flex items-center gap-1.5 text-[11px] font-semibold text-sky-800">
+                      <Brain class="h-3.5 w-3.5" :stroke-width="2" />
+                      <span>执行时间线</span>
                     </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-[10px] tabular-nums text-sky-700/70">{{ msg.processTimeline.length }} 个节点</span>
+                      <button
+                        class="inline-flex items-center gap-1 rounded-full border border-sky-200/80 bg-white/80 px-2 py-1 text-[10px] font-medium text-sky-700 transition-colors hover:bg-sky-100/80"
+                        @click="toggleProcessTimeline(msg.key)"
+                      >
+                        <component :is="isProcessTimelineExpanded(msg.key) ? ChevronDown : ChevronRight" class="h-3 w-3" :stroke-width="2" />
+                        <span>{{ isProcessTimelineExpanded(msg.key) ? '收起' : '展开' }}</span>
+                      </button>
+                    </div>
+                  </div>
 
-                    <div v-for="toolStep in msg.toolSteps" :key="toolStep.key" class="rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2.5 dark:border-slate-700/40 dark:bg-slate-950/20">
-                      <div class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
-                        <Wrench class="h-3 w-3 text-amber-600 dark:text-amber-400" :stroke-width="2" />
-                        <span>{{ toolStep.name }}</span>
+                  <div v-if="isProcessTimelineExpanded(msg.key)" class="space-y-3 px-3 py-3">
+                    <div
+                      v-for="entry in msg.processTimeline"
+                      :key="entry.key"
+                      class="relative pl-9"
+                    >
+                      <div class="absolute bottom-[-0.75rem] left-[0.7rem] top-6 w-px bg-border/60" />
+                      <div
+                        class="absolute left-0 top-0 flex h-6 w-6 items-center justify-center rounded-full border text-[10px]"
+                        :class="entry.kind === 'reasoning'
+                          ? 'border-violet-200 bg-violet-100 text-violet-700'
+                          : entry.kind === 'tool_call'
+                            ? 'border-amber-200 bg-amber-100 text-amber-700'
+                            : entry.kind === 'tool_result'
+                              ? 'border-slate-300 bg-slate-100 text-slate-700'
+                              : 'border-emerald-200 bg-emerald-100 text-emerald-700'"
+                      >
+                        <Brain v-if="entry.kind === 'reasoning'" class="h-3 w-3" :stroke-width="2" />
+                        <Wrench v-else-if="entry.kind === 'tool_call'" class="h-3 w-3" :stroke-width="2" />
+                        <Terminal v-else-if="entry.kind === 'tool_result'" class="h-3 w-3" :stroke-width="2" />
+                        <Bot v-else class="h-3 w-3" :stroke-width="2" />
                       </div>
 
-                      <div v-if="toolStep.call" class="mt-2 rounded-lg border border-amber-200/70 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800/30 dark:bg-amber-950/20">
-                        <div class="text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700/80 dark:text-amber-300/70">工具调用</div>
-                        <pre class="mt-1 text-[10px] text-amber-800/80 dark:text-amber-300/70 overflow-x-auto whitespace-pre-wrap break-all leading-snug">{{ truncateStr(tryParseJson(toolStep.call.arguments), 500) }}</pre>
-                      </div>
-
-                      <div v-if="toolStep.result" class="mt-2 rounded-lg border border-slate-200/80 bg-slate-50/80 px-2.5 py-2 dark:border-slate-700/40 dark:bg-slate-900/50">
-                        <div class="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-600/90 dark:text-slate-300/80">
-                          <Terminal class="h-3 w-3" :stroke-width="2" />
-                          <span>工具结果</span>
+                      <div class="rounded-2xl border border-border/70 bg-background/90 px-3 py-2.5 shadow-sm">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="text-[11px] font-semibold text-foreground">{{ processEntryLabel(entry) }}</span>
+                          <span v-if="'name' in entry" class="text-[11px] text-muted-foreground">{{ entry.name }}</span>
+                          <span v-if="formatProcessTimestamp(entry.timestamp)" class="ml-auto text-[10px] tabular-nums text-muted-foreground">
+                            {{ formatProcessTimestamp(entry.timestamp) }}
+                          </span>
                         </div>
-                        <pre class="mt-1 text-[10px] text-slate-600 dark:text-slate-400 overflow-x-auto whitespace-pre-wrap break-all leading-snug max-h-48 overflow-y-auto">{{ truncateStr(toolStep.result.output, 2000) }}</pre>
+
+                        <pre
+                          v-if="processEntryUsesCodeBlock(entry)"
+                          class="mt-2 max-h-48 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/70 bg-muted/40 px-2.5 py-2 text-[10px] leading-snug text-slate-700"
+                        >{{ processEntryBody(entry) }}</pre>
+                        <div
+                          v-else-if="processEntryUsesMarkdown(entry)"
+                          class="prose prose-slate mt-2 max-w-none break-words rounded-xl border border-border/70 bg-background px-3 py-2.5 text-xs"
+                          v-html="renderMarkdown(processEntryBody(entry))"
+                        />
+                        <div
+                          v-else
+                          class="mt-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/85"
+                        >{{ truncateStr(processEntryBody(entry), entry.kind === 'reply' ? 800 : 1200) }}</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div v-if="msg.content?.trim()" class="chat-bubble-assistant inline-block w-fit max-w-full overflow-hidden rounded-2xl rounded-tl-md border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm">
-                  <div v-html="renderMarkdown(msg.content)" />
+                <div v-if="msg.content?.trim()" class="space-y-1.5">
+                  <div v-if="msg.processTimeline?.length" class="px-1 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    最终回答
+                  </div>
+                  <div class="chat-bubble-assistant inline-block w-fit max-w-full overflow-hidden rounded-2xl rounded-tl-md border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm">
+                    <div v-html="renderMarkdown(msg.content)" />
+                  </div>
                 </div>
               </div>
             </div>

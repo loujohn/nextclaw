@@ -11,6 +11,7 @@ import {
   buildChatResultCards,
   formatRunStatusMeta,
   type ChatMessageView,
+  type ChatProcessTimelineEntry,
   type ChatResultCardView
 } from "../../shared/ui-models";
 import {
@@ -105,6 +106,9 @@ function toUiMessage(message: PersistedChatMessageView, inferredRunStatus?: stri
     ? message.metadata.runStatus
     : inferredRunStatus;
   const attachments = normalizeChatAttachments(Array.isArray(message.metadata?.attachments) ? message.metadata.attachments : undefined);
+  const processTimeline = normalizeStoredProcessTimeline(
+    Array.isArray(message.metadata?.processTimeline) ? message.metadata.processTimeline : undefined
+  );
   return {
     id: message.id,
     role: message.role,
@@ -122,6 +126,7 @@ function toUiMessage(message: PersistedChatMessageView, inferredRunStatus?: stri
             }))
         }
       : {}),
+    ...(processTimeline.length > 0 ? { processTimeline } : {}),
     ...(typeof message.metadata?.reasoning === "string" ? { reasoning: message.metadata.reasoning } : {}),
     ...(resolvedRunStatus && message.role !== "user" ? { replyStatus: formatRunStatusMeta(resolvedRunStatus) } : {}),
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
@@ -141,6 +146,9 @@ function toStoredMessage(sessionId: string, message: SessionHistoryMessage, runM
   const metadata: Record<string, unknown> = {};
   if (message.toolCalls?.length) {
     metadata.toolCalls = message.toolCalls;
+  }
+  if (message.processTimeline?.length) {
+    metadata.processTimeline = message.processTimeline;
   }
   if (message.reasoning?.trim()) {
     metadata.reasoning = message.reasoning;
@@ -173,6 +181,198 @@ function pickLatestPreview(messages: SessionHistoryMessage[], fallback: string):
 function buildAutomatedSessionTitle(title?: string): string {
   const trimmed = title?.trim();
   return trimmed || "定时任务";
+}
+
+function normalizeStoredProcessTimeline(rawItems: unknown[] | undefined): ChatProcessTimelineEntry[] {
+  if (!rawItems?.length) {
+    return [];
+  }
+  const output: ChatProcessTimelineEntry[] = [];
+  for (const rawItem of rawItems) {
+    if (!rawItem || typeof rawItem !== "object") {
+      continue;
+    }
+    const item = rawItem as Record<string, unknown>;
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    const kind = typeof item.kind === "string" ? item.kind.trim() : "";
+    const timestamp = typeof item.timestamp === "string" && item.timestamp.trim() ? item.timestamp.trim() : undefined;
+    if (!id || !kind) {
+      continue;
+    }
+    if ((kind === "reasoning" || kind === "reply") && typeof item.content === "string" && item.content.trim()) {
+      output.push({
+        id,
+        kind,
+        ...(timestamp ? { timestamp } : {}),
+        content: item.content
+      } as ChatProcessTimelineEntry);
+      continue;
+    }
+    if ((kind === "tool_call" || kind === "tool_result") && typeof item.name === "string" && item.name.trim()) {
+      if (kind === "tool_call" && typeof item.arguments === "string") {
+        output.push({
+          id,
+          kind,
+          ...(timestamp ? { timestamp } : {}),
+          name: item.name,
+          ...(typeof item.toolCallId === "string" && item.toolCallId.trim() ? { toolCallId: item.toolCallId.trim() } : {}),
+          arguments: item.arguments
+        } as ChatProcessTimelineEntry);
+        continue;
+      }
+      if (kind === "tool_result" && typeof item.output === "string") {
+        output.push({
+          id,
+          kind,
+          ...(timestamp ? { timestamp } : {}),
+          name: item.name,
+          ...(typeof item.toolCallId === "string" && item.toolCallId.trim() ? { toolCallId: item.toolCallId.trim() } : {}),
+          output: item.output
+        } as ChatProcessTimelineEntry);
+      }
+    }
+  }
+  return output;
+}
+
+function buildTimelineTimestamp(): string {
+  return new Date().toISOString();
+}
+
+function appendReasoningTimelineEntry(
+  timeline: ChatProcessTimelineEntry[],
+  content: string | undefined,
+  timestamp = buildTimelineTimestamp()
+): ChatProcessTimelineEntry[] {
+  const trimmedContent = content?.trim();
+  if (!trimmedContent) {
+    return timeline;
+  }
+  return [...timeline, {
+    id: randomUUID(),
+    kind: "reasoning",
+    timestamp,
+    content: trimmedContent
+  }];
+}
+
+function upsertToolCallTimelineEntry(
+  timeline: ChatProcessTimelineEntry[],
+  toolCall: ToolCallView,
+  timestamp = buildTimelineTimestamp()
+): ChatProcessTimelineEntry[] {
+  const id = toolCall.id.trim() || randomUUID();
+  const nextEntry: ChatProcessTimelineEntry = {
+    id,
+    kind: "tool_call",
+    timestamp,
+    name: toolCall.name,
+    ...(toolCall.id.trim() ? { toolCallId: toolCall.id.trim() } : {}),
+    arguments: toolCall.arguments
+  };
+  const existingIndex = timeline.findIndex((item) => item.kind === "tool_call" && item.id === id);
+  if (existingIndex === -1) {
+    return [...timeline, nextEntry];
+  }
+  const nextTimeline = [...timeline];
+  nextTimeline[existingIndex] = nextEntry;
+  return nextTimeline;
+}
+
+function upsertToolResultTimelineEntry(
+  timeline: ChatProcessTimelineEntry[],
+  params: { toolCallId?: string; name: string; output: string },
+  timestamp = buildTimelineTimestamp()
+): ChatProcessTimelineEntry[] {
+  const id = params.toolCallId?.trim() ? `${params.toolCallId.trim()}-result` : randomUUID();
+  const nextEntry: ChatProcessTimelineEntry = {
+    id,
+    kind: "tool_result",
+    timestamp,
+    name: params.name,
+    ...(params.toolCallId?.trim() ? { toolCallId: params.toolCallId.trim() } : {}),
+    output: params.output
+  };
+  const existingIndex = timeline.findIndex((item) => item.kind === "tool_result" && item.id === id);
+  if (existingIndex === -1) {
+    return [...timeline, nextEntry];
+  }
+  const nextTimeline = [...timeline];
+  nextTimeline[existingIndex] = nextEntry;
+  return nextTimeline;
+}
+
+function upsertReplyTimelineEntry(
+  timeline: ChatProcessTimelineEntry[],
+  content: string,
+  timestamp = buildTimelineTimestamp()
+): ChatProcessTimelineEntry[] {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return timeline;
+  }
+  const nextEntry: ChatProcessTimelineEntry = {
+    id: "reply-final",
+    kind: "reply",
+    timestamp,
+    content: trimmedContent
+  };
+  const existingIndex = timeline.findIndex((item) => item.kind === "reply" && item.id === "reply-final");
+  if (existingIndex === -1) {
+    return [...timeline, nextEntry];
+  }
+  const nextTimeline = [...timeline];
+  nextTimeline[existingIndex] = nextEntry;
+  return nextTimeline;
+}
+
+function buildProcessTimelineFromSessionMessages(messages: SessionHistoryMessage[]): ChatProcessTimelineEntry[] {
+  let timeline: ChatProcessTimelineEntry[] = [];
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      if (message.processTimeline?.length) {
+        timeline = [...timeline, ...message.processTimeline];
+        continue;
+      }
+      timeline = appendReasoningTimelineEntry(timeline, message.reasoning, message.timestamp);
+      for (const toolCall of message.toolCalls ?? []) {
+        timeline = upsertToolCallTimelineEntry(timeline, toolCall, message.timestamp);
+      }
+      timeline = upsertReplyTimelineEntry(timeline, message.content, message.timestamp);
+      continue;
+    }
+    if (message.role === "tool") {
+      timeline = upsertToolResultTimelineEntry(timeline, {
+        toolCallId: message.toolCallId,
+        name: message.toolName ?? "工具结果",
+        output: message.content
+      }, message.timestamp);
+    }
+  }
+  return timeline;
+}
+
+function attachProcessTimelineToAssistantMessage(
+  messages: SessionHistoryMessage[],
+  processTimeline: ChatProcessTimelineEntry[]
+): SessionHistoryMessage[] {
+  if (processTimeline.length === 0) {
+    return messages;
+  }
+  const assistantIndex = messages.findIndex((message) => message.role === "assistant");
+  if (assistantIndex === -1) {
+    return messages;
+  }
+  const nextMessages = [...messages];
+  const target = nextMessages[assistantIndex];
+  if (!target) {
+    return messages;
+  }
+  nextMessages[assistantIndex] = {
+    ...target,
+    processTimeline
+  };
+  return nextMessages;
 }
 
 function mergeStreamingText(existing: string | undefined, incoming: string | undefined): string | undefined {
@@ -410,7 +610,10 @@ export class EmployeeRunService {
     runMetadata?: StoredRunMetadata
   ): Promise<PersistedChatMessageView[]> {
     const { messageRepo } = this.requireChatPersistence();
-    const storableMessages = messages
+    const messagesWithTimeline = messages.some((message) => message.processTimeline?.length)
+      ? messages
+      : attachProcessTimelineToAssistantMessage(messages, buildProcessTimelineFromSessionMessages(messages));
+    const storableMessages = messagesWithTimeline
       .filter((message) => message.role !== "user")
       .map((message) => toStoredMessage(sessionId, message, runMetadata));
     return messageRepo.createMany(storableMessages);
@@ -556,6 +759,7 @@ export class EmployeeRunService {
     let streamedReasoning: string | undefined;
     let streamedToolCalls: ToolCallView[] = [];
     let streamedToolResults: SessionHistoryMessage[] = [];
+    let streamedProcessTimeline: ChatProcessTimelineEntry[] = [];
     let thinkingSent = false;
     const emit = async (event: EmployeeChatStreamEvent): Promise<void> => {
       await params.onEvent(event);
@@ -613,6 +817,11 @@ export class EmployeeRunService {
           }
           if (typeof message.reasoning_content === "string" && message.reasoning_content.trim()) {
             streamedReasoning = mergeStreamingText(streamedReasoning, message.reasoning_content);
+            streamedProcessTimeline = appendReasoningTimelineEntry(
+              streamedProcessTimeline,
+              message.reasoning_content,
+              buildTimelineTimestamp()
+            );
             void emitThinking(message.reasoning_content);
           }
           if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
@@ -630,6 +839,11 @@ export class EmployeeRunService {
                   : JSON.stringify(toolCallRecord.arguments ?? {})
               };
               nextToolCalls.push(nextToolCall);
+              streamedProcessTimeline = upsertToolCallTimelineEntry(
+                streamedProcessTimeline,
+                nextToolCall,
+                buildTimelineTimestamp()
+              );
               void emit({
                 event: "tool_call",
                 data: {
@@ -643,19 +857,29 @@ export class EmployeeRunService {
             streamedToolCalls = mergeToolCallViews(streamedToolCalls, nextToolCalls);
           }
           if (message.role === "tool") {
+            const toolOutput = normalizeChatMessageContent(message.content);
             streamedToolResults = mergeToolResultMessages(streamedToolResults, {
               role: "tool",
-              content: normalizeChatMessageContent(message.content),
+              content: toolOutput,
               ...(typeof message.tool_call_id === "string" ? { toolCallId: message.tool_call_id } : {}),
               ...(typeof message.name === "string" ? { toolName: message.name } : {})
             });
+            streamedProcessTimeline = upsertToolResultTimelineEntry(
+              streamedProcessTimeline,
+              {
+                toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
+                name: typeof message.name === "string" ? message.name : "工具结果",
+                output: toolOutput
+              },
+              buildTimelineTimestamp()
+            );
             void emit({
               event: "tool_result",
               data: {
                 runId: run.id,
                 toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
                 name: typeof message.name === "string" ? message.name : "工具结果",
-                output: normalizeChatMessageContent(message.content)
+                output: toolOutput
               }
             });
           }
@@ -663,10 +887,17 @@ export class EmployeeRunService {
         abortSignal: abortController.signal
       });
 
-      const persistedMessages = await this.persistChatMessages(session.id, result.newMessages, {
+      const completedProcessTimeline = streamedProcessTimeline.length > 0
+        ? upsertReplyTimelineEntry(streamedProcessTimeline, result.reply, buildTimelineTimestamp())
+        : buildProcessTimelineFromSessionMessages(result.newMessages);
+      const persistedMessages = await this.persistChatMessages(
+        session.id,
+        attachProcessTimelineToAssistantMessage(result.newMessages, completedProcessTimeline),
+        {
         runId: run.id,
         runStatus: RunStatus.Completed
-      });
+        }
+      );
       if (persistedMessages.length > 0) {
         await sessionRepo.touchWithMessage({
           sessionId: session.id,
@@ -728,7 +959,8 @@ export class EmployeeRunService {
           toolCalls: streamedToolCalls,
           toolResults: streamedToolResults
         });
-        const persistedMessages = await this.persistChatMessages(session.id, abortedMessages, {
+        const abortedProcessTimeline = upsertReplyTimelineEntry(streamedProcessTimeline, partialReply, buildTimelineTimestamp());
+        const persistedMessages = await this.persistChatMessages(session.id, attachProcessTimelineToAssistantMessage(abortedMessages, abortedProcessTimeline), {
           runId: run.id,
           runStatus: RunStatus.Aborted
         });
@@ -779,7 +1011,8 @@ export class EmployeeRunService {
         toolResults: streamedToolResults,
         errorMessage: classified.message
       });
-      const persistedMessages = await this.persistChatMessages(session.id, failedMessages, {
+      const failedProcessTimeline = upsertReplyTimelineEntry(streamedProcessTimeline, deltaParts.join(""), buildTimelineTimestamp());
+      const persistedMessages = await this.persistChatMessages(session.id, attachProcessTimelineToAssistantMessage(failedMessages, failedProcessTimeline), {
         runId: run.id,
         runStatus: RunStatus.Failed
       });

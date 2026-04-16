@@ -379,6 +379,7 @@ describe("EmployeeRunService chat stream metadata", () => {
       }
     ]));
   });
+
 });
 
 describe("EmployeeRunService cancelled chat history", () => {

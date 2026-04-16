@@ -1,6 +1,7 @@
 ---
 name: pdf
 name_zh: PDF 文档处理
+version: 1.0.0
 description: 处理 PDF 全流程任务，包括读取与抽取文本/表格、合并拆分、旋转加水印、表单填写、加解密、图片提取与 OCR 识别。凡涉及 .pdf 输入或输出时优先使用。
 license: Proprietary. LICENSE.txt has complete terms
 ---

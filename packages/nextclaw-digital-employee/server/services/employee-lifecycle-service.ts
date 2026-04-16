@@ -6,7 +6,7 @@ const logger = createLogger("EmployeeLifecycle");
 import { EmployeeRepository, type CreateEmployeeInput, type EmployeeView } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { AutomationService } from "./automation-service";
-import { ensureEmployeeWorkspace, resolveEmployeeWorkspace } from "../engine/employee-workspace";
+import { ensureEmployeeWorkspace, copySkillToEmployee, removeSkillFromEmployee, resolveEmployeeWorkspace } from "../engine/employee-workspace";
 import type { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 
 const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
@@ -48,7 +48,13 @@ export class EmployeeLifecycleService {
         }
       }
 
-      const skills = await this.skillRepo.replaceForEmployee(employee.id, input.skillNames ?? []);
+      const skills = await this.skillRepo.replaceForEmployee(employee.id, (() => {
+        const globalSkillsDir = join(this.gateway.workspaceDir, "skills");
+        return (input.skillNames ?? []).map((skillName) => ({
+          skillName,
+          version: copySkillToEmployee(globalSkillsDir, wsDir, skillName),
+        }));
+      })());
 
       let schedule = null;
       if (input.schedule?.scheduleKind) {
@@ -148,7 +154,23 @@ export class EmployeeLifecycleService {
 
     let skills = await this.skillRepo.listByEmployeeId(id);
     if (Array.isArray(input.skillNames)) {
-      skills = await this.skillRepo.replaceForEmployee(id, input.skillNames);
+      const globalSkillsDir = join(this.gateway.workspaceDir, "skills");
+      const employeeWorkspace = resolveEmployeeWorkspace(this.gateway.homeDir, updated.code);
+
+      // 删除已解绑技能的本地副本
+      const previousNames = new Set(skills.map((s) => s.skillName));
+      const newNames = new Set(input.skillNames);
+      for (const removed of previousNames) {
+        if (!newNames.has(removed)) removeSkillFromEmployee(employeeWorkspace, removed);
+      }
+
+      // 复制新绑定技能（已有副本的也重新复制以保证同步）
+      const skillsWithVersion = input.skillNames.map((skillName) => ({
+        skillName,
+        version: copySkillToEmployee(globalSkillsDir, employeeWorkspace, skillName),
+      }));
+
+      skills = await this.skillRepo.replaceForEmployee(id, skillsWithVersion);
     }
 
     let jobs = await this.automationService.listJobsForEmployee(id);

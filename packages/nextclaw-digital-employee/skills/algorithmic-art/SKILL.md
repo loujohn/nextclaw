@@ -1,6 +1,7 @@
 ---
 name: algorithmic-art
 name_zh: 算法艺术生成
+version: 1.0.0
 description: 使用 p5.js 与可复现随机种子创建算法艺术，支持流场、粒子系统与参数探索。当用户需要代码生成艺术、可视化创作或生成式艺术时使用，并保持原创避免侵权。
 license: Complete terms in LICENSE.txt
 ---

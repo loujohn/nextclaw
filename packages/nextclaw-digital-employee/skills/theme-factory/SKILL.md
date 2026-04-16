@@ -1,6 +1,7 @@
 ---
 name: theme-factory
 name_zh: 主题工厂
+version: 1.0.0
 description: 为文档、汇报、幻灯片、HTML 页面等内容快速套用统一主题风格，支持预置配色与字体组合，也可按需生成新主题。
 license: Complete terms in LICENSE.txt
 ---

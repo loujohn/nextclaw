@@ -1,6 +1,7 @@
 ---
 name: weekly-report
 name_zh: 周报总结
+version: 1.0.0
 description: "利用禅道基础工具 分析项目迭代数据并生成周报。自动筛选本周完成的任务、统计进度、按父任务分组输出。当需要生成项目周报、迭代进度汇报或任务完成情况总结时使用。"
 metadata:
   nextclaw:

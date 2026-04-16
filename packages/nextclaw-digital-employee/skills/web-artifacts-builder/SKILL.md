@@ -1,6 +1,7 @@
 ---
 name: web-artifacts-builder
 name_zh: Web 制品构建
+version: 1.0.0
 description: 使用 React、Tailwind CSS、shadcn/ui 构建复杂多组件 HTML 制品，适合需要状态管理、路由与组件体系的场景，不用于简单单文件页面。
 license: Complete terms in LICENSE.txt
 ---

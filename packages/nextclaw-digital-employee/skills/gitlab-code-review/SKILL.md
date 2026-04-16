@@ -1,6 +1,7 @@
 ---
 name: gitlab-code-review
 name_zh: GitLab Code Review
+version: 1.0.0
 description: "GitLab 代码审查技能。当 GitLab webhook 触发（Merge Request 或 Push 事件）时，自动获取代码 diff 并执行 AI Code Review，将审查结果以行级评论和总体评论形式发表到 GitLab MR。"
 metadata:
   nextclaw:

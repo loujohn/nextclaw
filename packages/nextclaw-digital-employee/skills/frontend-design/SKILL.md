@@ -1,6 +1,7 @@
 ---
 name: frontend-design
 name_zh: 前端界面设计
+version: 1.0.0
 description: 构建高质量、可落地、风格鲜明的前端界面与组件。适用于网站、落地页、仪表盘、React 组件与各类 Web UI 美化，强调创意表达与工程可用性，避免同质化设计。
 license: Complete terms in LICENSE.txt
 ---

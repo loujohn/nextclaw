@@ -2,6 +2,54 @@
 // Keep consistent with upstream template seeding logic.
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Skill versioning helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * 读取指定技能目录中 SKILL.md frontmatter 的 version 字段。
+ */
+export function readSkillVersion(skillDir: string): string | null {
+  const skillFile = join(skillDir, "SKILL.md");
+  if (!existsSync(skillFile)) return null;
+  const raw = readFileSync(skillFile, "utf-8");
+  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  for (const line of (match[1] ?? "").split("\n")) {
+    const [key, ...rest] = line.split(":");
+    if (key?.trim() === "version") {
+      return rest.join(":").trim().replace(/^['"]|['"]$/g, "") || null;
+    }
+  }
+  return null;
+}
+
+/**
+ * 将全局目录中的技能复制（或覆盖）到员工工作目录，返回版本号。
+ * 若全局目录中不存在该技能（如 builtin 技能），返回 null 且不做任何操作。
+ */
+export function copySkillToEmployee(
+  globalSkillsDir: string,
+  employeeWorkspace: string,
+  skillName: string
+): string | null {
+  const src = join(globalSkillsDir, skillName);
+  if (!existsSync(src)) return null;
+  const dest = join(employeeWorkspace, "skills", skillName);
+  mkdirSync(join(employeeWorkspace, "skills"), { recursive: true });
+  cpSync(src, dest, { recursive: true });
+  return readSkillVersion(dest);
+}
+
+/**
+ * 从员工工作目录删除指定技能的本地副本。
+ */
+export function removeSkillFromEmployee(employeeWorkspace: string, skillName: string): void {
+  const dest = join(employeeWorkspace, "skills", skillName);
+  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+}
+
 import { APP_NAME } from "@nextclaw/core";
 
 export type EmployeeIdentity = {

@@ -1,6 +1,7 @@
 ---
 name: dingtalk-notify
 name_zh: 钉钉通知
+version: 1.0.0
 description: "发送钉钉消息通知，支持群机器人通知（text/markdown/link/actionCard）和工作通知（个人消息）。当需要向钉钉群发送汇报、提醒、告警，或向个人发送工作通知时使用。"
 metadata:
   nextclaw:

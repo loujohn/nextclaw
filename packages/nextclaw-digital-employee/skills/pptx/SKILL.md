@@ -1,6 +1,7 @@
 ---
 name: pptx
 name_zh: PPT 演示文稿处理
+version: 1.0.0
 description: "当任务涉及 .pptx 文件（输入或输出）时使用，包括新建演示文稿、读取解析、编辑更新、模板套用、备注处理、合并拆分等场景。用户提到 deck/slides/presentation 或具体 .pptx 文件名时应触发。"
 license: Proprietary. LICENSE.txt has complete terms
 ---

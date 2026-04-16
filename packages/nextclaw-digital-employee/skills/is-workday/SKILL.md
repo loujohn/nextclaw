@@ -1,6 +1,7 @@
 ---
 name: is-workday
 name_zh: 工作日检查
+version: 1.0.0
 description: "判断今日是否是工作日，支持中国法定节假日判断。使用 chinese-calendar 库。"
 metadata:
   nextclaw:

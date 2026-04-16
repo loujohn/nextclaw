@@ -1,6 +1,7 @@
 ---
 name: docx
 name_zh: Word 文档处理
+version: 1.0.0
 description: "当任务涉及 .docx 文档创建、读取、编辑、格式化、内容提取、替换图片、批量替换或重组时使用。适用于报告、备忘录、函件、模板等 Word 交付场景；不适用于 PDF、表格或与文档无关的开发任务。"
 license: Proprietary. LICENSE.txt has complete terms
 ---

@@ -1,6 +1,7 @@
 ---
 name: webapp-testing
 name_zh: Web 应用测试
+version: 1.0.0
 description: 基于 Playwright 对本地 Web 应用进行交互测试与调试，支持功能验证、界面行为排查、截图采集与浏览器日志查看。
 license: Complete terms in LICENSE.txt
 ---

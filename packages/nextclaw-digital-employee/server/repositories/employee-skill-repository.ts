@@ -10,6 +10,7 @@ type EmployeeSkillRecord = {
   skill_name: string;
   enabled: number | boolean;
   config_json: string;
+  version: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -20,6 +21,7 @@ export type EmployeeSkillView = {
   skillName: string;
   enabled: boolean;
   config: Record<string, unknown>;
+  version: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -31,6 +33,7 @@ function toView(record: EmployeeSkillRecord): EmployeeSkillView {
     skillName: record.skill_name,
     enabled: Boolean(record.enabled),
     config: JSON.parse(record.config_json),
+    version: record.version ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   };
@@ -39,23 +42,37 @@ function toView(record: EmployeeSkillRecord): EmployeeSkillView {
 export class EmployeeSkillRepository {
   constructor(private readonly db: Knex) {}
 
-  async replaceForEmployee(employeeId: string, skillNames: string[]): Promise<EmployeeSkillView[]> {
+  async replaceForEmployee(
+    employeeId: string,
+    skills: Array<{ skillName: string; version?: string | null }>
+  ): Promise<EmployeeSkillView[]> {
     await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills).where({ employee_id: employeeId }).delete();
-    if (skillNames.length === 0) {
+    if (skills.length === 0) {
       return [];
     }
     const now = dbNow();
-    const rows: EmployeeSkillRecord[] = skillNames.map((skillName) => ({
+    const rows: EmployeeSkillRecord[] = skills.map(({ skillName, version }) => ({
       id: randomUUID(),
       employee_id: employeeId,
       skill_name: skillName,
       enabled: true,
       config_json: "{}",
+      version: version ?? null,
       created_at: now,
       updated_at: now
     }));
     await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills).insert(rows);
     return rows.map(toView);
+  }
+
+  async updateSkillVersion(
+    employeeId: string,
+    skillName: string,
+    version: string | null
+  ): Promise<void> {
+    await this.db<EmployeeSkillRecord>(PLATFORM_TABLES.employeeSkills)
+      .where({ employee_id: employeeId, skill_name: skillName })
+      .update({ version, updated_at: dbNow() });
   }
 
   async listByEmployeeId(employeeId: string): Promise<EmployeeSkillView[]> {

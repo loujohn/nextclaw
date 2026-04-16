@@ -28,7 +28,7 @@ const emit = defineEmits<{
           <p v-if="error" class="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{{ error }}</p>
           <div class="mt-5 flex items-center justify-end gap-2">
             <button class="btn-ghost" :disabled="confirming" @click="emit('cancel')">取消</button>
-            <button class="btn-ghost text-destructive hover:bg-destructive/10" :disabled="confirming" @click="emit('confirm')">
+            <button class="btn-primary" :disabled="confirming" @click="emit('confirm')">
               {{ confirming ? (confirmingLabel ?? '处理中...') : (confirmLabel ?? '确认') }}
             </button>
           </div>

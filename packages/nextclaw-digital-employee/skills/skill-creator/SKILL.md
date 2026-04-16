@@ -1,6 +1,7 @@
 ---
 name: skill-creator
 name_zh: 技能创建与优化
+version: 1.0.0
 description: 用于新建技能、改造已有技能、执行评测与性能对比，并根据结果迭代优化触发描述与执行质量，提升技能稳定性与命中率。
 ---
 
