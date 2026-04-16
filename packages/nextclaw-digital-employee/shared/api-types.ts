@@ -1,4 +1,4 @@
-import type { SkillCatalogEntryView } from "./ui-models";
+import type { ChatAttachmentPreviewType, ChatAttachmentView, SkillCatalogEntryView } from "./ui-models";
 
 export type SkillCatalogEntry = SkillCatalogEntryView;
 
@@ -58,8 +58,99 @@ export type WorkspaceFile = {
   writable: boolean;
 };
 
-export type FileListPayload = { ok: boolean; data: { files: WorkspaceFile[] } };
+export type UploadWorkspaceFileNode = ChatAttachmentView & {
+  kind: "file";
+  label: string;
+};
+
+export type UploadWorkspaceTreeNode =
+  | { kind: "year" | "month" | "day"; label: string; children: UploadWorkspaceTreeNode[] }
+  | UploadWorkspaceFileNode;
+
+export type FileListPayload = {
+  ok: boolean;
+  data: {
+    coreFiles: WorkspaceFile[];
+    uploadedFilesTree: UploadWorkspaceTreeNode[];
+  };
+};
+
 export type FileContentPayload = { ok: boolean; data: { filename: string; content: string } };
+
+export type WorkspaceEditableMode = "none" | "text";
+
+export type WorkspaceFileNode = {
+  kind: "file";
+  name: string;
+  relativePath: string;
+  sizeBytes: number;
+  previewType: ChatAttachmentPreviewType;
+  canPreview: boolean;
+  editable: boolean;
+  editableMode: WorkspaceEditableMode;
+  origin: "workspace" | "upload";
+  sourceLabel?: string;
+};
+
+export type WorkspaceDirectoryNode = {
+  kind: "directory";
+  name: string;
+  relativePath: string;
+  children: WorkspaceTreeNode[];
+};
+
+export type WorkspaceTreeNode = WorkspaceDirectoryNode | WorkspaceFileNode;
+
+export type WorkspaceTreePayload = {
+  ok: boolean;
+  data: {
+    tree: WorkspaceTreeNode[];
+  };
+};
+
+export type WorkspaceFilePayload = {
+  ok: boolean;
+  data: {
+    entry: WorkspaceFileNode;
+    content?: string;
+    rawUrl: string;
+    downloadUrl: string;
+    previewNotice?: string;
+    source?: {
+      sessionKey?: string;
+      messageId?: string;
+      text?: string;
+      createdAt?: string;
+    };
+  };
+};
+
+export type UploadedWorkspaceFilePayload = {
+  ok: boolean;
+  data: {
+    filename: string;
+    storedName: string;
+    relativePath: string;
+    mimeType: string;
+    size: number;
+    previewType: ChatAttachmentPreviewType;
+    content?: string;
+    rawUrl: string;
+    downloadUrl: string;
+    source?: {
+      sessionKey?: string;
+      messageId?: string;
+      text?: string;
+    };
+  };
+};
+
+export type UploadFilesPayload = {
+  ok: true;
+  data: {
+    items: ChatAttachmentView[];
+  };
+};
 
 export type ScheduleJob = {
   id: string;

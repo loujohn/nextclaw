@@ -21,6 +21,7 @@ export type ChatDisplayMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
+  attachments: ChatMessageView["attachments"];
   reasoning?: string;
   replyStatus?: ChatMessageView["replyStatus"];
   toolCalls: ChatToolCallView[];
@@ -152,6 +153,7 @@ function createAssistantGroup(seed: ChatMessageView | undefined, index: number):
     role: "assistant",
     content: seed?.role === "assistant" ? seed.content?.trim() ?? "" : "",
     timestamp: seed?.timestamp,
+    attachments: [],
     reasoning: seed?.role === "assistant" ? seed.reasoning?.trim() : undefined,
     replyStatus: seed?.replyStatus,
     toolCalls: seed?.role === "assistant" ? [...(seed.toolCalls ?? [])] : [],
@@ -183,7 +185,8 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
     const hasVisibleContent = Boolean(activeAssistant.content.trim())
       || Boolean(activeAssistant.reasoning?.trim())
       || activeAssistant.toolCalls.length > 0
-      || activeAssistant.toolResults.length > 0;
+      || activeAssistant.toolResults.length > 0
+      || Boolean(activeAssistant.replyStatus);
     if (hasVisibleContent) {
       output.push({
         ...activeAssistant,
@@ -216,6 +219,7 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
         role: message.role,
         content: message.content,
         timestamp: message.timestamp,
+        attachments: message.attachments ?? [],
         toolCalls: [],
         toolResults: [],
         toolSteps: [],

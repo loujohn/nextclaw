@@ -699,6 +699,23 @@ describe("EmployeeRunService - streamChatTurn failure handling", () => {
       limit: 1
     });
     expect(runs[0]?.status).toBe("failed");
+
+    const history = await service.getChatMessages({
+      employeeId: employee.id,
+      sessionKey: result.sessionKey,
+      limit: 10
+    });
+    expect(history.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "assistant",
+        content: "执行失败：engine crash",
+        replyStatus: expect.objectContaining({
+          value: "failed",
+          label: "执行失败",
+          tone: "danger"
+        })
+      })
+    ]));
   });
 });
 
@@ -742,4 +759,5 @@ describe("ChatMessageRepository - cursor-based pagination stability", () => {
     // 按时间升序最末尾的是最新消息
     expect(collected[totalCount - 1]).toBe(`消息${totalCount}`);
   });
+
 });

@@ -7,6 +7,8 @@ import type { UserContext } from "../../shared/auth-types";
 const PUBLIC_PATHS = [
   "/api/health",
   "/api/auth/login",
+  "/api/auth/token",
+  "/api/webhooks/",
   "/_nuxt/",
   "/__nuxt_error",
   "/favicon.ico",

@@ -67,6 +67,8 @@ export type EmployeeRecord = {
   model: string;
   status: string;
   department_id: string | null;
+  webhook_enabled: number;
+  webhook_secret: string | null;
   created_at: string;
   updated_at: string;
 };
