@@ -32,6 +32,13 @@ describe("buildChatDisplayMessages", () => {
           label: "已完成",
           tone: "teal"
         }),
+        processTimeline: [
+          expect.objectContaining({
+            kind: "tool_result",
+            name: "weather.lookup",
+            output: "晴，26°C"
+          })
+        ],
         toolResults: [
           expect.objectContaining({
             name: "weather.lookup",
@@ -91,6 +98,12 @@ describe("buildChatDisplayMessages", () => {
       result: { toolCallId: "call-1", output: "天气接口返回成功" }
     });
     expect(grouped[1].toolResults[0]).toMatchObject({ name: "exec", output: "天气接口返回成功" });
+    expect(grouped[1].processTimeline).toEqual([
+      expect.objectContaining({ kind: "reasoning", content: "先查询天气服务" }),
+      expect.objectContaining({ kind: "tool_call", name: "exec", arguments: '{"query":"重庆天气"}' }),
+      expect.objectContaining({ kind: "tool_result", name: "exec", output: "天气接口返回成功" }),
+      expect.objectContaining({ kind: "reply", content: "重庆天气 ☀️" })
+    ]);
   });
 
   it("keeps separate user turns from different assistant groups", () => {
@@ -175,5 +188,31 @@ describe("buildChatDisplayMessages", () => {
     expect(grouped[0]?.content).toBe("最终回答");
     expect(grouped[0]?.toolResults).toHaveLength(1);
     expect(grouped[0]?.toolSteps).toHaveLength(1);
+  });
+
+  it("uses the latest assistant reply as final content while keeping earlier reply text in timeline", () => {
+    const grouped = buildChatDisplayMessages([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "先给你一个草稿",
+        reasoning: "先整理已知信息",
+        timestamp: "2026-04-09T01:40:01.000Z"
+      },
+      {
+        id: "assistant-2",
+        role: "assistant",
+        content: "最终答案",
+        timestamp: "2026-04-09T01:40:03.000Z"
+      }
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.content).toBe("最终答案");
+    expect(grouped[0]?.processTimeline).toEqual([
+      expect.objectContaining({ kind: "reasoning", content: "先整理已知信息" }),
+      expect.objectContaining({ kind: "reply", content: "先给你一个草稿" }),
+      expect.objectContaining({ kind: "reply", content: "最终答案" })
+    ]);
   });
 });

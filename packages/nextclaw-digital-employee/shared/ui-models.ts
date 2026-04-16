@@ -75,6 +75,36 @@ export type ChatToolCallView = {
   arguments: string;
 };
 
+export type ChatProcessTimelineEntry =
+  | {
+      id: string;
+      kind: "reasoning";
+      timestamp?: string;
+      content: string;
+    }
+  | {
+      id: string;
+      kind: "tool_call";
+      timestamp?: string;
+      name: string;
+      toolCallId?: string;
+      arguments: string;
+    }
+  | {
+      id: string;
+      kind: "tool_result";
+      timestamp?: string;
+      name: string;
+      toolCallId?: string;
+      output: string;
+    }
+  | {
+      id: string;
+      kind: "reply";
+      timestamp?: string;
+      content: string;
+    };
+
 export type StatusBadgeTone = "teal" | "amber" | "slate" | "danger";
 
 export type ChatReplyStatusView = {
@@ -107,6 +137,7 @@ export type ChatMessageView = {
   timestamp?: string;
   attachments?: ChatAttachmentView[];
   toolCalls?: ChatToolCallView[];
+  processTimeline?: ChatProcessTimelineEntry[];
   reasoning?: string;
   replyStatus?: ChatReplyStatusView;
   toolCallId?: string;

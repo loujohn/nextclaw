@@ -19,6 +19,7 @@ import {
   type SessionEvent,
   HeartbeatService
 } from "@nextclaw/core";
+import type { ChatProcessTimelineEntry } from "../../shared/ui-models";
 import { buildPlatformRuntimeConfig } from "../runtime/openclaw-runtime";
 import { normalizeChatMessageContent } from "../chat/chat-message-normalization";
 import type { SecretsRepository } from "../repositories/secrets-repository";
@@ -86,6 +87,7 @@ export type SessionHistoryMessage = {
   content: string;
   timestamp?: string;
   toolCalls?: ToolCallView[];
+  processTimeline?: ChatProcessTimelineEntry[];
   reasoning?: string;
   toolCallId?: string;
   toolName?: string;

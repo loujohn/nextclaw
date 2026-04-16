@@ -1,4 +1,4 @@
-import type { ChatMessageView, ChatToolCallView } from "../../shared/ui-models";
+import type { ChatMessageView, ChatProcessTimelineEntry, ChatToolCallView } from "../../shared/ui-models";
 
 export type ChatToolResultView = {
   id: string;
@@ -16,6 +16,8 @@ export type ChatToolStepView = {
   result?: ChatToolResultView;
 };
 
+export type ChatProcessTimelineItem = ChatProcessTimelineEntry & { key: string };
+
 export type ChatDisplayMessage = {
   key: string;
   role: "user" | "assistant" | "system";
@@ -27,6 +29,7 @@ export type ChatDisplayMessage = {
   toolCalls: ChatToolCallView[];
   toolResults: ChatToolResultView[];
   toolSteps: ChatToolStepView[];
+  processTimeline: ChatProcessTimelineItem[];
   sourceMessageIds: string[];
 };
 
@@ -159,6 +162,7 @@ function createAssistantGroup(seed: ChatMessageView | undefined, index: number):
     toolCalls: seed?.role === "assistant" ? [...(seed.toolCalls ?? [])] : [],
     toolResults: [],
     toolSteps: [],
+    processTimeline: [],
     sourceMessageIds: seedId ? [seedId] : []
   };
 }
@@ -174,6 +178,91 @@ function appendSourceMessageId(group: ChatDisplayMessage, message: ChatMessageVi
   };
 }
 
+function hasTimelineEntry(group: ChatDisplayMessage, nextEntry: ChatProcessTimelineItem): boolean {
+  return group.processTimeline.some((entry) => {
+    if (entry.kind !== nextEntry.kind) {
+      return false;
+    }
+    if (entry.kind === "reasoning" && nextEntry.kind === "reasoning") {
+      return entry.content === nextEntry.content;
+    }
+    if (entry.kind === "tool_call" && nextEntry.kind === "tool_call") {
+      return entry.toolCallId === nextEntry.toolCallId
+        && entry.name === nextEntry.name
+        && entry.arguments === nextEntry.arguments;
+    }
+    if (entry.kind === "tool_result" && nextEntry.kind === "tool_result") {
+      return entry.toolCallId === nextEntry.toolCallId
+        && entry.name === nextEntry.name
+        && entry.output === nextEntry.output;
+    }
+    if (entry.kind === "reply" && nextEntry.kind === "reply") {
+      return entry.content === nextEntry.content;
+    }
+    return false;
+  });
+}
+
+function appendTimeline(group: ChatDisplayMessage, nextEntry: ChatProcessTimelineItem): ChatDisplayMessage {
+  if (hasTimelineEntry(group, nextEntry)) {
+    return group;
+  }
+  return {
+    ...group,
+    processTimeline: [...group.processTimeline, nextEntry]
+  };
+}
+
+function appendAssistantTimelineEntries(group: ChatDisplayMessage, message: ChatMessageView, index: number): ChatDisplayMessage {
+  let nextGroup = group;
+  if (message.processTimeline?.length) {
+    message.processTimeline.forEach((entry, entryIndex) => {
+      nextGroup = appendTimeline(nextGroup, {
+        ...entry,
+        key: entry.id || `${message.id?.trim() || `assistant-${index}`}-timeline-${entryIndex}`
+      });
+    });
+    return nextGroup;
+  }
+
+  const trimmedReasoning = message.reasoning?.trim();
+  if (trimmedReasoning) {
+    nextGroup = appendTimeline(nextGroup, {
+      id: `${message.id?.trim() || `assistant-${index}`}-reasoning`,
+      key: `${message.id?.trim() || `assistant-${index}`}-reasoning`,
+      kind: "reasoning",
+      timestamp: message.timestamp,
+      content: trimmedReasoning
+    });
+  }
+
+  const toolCalls = message.toolCalls ?? [];
+  toolCalls.forEach((toolCall, toolCallIndex) => {
+    nextGroup = appendTimeline(nextGroup, {
+      id: toolCall.id?.trim() || `${message.id?.trim() || `assistant-${index}`}-tool-call-${toolCallIndex}`,
+      key: toolCall.id?.trim() || `${message.id?.trim() || `assistant-${index}`}-tool-call-${toolCallIndex}`,
+      kind: "tool_call",
+      timestamp: message.timestamp,
+      name: toolCall.name,
+      ...(toolCall.id?.trim() ? { toolCallId: toolCall.id.trim() } : {}),
+      arguments: toolCall.arguments
+    });
+  });
+
+  const trimmedContent = message.content?.trim();
+  if (trimmedContent) {
+    nextGroup = appendTimeline(nextGroup, {
+      id: `${message.id?.trim() || `assistant-${index}`}-reply`,
+      key: `${message.id?.trim() || `assistant-${index}`}-reply`,
+      kind: "reply",
+      timestamp: message.timestamp,
+      content: trimmedContent
+    });
+  }
+
+  return nextGroup;
+}
+
 export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDisplayMessage[] {
   const output: ChatDisplayMessage[] = [];
   let activeAssistant: ChatDisplayMessage | null = null;
@@ -186,6 +275,7 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
       || Boolean(activeAssistant.reasoning?.trim())
       || activeAssistant.toolCalls.length > 0
       || activeAssistant.toolResults.length > 0
+      || activeAssistant.processTimeline.length > 0
       || Boolean(activeAssistant.replyStatus);
     if (hasVisibleContent) {
       output.push({
@@ -223,6 +313,7 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
         toolCalls: [],
         toolResults: [],
         toolSteps: [],
+        processTimeline: [],
         sourceMessageIds: message.id?.trim() ? [message.id.trim()] : []
       });
       return;
@@ -231,9 +322,10 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
     if (message.role === "assistant") {
       let nextGroup = ensureAssistant(message, index);
       nextGroup = appendSourceMessageId(nextGroup, message);
+      nextGroup = appendAssistantTimelineEntries(nextGroup, message, index);
       activeAssistant = {
         ...nextGroup,
-        content: mergeText(nextGroup.content, message.content),
+        content: message.content?.trim() ? message.content : nextGroup.content,
         reasoning: mergeText(nextGroup.reasoning, message.reasoning),
         toolCalls: mergeToolCalls(nextGroup.toolCalls, message.toolCalls),
         timestamp: pickLatestTimestamp(nextGroup.timestamp, message.timestamp),
@@ -245,6 +337,15 @@ export function buildChatDisplayMessages(messages: ChatMessageView[]): ChatDispl
     if (message.role === "tool") {
       let nextGroup = ensureAssistant(message, index);
       nextGroup = appendSourceMessageId(nextGroup, message);
+      nextGroup = appendTimeline(nextGroup, {
+        id: message.id?.trim() || `tool-${index}`,
+        key: message.id?.trim() || `tool-${index}`,
+        kind: "tool_result",
+        timestamp: message.timestamp,
+        name: message.toolName?.trim() || "工具结果",
+        ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+        output: message.content
+      });
       activeAssistant = {
         ...nextGroup,
         toolResults: mergeToolResults(nextGroup.toolResults, {
