@@ -1,6 +1,7 @@
 ---
 name: internal-comms
 name_zh: 内部沟通写作
+version: 1.0.0
 description: 提供公司内部沟通写作模板与方法，适用于状态周报、领导汇报、3P 更新、公司简报、FAQ、事故复盘与项目进展等内部文案场景。
 license: Complete terms in LICENSE.txt
 ---

@@ -151,6 +151,7 @@ watch(isOverviewTab, (active, previousActive) => {
           :dept-name="deptName"
           :skill-display-names="skillNameZhMap"
           :next-job-run="nextJobRun"
+          @skill-upgraded="refreshEmployeeDetail()"
         />
         <EmployeeOverviewRecentActivity
           :refresh-version="overviewRefreshVersion"

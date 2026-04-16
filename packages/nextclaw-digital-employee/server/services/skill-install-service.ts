@@ -14,6 +14,7 @@ export class SkillInstallService {
       sourceType: imported.sourceType,
       sourceUri: imported.sourceUri,
       installPath: imported.installPath,
+      version: imported.version,
       metadata: {}
     });
   }
@@ -25,6 +26,7 @@ export class SkillInstallService {
       sourceType: imported.sourceType,
       sourceUri: imported.sourceUri,
       installPath: imported.installPath,
+      version: imported.version,
       metadata: {}
     });
   }

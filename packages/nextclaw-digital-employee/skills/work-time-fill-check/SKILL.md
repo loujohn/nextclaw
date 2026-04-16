@@ -1,6 +1,7 @@
 ---
 name: work-time-fill-check
 name_zh: 工时填报检查
+version: 1.0.0
 description: "获取团队成员工时填写情况，识别未填工时人员并生成通知内容。当需要检查工时填报情况、催促填写工时、或生成工时统计报告时使用。"
 metadata:
   nextclaw:

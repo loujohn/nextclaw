@@ -1,6 +1,7 @@
 ---
 name: employee-creator
 name_zh: 数字员工创建向导
+version: 1.0.0
 description: "通过平台 API 创建和配置新的数字员工。当用户要求创建新员工、设置新 Agent、或为新数字员工配置技能和调度时使用。"
 metadata:
   nextclaw:

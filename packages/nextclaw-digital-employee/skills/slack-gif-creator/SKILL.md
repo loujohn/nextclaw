@@ -1,6 +1,7 @@
 ---
 name: slack-gif-creator
 name_zh: Slack GIF 制作
+version: 1.0.0
 description: 提供面向 Slack 的 GIF 动图制作知识与工具，包含尺寸、帧率、色彩与体积约束校验。用户需要“用于 Slack 的动图”时触发。
 license: Complete terms in LICENSE.txt
 ---

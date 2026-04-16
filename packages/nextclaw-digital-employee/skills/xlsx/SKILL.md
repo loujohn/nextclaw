@@ -1,6 +1,7 @@
 ---
 name: xlsx
 name_zh: 电子表格处理
+version: 1.0.0
 description: "当任务以表格文件为主要输入或输出时使用，覆盖 .xlsx/.xlsm/.csv/.tsv 的读取、编辑、修复、格式化、公式计算、图表制作、清洗重构与格式转换。涉及表格文件名或交付要求为电子表格时应触发。"
 license: Proprietary. LICENSE.txt has complete terms
 ---

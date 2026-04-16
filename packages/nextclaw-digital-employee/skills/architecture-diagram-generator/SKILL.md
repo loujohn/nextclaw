@@ -1,6 +1,7 @@
 ---
 name: architecture-diagram-generator
 name_zh: 政务架构图生成器
+version: 1.0.0
 description: "生成专业政务分层架构图（HTML/CSS），支持四横四纵两端、通用分层等布局。当用户需要绘制架构图、系统架构可视化、生成方案架构图时触发。可与'数字重庆建设专家'联动获取架构规范。"
 metadata:
   nextclaw:

@@ -1,6 +1,7 @@
 ---
 name: zentao-project-analysis
 name_zh: 禅道项目分析
+version: 1.0.0
 description: "利用禅道基础工具 分析项目健康状态，识别工时风险、进度风险和阻塞任务，并生成项目分析报告发送钉钉通知。当需要评估项目状态、识别项目风险、生成项目健康报告时使用。"
 metadata:
   nextclaw:

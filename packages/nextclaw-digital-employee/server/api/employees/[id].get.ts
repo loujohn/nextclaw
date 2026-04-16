@@ -1,6 +1,8 @@
 import { createError, getRouterParam } from "h3";
+import { join } from "node:path";
 import { getPlatformContext } from "../../runtime/platform-context";
 import { buildAutomationSummary } from "../../../shared/ui-models";
+import { readSkillVersion } from "../../engine/employee-workspace";
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id") ?? "";
@@ -19,6 +21,18 @@ export default defineEventHandler(async (event) => {
     ctx.employeeScheduleJobRepo.listByEmployeeId(id)
   ]);
   const scheduledRuns = recentRunsFull.filter((r) => r.triggerType === "scheduled");
+
+  // 附加版本对比信息
+  const globalSkillsDir = join(ctx.workspaceDir, "skills");
+  const skillsWithVersion = skills.map((skill) => {
+    const latestVersion = readSkillVersion(join(globalSkillsDir, skill.skillName));
+    return {
+      ...skill,
+      latestVersion,
+      hasUpdate: latestVersion != null && latestVersion !== skill.version
+    };
+  });
+
   const automationSummary = buildAutomationSummary(
     jobs.map((j) => ({ enabled: j.enabled, nextRunAt: j.nextRunAt })),
     scheduledRuns.slice(0, 10).map((r) => ({ status: r.status }))
@@ -30,7 +44,7 @@ export default defineEventHandler(async (event) => {
     ok: true,
     data: {
       ...employee,
-      skills,
+      skills: skillsWithVersion,
       schedule,
       recentRuns,
       automationSummary,
