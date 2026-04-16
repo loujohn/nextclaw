@@ -1,21 +1,31 @@
 ---
 name: daily-report
-name_zh: 项目日报生成
-version: 1.0.1
-description: "封装并提交项目日报数据至内部系统。自动完成登录鉴权、参数校验与接口调用。当需要生成项目日报、提交工作汇报或补充项目进度信息时使用。"
+name_zh: 日报填写
+description: "封装并提交日报数据至内部系统。自动完成登录鉴权、参数校验与接口调用。当需要填写日报、提交工作汇报或补充项目进度信息时使用。"
 metadata:
   nextclaw:
     emoji: "📝"
     category: "project-management"
 ---
 
-# 项目日报生成技能
+# 日报填写技能
 
 **⚠️ 重要：本技能使用 Python 编写，必须使用 `python` 命令调用，禁止使用 `node`！**
 
 **⚠️ 脚本路径：`skills/daily-report/scripts/daily-report.py`**
 
 封装并提交日报数据至内部系统接口。
+
+## 前置要求
+
+使用本技能前需要准备以下环境变量：
+
+| 变量            | 说明           |
+| --------------- | -------------- |
+| `PM_BASE_URL`   | 基础 URL       |
+| `PM_USERNAME`   | 登录用户名     |
+| `PM_PASSWORD`   | 登录密码       |
+| `PM_BASIC_AUTH` | Basic 认证凭证 |
 
 ## 接口信息
 
@@ -74,51 +84,52 @@ Body: {}（空对象）
 
 ### 错误示例（禁止使用）
 
-```bash
-# ❌ 错误！字段名应为 kebab-case 格式
---day-summarize-now "完成工作"   # ❌ 错误！应为 daySummarizeNow
---day-plan-next "继续工作"       # ❌ 错误！应为 dayPlanNext
---work-ratio 1.0                  # ❌ 错误！应为 dayReportType
+```json
+{
+  "workSummary": "完成工作", // ❌ 错误！应为 daySummarizeNow
+  "workPlan": "继续工作", // ❌ 错误！应为 dayPlanNext
+  "workRatio": 1.0 // ❌ 错误！应为 workHourProportion
+}
 ```
 
-### 命令行参数示例
+### 正确示例
 
-```bash
-python daily-report.py --submit \
-  --date "2026-04-15" \
-  --project-code "XM202503112160" \
-  --project-name "测试项目" \
-  --project-stage "开发中" \
-  --project-manager "张三" \
-  --day-summarize-now "完成工作" \
-  --day-plan-next "继续工作"
+```json
+{
+  "date": "2026-04-15",
+  "projectCode": "XM202503112160",
+  "projectName": "测试项目",
+  "projectStage": "开发中",
+  "projectManager": "张三",
+  "daySummarizeNow": "完成工作",
+  "dayPlanNext": "继续工作"
+}
 ```
 
 ## 使用流程
 
-1. **收集必填信息** → 从用户输入中提取：日期、今日总结、明日计划
-2. **查询项目** → 先询问用户要填哪个项目，调用 `--query-projects` 查询（可传项目关键词或空）并让用户选择
-3. **确认并提交** → 用户确认后，调用 `--submit` 生成参数文件并执行提交
+1. **解析用户消息** → 从用户输入中提取日报信息
+2. **查询项目** → 如项目不明确，调用 `--query-projects` 查询并让用户选择
+3. **校验必填字段** → 检查是否所有必填字段都有值
+4. **反问缺失字段** → 如有缺失，向用户反问获取完整信息
+5. **生成预览** → 使用 `--submit --json-file <file>` 显示预览并生成参数文件
+6. **用户确认** → 用户确认后，AI 调用 `--confirm --json-file <file>` 提交
 
 ## 调用脚本
 
 ### 命令行选项
 
-| 选项                  | 说明                           |
-| --------------------- | ------------------------------ |
-| `--submit`            | 生成参数文件并提交             |
-| `--validate`          | 仅校验参数，返回 JSON 校验结果 |
-| `--json-file`         | 从文件读取日报参数（备用）     |
-| `--date`              | 日期（YYYY-MM-DD，默认当天）   |
-| `--project-code`      | 项目编号                       |
-| `--project-name`      | 项目名称                       |
-| `--project-stage`     | 项目阶段                       |
-| `--project-manager`   | 项目经理                       |
-| `--day-summarize-now` | 今日工作总结                   |
-| `--day-plan-next`     | 明日工作计划                   |
-| `--day-report-type`   | 日报类型（默认2）              |
-| `--query-projects`    | 根据关键词查询项目列表         |
-| `--select`            | 从缓存的查询结果中选择项目     |
+| 选项               | 说明                                 |
+| ------------------ | ------------------------------------ |
+| `--submit`         | 生成预览并生成参数文件，输出确认提示 |
+| `--confirm`        | 确认提交（需配合 --json-file）       |
+| `--dry-run`        | 仅显示预览，不生成文件不提交         |
+| `--validate`       | 仅校验参数，返回 JSON 格式校验结果   |
+| `--json`           | JSON 格式的日报参数                  |
+| `--json-file`      | 从文件读取日报参数                   |
+| `--date`           | 日期（默认当天，格式 YYYY-MM-DD）    |
+| `--query-projects` | 根据关键词查询项目列表               |
+| `--select`         | 从缓存的查询结果中选择项目           |
 
 ### 使用示例
 
@@ -129,39 +140,25 @@ python daily-report.py --query-projects "测试"
 # 2. 选择项目（返回项目信息）
 python daily-report.py --select 1
 
-# 3. 校验参数
-python daily-report.py --validate --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
+# 3. 生成预览并生成参数文件
+python daily-report.py --submit --json-file "日报参数.json"
+# 输出预览后，脚本自动生成参数文件，并提示用户确认
 
-# 4. 生成参数文件并提交
-python daily-report.py --submit --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
+# 4. 用户确认后，AI 调用此命令提交
+python daily-report.py --confirm --json-file "参数文件路径.json"
 ```
 
 ## 交互式反问
 
-按以下顺序收集信息：
+当用户消息中缺少必填信息时，按以下顺序反问：
 
-1. **日期**：默认当天，可指定
-2. **今日总结**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
-3. **明日计划**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
-4. **项目选择**：必填
-   - 若用户已提及项目 → 直接使用
-   - 若用户未提及项目 → 调用 `--query-projects` 查询全部项目（不传关键词），列出供用户选择
-
-**内容优化规则**：
-
-- 将口语化表达转为正式工作用语
-- 保持简洁，突出重点
-- 示例：
-  - 用户说："今天写了点代码" → 优化为："完成功能模块代码编写"
-  - 用户说："改了个bug" → 优化为："修复已知问题"
-  - 用户说："明天继续写" → 优化为："继续完成功能模块开发"
-- **注意**：不得添加用户未提及的内容，只做语言润色
-
-**多项目处理**：
-
-- 若用户提及多个项目 → 逐个处理，每个项目都需要用户确认后提交
-- 确认格式：`确认` 或 `提交`（不区分大小写）
-- 每个项目提交后再处理下一个，直到全部完成
+```
+请补充以下信息：
+1. 日期
+2. 项目名称（可使用 --query-projects 查询）
+3. 今日工作总结
+4. 明日工作计划
+```
 
 **注：**
 
@@ -170,12 +167,40 @@ python daily-report.py --submit --project-code "XM202503112160" --project-name "
 
 ## 流程说明
 
-1. **收集信息**：询问用户日期、今日总结、明日计划
-2. **查询项目**：先询问用户要填哪个项目，再调用 `--query-projects` 查询（可传关键词或空）
-3. **确认提交**：用户确认后，调用 `--submit` 执行提交
+**两步提交机制**：
+
+1. **生成预览**（`--submit`）：校验参数 → 显示预览 → 自动生成参数文件 → 输出确认命令
+2. **确认提交**（`--confirm --json-file`）：读取参数文件 → 执行提交
 
 ```bash
-python daily-report.py --submit --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
+# 第1步：生成预览（不实际提交）
+python daily-report.py --submit --json '{...}'
+
+# 第2步：使用脚本输出的确认命令提交
+python daily-report.py --submit --confirm --json-file "C:\Users\用户名\nextclaw-temp\daily-report\param_xxx.json"
+```
+
+## 参数文件
+
+**⚠️ 重要：所有临时文件必须放到指定目录，禁止随意存放！**
+
+**⚠️ 参数文件由脚本自动生成，不要手动创建！**
+
+### 文件位置
+
+```
+~/nextclaw-temp/daily-report/
+
+Windows: C:\Users\用户名\nextclaw-temp\daily-report\
+Linux/Mac: ~/nextclaw-temp/daily-report/
+```
+
+### 文件名格式
+
+```
+param_{项目编码}_{用户名}_{时间}.json
+
+示例：param_XM202503112160_admin_202604151520.json
 ```
 
 ## 返回结果
