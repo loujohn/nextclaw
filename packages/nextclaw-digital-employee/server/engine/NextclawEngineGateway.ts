@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createLogger } from "../utils/logger";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
@@ -50,6 +50,7 @@ export type ImportedSkillView = {
   installPath: string;
   sourceType: "local" | "git";
   sourceUri: string;
+  version: string;
 };
 
 export type RunEmployeeTurnParams = {
@@ -110,6 +111,31 @@ function parseSkillName(skillFilePath: string): string {
     }
   }
   return basename(resolve(skillFilePath, ".."));
+}
+
+/**
+ * 读取 SKILL.md 中的 version 字段；若不存在则自动写入默认版本并返回该默认值。
+ */
+function ensureSkillVersion(skillFilePath: string, defaultVersion = "1.0.0"): string {
+  const raw = readFileSync(skillFilePath, "utf-8");
+  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (match) {
+    const metadataBlock = match[1] ?? "";
+    for (const line of metadataBlock.split("\n")) {
+      const [key, ...rest] = line.split(":");
+      if (key?.trim() === "version") {
+        const value = rest.join(":").trim().replace(/^['"]|['"]$/g, "");
+        if (value) return value;
+      }
+    }
+    // version 字段缺失，自动注入
+    const updated = raw.replace(
+      /^---\n([\s\S]*?)\n---/,
+      `---\n${metadataBlock}\nversion: ${defaultVersion}\n---`
+    );
+    writeFileSync(skillFilePath, updated, "utf-8");
+  }
+  return defaultVersion;
 }
 
 function findSkillDirectory(rootDir: string): string {
@@ -438,7 +464,8 @@ export class NextclawEngineGateway {
 
   async importFromLocalPath(sourcePath: string): Promise<ImportedSkillView> {
     const skillDir = findSkillDirectory(sourcePath);
-    const skillName = parseSkillName(join(skillDir, "SKILL.md"));
+    const skillFilePath = join(skillDir, "SKILL.md");
+    const skillName = parseSkillName(skillFilePath);
     if (this.builtinSkillNames.has(skillName)) {
       throw new Error(`Cannot import skill "${skillName}" — conflicts with built-in skill`);
     }
@@ -446,11 +473,13 @@ export class NextclawEngineGateway {
     rmSync(installPath, { recursive: true, force: true });
     mkdirSync(join(this.workspaceDir, "skills"), { recursive: true });
     cpSync(skillDir, installPath, { recursive: true });
+    const version = ensureSkillVersion(join(installPath, "SKILL.md"));
     return {
       skillName,
       installPath,
       sourceType: "local",
-      sourceUri: resolve(sourcePath)
+      sourceUri: resolve(sourcePath),
+      version
     };
   }
 

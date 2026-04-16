@@ -22,6 +22,22 @@ function parseSkillNameFromContent(content: string, fallback: string): string {
   return fallback;
 }
 
+/**
+ * 从 SKILL.md 内容中读取 version；若缺失则返回 null（调用方负责写入默认值）。
+ */
+function parseSkillVersionFromContent(content: string): string | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  for (const line of (match[1] ?? "").split("\n")) {
+    const [key, ...rest] = line.split(":");
+    if (key?.trim() === "version") {
+      const value = rest.join(":").trim().replace(/^['"]|['"]$/g, "");
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
 export default defineEventHandler(async (event) => {
 
   const body = await readBody<{ files: UploadedFile[] }>(event);
@@ -42,6 +58,18 @@ export default defineEventHandler(async (event) => {
   const fallbackName = rootDir === "." ? "uploaded-skill" : rootDir;
   const skillName = parseSkillNameFromContent(skillMdFile.content, fallbackName);
 
+  // 检测 version 字段，若不存在则自动注入默认值
+  const defaultVersion = "1.0.0";
+  let parsedVersion = parseSkillVersionFromContent(skillMdFile.content);
+  if (!parsedVersion) {
+    parsedVersion = defaultVersion;
+    const versionInjected = skillMdFile.content.replace(
+      /^---\n([\s\S]*?)\n---/,
+      (_, block) => `---\n${block}\nversion: ${defaultVersion}\n---`
+    );
+    skillMdFile.content = versionInjected;
+  }
+
   const ctx = await getPlatformContext();
   const installPath = join(ctx.workspaceDir, "skills", skillName);
   mkdirSync(installPath, { recursive: true });
@@ -61,6 +89,7 @@ export default defineEventHandler(async (event) => {
     sourceType: "local",
     sourceUri: `upload:${skillName}`,
     installPath,
+    version: parsedVersion,
     metadata: {}
   });
 
