@@ -396,6 +396,34 @@ def main():
             return
         print(json.dumps(project_info, ensure_ascii=False, indent=2))
         return
+        with open(query_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            records = data.get("records", [])
+
+        select_str = args.select.replace(",", " ").replace("，", " ")
+        indices = []
+        for part in select_str.split():
+            if part.strip().isdigit():
+                indices.append(int(part.strip()))
+
+        if not indices:
+            print(
+                f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
+            )
+            return
+
+        project_infos = []
+        for idx in indices:
+            if idx < 1 or idx > len(records):
+                print(
+                    f"错误: 无效的选择 {idx}，有效范围 1-{len(records)}",
+                    file=sys.stderr,
+                )
+                return
+            project_infos.append(get_project_info(records, idx))
+
+        print(json.dumps(project_infos, ensure_ascii=False, indent=2))
+        return
 
     if args.validate:
         report_data = {}
@@ -506,6 +534,8 @@ def main():
 
     if not username or not password:
         print("错误: 需要登录凭据", file=sys.stderr)
+        if os.path.exists(param_file):
+            os.remove(param_file)
         return
 
     try:
@@ -535,10 +565,14 @@ def main():
             print(f"【错误】{error_text}", flush=True)
             print("==================================================", flush=True)
             print("", flush=True)
+            if os.path.exists(param_file):
+                os.remove(param_file)
             return
 
     except Exception as e:
         print(f"[日报] 运行时错误: {e}", flush=True)
+        if os.path.exists(param_file):
+            os.remove(param_file)
         return
 
 
