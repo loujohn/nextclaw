@@ -350,7 +350,7 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
 
     query_file_name = (
-        f"daily_report_query_{username}.json" if username else "daily_report_query.json"
+        f"projects_query_{username}.json" if username else "projects_query.json"
     )
 
     if args.query_projects is not None:
