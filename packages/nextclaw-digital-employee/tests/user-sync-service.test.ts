@@ -120,4 +120,41 @@ describe("performUserPersonnelSync", () => {
     expect(updatedUser?.externalUserType).toBe("顾问");
     expect(updatedUser?.role).toBe("manager");
   });
+
+  it("claims an existing synced user during SSO login instead of creating a duplicate", async () => {
+    await performUserPersonnelSync(db, [
+      {
+        userId: "external-001",
+        userName: "zhangsan",
+        name: "张三",
+        postName: "工程师",
+        roleName: "外部管理员",
+        dingTalkId: "ding-001",
+        phone: "13800138000",
+        userType: "正式员工",
+      },
+    ]);
+
+    const syncedUser = await userRepo.findByExternalUserId("external-001");
+    expect(syncedUser).toBeTruthy();
+
+    const claimedUser = await userRepo.upsertFromToken({
+      keycloakSub: "kc-sub-001",
+      email: "zhangsan@example.com",
+      displayName: "张三",
+      identityHints: ["external-001", "zhangsan"],
+    });
+
+    expect(claimedUser.id).toBe(syncedUser?.id);
+
+    const afterClaim = await userRepo.findById(syncedUser!.id);
+    expect(afterClaim?.email).toBe("zhangsan@example.com");
+    expect(afterClaim?.lastLoginAt).toBeTruthy();
+
+    const claimedBySub = await userRepo.findByKeycloakSub("kc-sub-001");
+    expect(claimedBySub?.id).toBe(syncedUser?.id);
+
+    const users = await userRepo.listAll();
+    expect(users).toHaveLength(1);
+  });
 });

@@ -56,6 +56,25 @@ function decodeIssuer(token: string): string | null {
   }
 }
 
+function readStringClaim(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function collectIdentityHints(payload: Record<string, unknown>): string[] {
+  const hints = [
+    readStringClaim(payload, "preferred_username"),
+    readStringClaim(payload, "username"),
+    readStringClaim(payload, "userId"),
+    readStringClaim(payload, "userid"),
+    readStringClaim(payload, "employeeId"),
+    readStringClaim(payload, "employee_id"),
+    readStringClaim(payload, "external_user_id"),
+  ].filter(Boolean);
+
+  return [...new Set(hints)];
+}
+
 export default defineEventHandler(async (event) => {
   await ensureInit();
 
@@ -123,11 +142,13 @@ export default defineEventHandler(async (event) => {
     }
     const email = (payload.email as string) ?? "";
     const name = (payload.name as string) ?? (payload.preferred_username as string) ?? "";
+    const identityHints = collectIdentityHints(payload);
 
     const user = await ctx.userRepo.upsertFromToken({
       keycloakSub: sub,
       email,
       displayName: name,
+      identityHints,
     });
 
     if (!user.isActive) {

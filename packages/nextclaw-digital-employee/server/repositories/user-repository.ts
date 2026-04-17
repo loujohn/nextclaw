@@ -9,6 +9,7 @@ export type UpsertUserFromTokenInput = {
   email: string;
   displayName: string;
   avatarUrl?: string;
+  identityHints?: string[];
 };
 
 export type CreateSyncedUserInput = {
@@ -52,6 +53,13 @@ export type ListUsersPageResult = {
 
 function buildSyncedKeycloakSub(externalUserId: string): string {
   return `personnel-sync:${externalUserId}`;
+}
+
+function normalizeIdentityCandidates(keycloakSub: string, identityHints?: string[]): string[] {
+  const candidates = [keycloakSub, ...(identityHints ?? [])]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(candidates)];
 }
 
 function normalizeSearchKeyword(search?: string): string {
@@ -104,6 +112,66 @@ function toUserContext(record: UserRecord): UserContext {
 export class UserRepository {
   constructor(private db: Knex) {}
 
+  private async findClaimableSyncedUser(input: UpsertUserFromTokenInput): Promise<UserRecord | null> {
+    const candidates = normalizeIdentityCandidates(input.keycloakSub, input.identityHints);
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const syncedSubCandidates = candidates.map((candidate) => buildSyncedKeycloakSub(candidate));
+    const records = await this.db(PLATFORM_TABLES.users)
+      .where({ user_source: "sync" })
+      .andWhere((builder) => {
+        builder
+          .whereIn("keycloak_sub", syncedSubCandidates)
+          .orWhereIn("external_user_id", candidates)
+          .orWhereIn("username", candidates);
+      })
+      .select<UserRecord[]>("*");
+
+    if (records.length === 0) {
+      return null;
+    }
+
+    const rankRecord = (record: UserRecord): [number, number] => {
+      for (const [index, candidate] of candidates.entries()) {
+        if (record.keycloak_sub === buildSyncedKeycloakSub(candidate)) {
+          return [0, index];
+        }
+        if (record.external_user_id === candidate) {
+          return [1, index];
+        }
+        if (record.username === candidate) {
+          return [2, index];
+        }
+      }
+      return [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER];
+    };
+
+    const ranked = records
+      .map((record) => ({ record, score: rankRecord(record) }))
+      .sort((left, right) => {
+        if (left.score[0] !== right.score[0]) {
+          return left.score[0] - right.score[0];
+        }
+        return left.score[1] - right.score[1];
+      });
+
+    const best = ranked[0];
+    if (!best || best.score[0] === Number.MAX_SAFE_INTEGER) {
+      return null;
+    }
+
+    const ambiguous = ranked.filter(
+      (entry) => entry.score[0] === best.score[0] && entry.score[1] === best.score[1]
+    );
+    if (ambiguous.length > 1) {
+      return null;
+    }
+
+    return best.record;
+  }
+
   private applyListSearch(query: Knex.QueryBuilder, search?: string) {
     const keyword = normalizeSearchKeyword(search);
     if (!keyword) return;
@@ -149,6 +217,33 @@ export class UserRepository {
         email: input.email,
         display_name: input.displayName,
         avatar_url: input.avatarUrl ?? existing.avatar_url,
+        last_login_at: now,
+        updated_at: now,
+      });
+    }
+
+    const claimable = await this.findClaimableSyncedUser(input);
+    if (claimable) {
+      const nextEmail = input.email || claimable.email;
+      const nextDisplayName = input.displayName || claimable.display_name;
+      const nextAvatarUrl = input.avatarUrl ?? claimable.avatar_url;
+      await this.db(PLATFORM_TABLES.users)
+        .where({ id: claimable.id })
+        .update({
+          keycloak_sub: input.keycloakSub,
+          email: nextEmail,
+          display_name: nextDisplayName,
+          avatar_url: nextAvatarUrl,
+          last_login_at: now,
+          updated_at: now,
+        });
+
+      return toUserContext({
+        ...claimable,
+        keycloak_sub: input.keycloakSub,
+        email: nextEmail,
+        display_name: nextDisplayName,
+        avatar_url: nextAvatarUrl,
         last_login_at: now,
         updated_at: now,
       });
