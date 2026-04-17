@@ -624,13 +624,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6 p-6">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-xl font-semibold text-foreground">用户管理</h1>
-        <p class="text-sm text-muted-foreground">管理平台用户角色与权限</p>
+  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8">
+    <header class="hero-section grid gap-6 lg:grid-cols-[1fr_auto] lg:items-start">
+      <div class="relative space-y-2">
+        <span class="section-label">用户与权限</span>
+        <h1 class="font-display text-3xl font-bold tracking-tight lg:text-4xl">用户管理</h1>
+        <p class="max-w-2xl text-sm leading-relaxed text-muted-foreground">统一管理平台账号、角色权限与人员关联，保持内部用户与外部同步身份的一致性。</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2 lg:justify-end">
         <button
           class="flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="syncStarting"
@@ -645,7 +646,7 @@ onUnmounted(() => {
           <Plus class="h-4 w-4" /> 新建用户
         </button>
       </div>
-    </div>
+    </header>
 
     <div v-if="authLoading" class="rounded-lg border border-border bg-background px-4 py-10 text-center text-sm text-muted-foreground">
       正在确认当前账号权限...
@@ -669,18 +670,18 @@ onUnmounted(() => {
       </div>
 
       <div class="overflow-x-auto rounded-lg border border-border">
-      <table class="w-full text-sm">
+      <table class="min-w-full w-max text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/50">
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">用户</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">标识</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">角色</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">来源</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">登录方式</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">关联员工</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">最后登录</th>
-            <th class="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">用户</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">标识</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">角色</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">状态</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">来源</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">登录方式</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">关联员工</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">最后登录</th>
+            <th class="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -689,26 +690,24 @@ onUnmounted(() => {
             :key="u.id"
             class="border-b border-border last:border-0 hover:bg-muted/30 transition"
           >
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <div class="flex items-center gap-2">
                 <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
                   {{ u.displayName?.charAt(0) ?? "?" }}
                 </div>
                 <div class="min-w-0">
-                  <div class="font-medium">{{ u.displayName }}</div>
-                  <div v-if="u.externalName && u.externalName !== u.displayName" class="text-xs text-muted-foreground">
-                    外部姓名：{{ u.externalName }}
-                  </div>
+                  <div class="max-w-[14rem] truncate font-medium" :title="u.displayName">{{ u.displayName }}</div>
                 </div>
               </div>
             </td>
-            <td class="px-4 py-3 text-muted-foreground">
-              <div class="space-y-1">
-                <div>{{ u.username || "-" }}</div>
-                <div class="text-xs">{{ u.email }}</div>
+            <td class="w-[12rem] px-4 py-3 text-muted-foreground align-middle whitespace-nowrap">
+              <div class="flex max-w-[12rem] items-center gap-2 min-w-0">
+                <div class="max-w-[5rem] truncate" :title="u.username || '-'">{{ u.username || "-" }}</div>
+                <div class="text-xs text-muted-foreground/70">/</div>
+                <div class="max-w-[7rem] truncate text-xs" :title="u.email">{{ u.email }}</div>
               </div>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <select
                 :value="u.role"
                 class="rounded border border-border bg-background px-2 py-1 text-xs outline-none"
@@ -719,7 +718,7 @@ onUnmounted(() => {
                 </option>
               </select>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <button
                 class="rounded px-2 py-0.5 text-xs font-medium"
                 :class="u.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'"
@@ -728,18 +727,18 @@ onUnmounted(() => {
                 {{ u.isActive ? "启用" : "禁用" }}
               </button>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
                 {{ sourceLabel(u) }}
               </span>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <span class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</span>
             </td>
-            <td class="px-4 py-3">
-              <span v-if="u.humanEmployeeId" class="inline-flex items-center gap-1 text-xs text-emerald-700">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
+              <span v-if="u.humanEmployeeId" class="inline-flex max-w-[14rem] items-center gap-1 overflow-hidden text-xs text-emerald-700">
                 <Link2 class="h-3 w-3" />
-                {{ getHumanEmployeeName(u.humanEmployeeId) || "已关联" }}
+                <span class="truncate">{{ getHumanEmployeeName(u.humanEmployeeId) || "已关联" }}</span>
                 <button
                   class="ml-1 text-muted-foreground hover:text-destructive"
                   title="解除关联"
@@ -756,12 +755,12 @@ onUnmounted(() => {
                 手动关联
               </button>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <span class="text-xs text-muted-foreground">
                 {{ u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : "未登录" }}
               </span>
             </td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right align-middle whitespace-nowrap">
               <div class="flex items-center justify-end gap-1">
                 <button
                   v-if="u.userSource === 'sync'"
