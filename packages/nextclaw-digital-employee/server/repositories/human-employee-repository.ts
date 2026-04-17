@@ -68,6 +68,27 @@ function toView(record: HumanEmployeeRecord): HumanEmployeeView {
 export class HumanEmployeeRepository {
   constructor(private readonly db: Knex) {}
 
+  async findByExternalIds(externalIds: string[]): Promise<HumanEmployeeView[]> {
+    if (externalIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db<HumanEmployeeRecord>(PLATFORM_TABLES.humanEmployees)
+      .whereIn("external_id", externalIds);
+    return rows.map(toView);
+  }
+
+  async findByDingTalkIdentities(identities: string[]): Promise<HumanEmployeeView[]> {
+    if (identities.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db<HumanEmployeeRecord>(PLATFORM_TABLES.humanEmployees)
+      .whereIn("external_id", identities)
+      .orWhereIn("unionid", identities);
+    return rows.map(toView);
+  }
+
   async create(input: CreateHumanEmployeeInput): Promise<HumanEmployeeView> {
     const now = dbNow();
     const record: HumanEmployeeRecord = {

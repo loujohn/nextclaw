@@ -69,6 +69,17 @@ export const INITIAL_ROLES: RoleItem[] = [
 
 export const INITIAL_PERMISSION_GROUPS: PermissionGroup[] = [
   {
+    group: "用户管理",
+    items: [
+      { key: "user:read", label: "查看用户列表", enabled: true },
+      { key: "user:create", label: "创建本地用户", enabled: false },
+      { key: "user:write", label: "编辑用户信息与角色", enabled: false },
+      { key: "user:reset-password", label: "重置本地用户密码", enabled: false },
+      { key: "user:sync", label: "同步外部用户", enabled: false },
+      { key: "user:delete", label: "删除用户", enabled: false }
+    ]
+  },
+  {
     group: "员工管理",
     items: [
       { key: "employee:read", label: "查看员工", enabled: true },

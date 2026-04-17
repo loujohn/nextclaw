@@ -29,6 +29,10 @@ const navItems: NavItem[] = [
   { label: "用户管理", to: "/users", icon: UserCog },
 ];
 
+const visibleNavItems = computed(() =>
+  navItems.filter((item) => item.to !== "/users" || user.value?.role === "admin")
+);
+
 function isActive(path: string): boolean {
   return path === "/" ? route.path === path : route.path.startsWith(path);
 }
@@ -52,7 +56,7 @@ function isActive(path: string): boolean {
 
       <nav class="flex flex-1 flex-col gap-0.5 px-3 py-1">
         <NuxtLink
-          v-for="item in navItems"
+          v-for="item in visibleNavItems"
           :key="item.to"
           :to="item.to"
           class="group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] text-sidebar-muted transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
@@ -111,7 +115,7 @@ function isActive(path: string): boolean {
 
     <nav class="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-background/80 px-2 pb-safe backdrop-blur-xl lg:hidden">
       <NuxtLink
-        v-for="item in navItems"
+        v-for="item in visibleNavItems"
         :key="item.to"
         :to="item.to"
         class="relative flex flex-col items-center gap-1 px-3 py-2.5 text-xs text-muted-foreground transition-colors"

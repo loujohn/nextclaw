@@ -15,7 +15,6 @@ const rows = computed(() => {
   return [
     { label: "外部 ID", value: props.user.externalUserId },
     { label: "外部用户名", value: props.user.externalUserName },
-    { label: "外部姓名", value: props.user.externalName },
     { label: "岗位", value: props.user.externalPostName },
     { label: "外部角色", value: props.user.externalRoleName },
     { label: "用户类型", value: props.user.externalUserType },

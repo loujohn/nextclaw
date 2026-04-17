@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw } from "lucide-vue-next";
+import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw, FileText } from "lucide-vue-next";
 import type { UserListPayload, UserView, UserRole, UpdateUserInput } from "../../../shared/auth-types";
 
-const { getAccessToken, user: currentUser } = useAuth();
+const { getAccessToken, user: currentUser, loading: authLoading } = useAuth();
 
 const toast = useToast();
 const USERS_PAGE_SIZE = 10;
@@ -26,6 +26,8 @@ const search = ref("");
 const usersLoading = ref(false);
 const totalUsers = ref(0);
 const currentPage = ref(1);
+const permissionNoticeShown = ref(false);
+const pageDataInitialized = ref(false);
 const syncProfileDialogOpen = ref(false);
 const syncProfileTarget = ref<UserView | null>(null);
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -42,7 +44,10 @@ type UserSyncJobView = {
   updated: number;
   skipped: number;
   failed: number;
+  autoBound: number;
   summary: string;
+  createdUsers: string[];
+  unboundUsers: Array<{ name: string; dingTalkId: string }>;
   startedAt: string;
   finishedAt: string | null;
 };
@@ -60,13 +65,17 @@ function createEmptySyncJob(): UserSyncJobView {
     updated: 0,
     skipped: 0,
     failed: 0,
+    autoBound: 0,
     summary: "",
+    createdUsers: [],
+    unboundUsers: [],
     startedAt: "",
     finishedAt: null,
   };
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalUsers.value / USERS_PAGE_SIZE)));
+const hasUserManagementAccess = computed(() => currentUser.value?.role === "admin");
 
 function authProviderLabel(user: UserView): string {
   return user.authProvider === "local" ? "本地登录" : "Keycloak";
@@ -86,6 +95,12 @@ function authHeaders(): Record<string, string> {
 }
 
 async function loadUsers() {
+  if (!hasUserManagementAccess.value) {
+    users.value = [];
+    totalUsers.value = 0;
+    usersLoading.value = false;
+    return;
+  }
   usersLoading.value = true;
   try {
     const res = await execute(() =>
@@ -109,6 +124,9 @@ async function loadUsers() {
 }
 
 async function loadUsersPage(page: number) {
+  if (!hasUserManagementAccess.value) {
+    return;
+  }
   currentPage.value = Math.max(1, page);
   await loadUsers();
 }
@@ -118,16 +136,22 @@ function openSyncProfileDialog(user: UserView) {
   syncProfileDialogOpen.value = true;
 }
 
-function formatDateTime(value: string | null | undefined): string {
-  return value ? new Date(value).toLocaleString() : "-";
-}
-
 const syncConfirmOpen = ref(false);
 const syncConfirmError = ref("");
 const syncStarting = ref(false);
 const syncProgressOpen = ref(false);
 const syncResultOpen = ref(false);
-const syncResultSummary = ref({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0, summary: "" });
+const syncResultSummary = ref({
+  total: 0,
+  created: 0,
+  updated: 0,
+  skipped: 0,
+  failed: 0,
+  autoBound: 0,
+  summary: "",
+  createdUsers: [] as string[],
+  unboundUsers: [] as Array<{ name: string; dingTalkId: string }>,
+});
 const syncJob = ref<UserSyncJobView>(createEmptySyncJob());
 const syncJobId = ref("");
 let syncPollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -187,7 +211,10 @@ async function finalizeSyncJob(job: UserSyncJobView) {
       updated: job.updated,
       skipped: job.skipped,
       failed: job.failed,
+      autoBound: job.autoBound,
       summary: job.summary || job.message,
+      createdUsers: job.createdUsers ?? [],
+      unboundUsers: job.unboundUsers ?? [],
     };
     syncResultOpen.value = true;
     await loadUsers();
@@ -285,7 +312,7 @@ function closeSyncProgressDialog() {
   syncProgressOpen.value = false;
 }
 
-async function updateUser(id: string, input: UpdateUserInput) {
+async function updateUser(id: string, input: UpdateUserInput, successMessage = "已更新") {
   const res = await execute(() =>
     $fetch<{ ok: boolean; data: UserView }>(`/api/users/${id}`, {
       method: "PATCH",
@@ -296,8 +323,11 @@ async function updateUser(id: string, input: UpdateUserInput) {
   if (res?.ok) {
     const idx = users.value.findIndex((u) => u.id === id);
     if (idx !== -1) users.value[idx] = res.data;
-    toast.showToast("success", "已更新");
+    toast.showToast("success", successMessage);
+    return true;
   }
+
+  return false;
 }
 
 const roleOptions: { value: UserRole; label: string }[] = [
@@ -362,6 +392,44 @@ function getHumanEmployeeName(id: string | null): string {
   return humanEmployees.value.find((he) => he.id === id)?.name ?? "";
 }
 
+const statusConfirmOpen = ref(false);
+const statusConfirmSubmitting = ref(false);
+const statusConfirmTarget = ref<UserView | null>(null);
+
+function openStatusConfirm(user: UserView) {
+  statusConfirmTarget.value = user;
+  statusConfirmOpen.value = true;
+}
+
+function closeStatusConfirm() {
+  if (statusConfirmSubmitting.value) {
+    return;
+  }
+  statusConfirmOpen.value = false;
+  statusConfirmTarget.value = null;
+}
+
+async function confirmToggleUserStatus() {
+  if (!statusConfirmTarget.value) return;
+
+  const targetUser = statusConfirmTarget.value;
+  const nextStatus = !targetUser.isActive;
+
+  statusConfirmSubmitting.value = true;
+  try {
+    const updated = await updateUser(
+      targetUser.id,
+      { isActive: nextStatus },
+      nextStatus ? "已启用" : "已禁用"
+    );
+    if (updated) {
+      closeStatusConfirm();
+    }
+  } finally {
+    statusConfirmSubmitting.value = false;
+  }
+}
+
 async function confirmBind() {
   if (!bindTargetUser.value || !selectedHumanEmployeeId.value) return;
   await updateUser(bindTargetUser.value.id, { humanEmployeeId: selectedHumanEmployeeId.value });
@@ -379,6 +447,28 @@ function handleRoleChange(u: UserView, newRole: UserRole, event: Event) {
     }
   }
   updateUser(u.id, { role: newRole });
+}
+
+const deleteConfirmOpen = ref(false);
+const deleteConfirmSubmitting = ref(false);
+const deleteTarget = ref<UserView | null>(null);
+
+function openDeleteConfirm(user: UserView) {
+  if (user.id === currentUser.value?.id) {
+    toast.showToast("error", "不能删除自己");
+    return;
+  }
+
+  deleteTarget.value = user;
+  deleteConfirmOpen.value = true;
+}
+
+function closeDeleteConfirm() {
+  if (deleteConfirmSubmitting.value) {
+    return;
+  }
+  deleteConfirmOpen.value = false;
+  deleteTarget.value = null;
 }
 
 const createDialogOpen = ref(false);
@@ -461,37 +551,71 @@ async function confirmResetPassword() {
   }
 }
 
-async function deleteUser(u: UserView) {
-  if (u.id === currentUser.value?.id) {
-    toast.showToast("error", "不能删除自己");
-    return;
-  }
-  const confirmed = window.confirm(`确定删除用户 ${u.displayName} (${u.username || u.email}) ？此操作不可撤销。`);
-  if (!confirmed) return;
+async function confirmDeleteUser() {
+  if (!deleteTarget.value) return;
+
+  const targetUser = deleteTarget.value;
+  deleteConfirmSubmitting.value = true;
   const res = await execute(() =>
-    $fetch<{ ok: boolean }>(`/api/users/${u.id}`, {
+    $fetch<{ ok: boolean }>(`/api/users/${targetUser.id}`, {
       method: "DELETE",
       headers: authHeaders(),
     })
   );
-  if (res?.ok) {
-    toast.showToast("success", "用户已删除");
-    const nextPage = users.value.length === 1 && currentPage.value > 1 ? currentPage.value - 1 : currentPage.value;
-    await loadUsersPage(nextPage);
+  try {
+    if (res?.ok) {
+      toast.showToast("success", "用户已删除");
+      closeDeleteConfirm();
+      const nextPage = users.value.length === 1 && currentPage.value > 1 ? currentPage.value - 1 : currentPage.value;
+      await loadUsersPage(nextPage);
+    }
+  } finally {
+    deleteConfirmSubmitting.value = false;
   }
 }
 
 watch(search, () => {
+  if (!hasUserManagementAccess.value) {
+    return;
+  }
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(() => {
     void loadUsersPage(1);
   }, 250);
 });
 
-onMounted(() => {
-  void loadUsers();
-  void loadHumanEmployees();
-});
+watch(
+  [authLoading, hasUserManagementAccess],
+  ([loading, allowed]) => {
+    if (loading) {
+      return;
+    }
+
+    if (!allowed) {
+      users.value = [];
+      totalUsers.value = 0;
+      pageDataInitialized.value = false;
+      stopSyncPolling();
+      syncJobId.value = "";
+      usersLoading.value = false;
+      if (!permissionNoticeShown.value) {
+        toast.showToast("info", "当前账号暂无用户管理权限，请联系管理员开通。");
+        permissionNoticeShown.value = true;
+      }
+      return;
+    }
+
+    if (pageDataInitialized.value) {
+      return;
+    }
+
+    permissionNoticeShown.value = false;
+    pageDataInitialized.value = true;
+    void loadUsers();
+    void loadHumanEmployees();
+  },
+  { immediate: true }
+);
 
 onUnmounted(() => {
   stopSyncPolling();
@@ -500,13 +624,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6 p-6">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-xl font-semibold text-foreground">用户管理</h1>
-        <p class="text-sm text-muted-foreground">管理平台用户角色与权限</p>
+  <div class="mx-auto max-w-6xl space-y-6 p-6 lg:p-8">
+    <header class="hero-section grid gap-6 lg:grid-cols-[1fr_auto] lg:items-start">
+      <div class="relative space-y-2">
+        <span class="section-label">用户与权限</span>
+        <h1 class="font-display text-3xl font-bold tracking-tight lg:text-4xl">用户管理</h1>
+        <p class="max-w-2xl text-sm leading-relaxed text-muted-foreground">统一管理平台账号、角色权限与人员关联，保持内部用户与外部同步身份的一致性。</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2 lg:justify-end">
         <button
           class="flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="syncStarting"
@@ -521,30 +646,42 @@ onUnmounted(() => {
           <Plus class="h-4 w-4" /> 新建用户
         </button>
       </div>
+    </header>
+
+    <div v-if="authLoading" class="rounded-lg border border-border bg-background px-4 py-10 text-center text-sm text-muted-foreground">
+      正在确认当前账号权限...
     </div>
 
-    <div class="relative">
+    <div
+      v-else-if="!hasUserManagementAccess"
+      class="rounded-lg border border-amber-200 bg-amber-50 px-5 py-6 text-sm text-amber-800"
+    >
+      当前账号暂无用户管理权限。如需查看或维护平台用户，请联系管理员为你开通权限。
+    </div>
+
+    <template v-else>
+      <div class="relative">
       <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input
         v-model="search"
         class="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
         placeholder="搜索姓名、用户名、邮箱、外部 ID、岗位..."
       />
-    </div>
+      </div>
 
-    <div class="overflow-x-auto rounded-lg border border-border">
-      <table class="w-full text-sm">
+      <div class="overflow-x-auto rounded-lg border border-border">
+      <table class="min-w-full w-max text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/50">
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">用户</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">标识</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">角色</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">来源</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">同步资料</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">关联员工</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">最后登录</th>
-            <th class="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">用户</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">标识</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">角色</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">状态</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">来源</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">登录方式</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">关联员工</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">最后登录</th>
+            <th class="px-4 py-3 text-right font-medium text-muted-foreground whitespace-nowrap">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -553,26 +690,24 @@ onUnmounted(() => {
             :key="u.id"
             class="border-b border-border last:border-0 hover:bg-muted/30 transition"
           >
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <div class="flex items-center gap-2">
                 <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
                   {{ u.displayName?.charAt(0) ?? "?" }}
                 </div>
                 <div class="min-w-0">
-                  <div class="font-medium">{{ u.displayName }}</div>
-                  <div v-if="u.externalName && u.externalName !== u.displayName" class="text-xs text-muted-foreground">
-                    外部姓名：{{ u.externalName }}
-                  </div>
+                  <div class="max-w-[14rem] truncate font-medium" :title="u.displayName">{{ u.displayName }}</div>
                 </div>
               </div>
             </td>
-            <td class="px-4 py-3 text-muted-foreground">
-              <div class="space-y-1">
-                <div>{{ u.username || "-" }}</div>
-                <div class="text-xs">{{ u.email }}</div>
+            <td class="w-[12rem] px-4 py-3 text-muted-foreground align-middle whitespace-nowrap">
+              <div class="flex max-w-[12rem] items-center gap-2 min-w-0">
+                <div class="max-w-[5rem] truncate" :title="u.username || '-'">{{ u.username || "-" }}</div>
+                <div class="text-xs text-muted-foreground/70">/</div>
+                <div class="max-w-[7rem] truncate text-xs" :title="u.email">{{ u.email }}</div>
               </div>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <select
                 :value="u.role"
                 class="rounded border border-border bg-background px-2 py-1 text-xs outline-none"
@@ -583,38 +718,27 @@ onUnmounted(() => {
                 </option>
               </select>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <button
                 class="rounded px-2 py-0.5 text-xs font-medium"
                 :class="u.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'"
-                @click="updateUser(u.id, { isActive: !u.isActive })"
+                @click="openStatusConfirm(u)"
               >
                 {{ u.isActive ? "启用" : "禁用" }}
               </button>
             </td>
-            <td class="px-4 py-3">
-              <div class="space-y-1">
-                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
-                  {{ sourceLabel(u) }}
-                </span>
-                <div class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</div>
-              </div>
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
+              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
+                {{ sourceLabel(u) }}
+              </span>
             </td>
-            <td class="px-4 py-3">
-              <div v-if="u.userSource === 'sync'" class="space-y-1">
-                <button
-                  class="inline-flex items-center rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
-                  @click="openSyncProfileDialog(u)"
-                >
-                  查看详情
-                </button>
-              </div>
-              <span v-else class="text-xs text-muted-foreground">-</span>
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
+              <span class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</span>
             </td>
-            <td class="px-4 py-3">
-              <span v-if="u.humanEmployeeId" class="inline-flex items-center gap-1 text-xs text-emerald-700">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
+              <span v-if="u.humanEmployeeId" class="inline-flex max-w-[14rem] items-center gap-1 overflow-hidden text-xs text-emerald-700">
                 <Link2 class="h-3 w-3" />
-                {{ getHumanEmployeeName(u.humanEmployeeId) || "已关联" }}
+                <span class="truncate">{{ getHumanEmployeeName(u.humanEmployeeId) || "已关联" }}</span>
                 <button
                   class="ml-1 text-muted-foreground hover:text-destructive"
                   title="解除关联"
@@ -631,13 +755,21 @@ onUnmounted(() => {
                 手动关联
               </button>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-middle whitespace-nowrap">
               <span class="text-xs text-muted-foreground">
                 {{ u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : "未登录" }}
               </span>
             </td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right align-middle whitespace-nowrap">
               <div class="flex items-center justify-end gap-1">
+                <button
+                  v-if="u.userSource === 'sync'"
+                  class="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="查看同步资料"
+                  @click="openSyncProfileDialog(u)"
+                >
+                  <FileText class="h-3.5 w-3.5" />
+                </button>
                 <button
                   class="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   title="编辑"
@@ -657,7 +789,7 @@ onUnmounted(() => {
                   v-if="u.id !== currentUser?.id"
                   class="rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-destructive"
                   title="删除"
-                  @click="deleteUser(u)"
+                  @click="openDeleteConfirm(u)"
                 >
                   <Trash2 class="h-3.5 w-3.5" />
                 </button>
@@ -683,7 +815,8 @@ onUnmounted(() => {
         :loading="usersLoading"
         @change="loadUsersPage"
       />
-    </div>
+      </div>
+    </template>
 
     <Teleport to="body">
       <SharedConfirmDialog
@@ -721,6 +854,30 @@ onUnmounted(() => {
         :open="syncResultOpen"
         :summary="syncResultSummary"
         @close="syncResultOpen = false"
+      />
+
+      <SharedConfirmDialog
+        :open="statusConfirmOpen"
+        :title="statusConfirmTarget?.isActive ? '确认禁用用户' : '确认启用用户'"
+        :message="statusConfirmTarget?.isActive
+          ? `禁用后，用户「${statusConfirmTarget?.displayName ?? ''}」将无法登录系统。`
+          : `启用后，用户「${statusConfirmTarget?.displayName ?? ''}」将恢复系统访问权限。`"
+        :confirm-label="statusConfirmTarget?.isActive ? '确认禁用' : '确认启用'"
+        :confirming-label="statusConfirmTarget?.isActive ? '禁用中...' : '启用中...'"
+        :confirming="statusConfirmSubmitting"
+        @confirm="confirmToggleUserStatus"
+        @cancel="closeStatusConfirm"
+      />
+
+      <SharedConfirmDialog
+        :open="deleteConfirmOpen"
+        title="确认删除用户"
+        :message="`将删除用户「${deleteTarget?.displayName ?? ''}」（${deleteTarget?.username || deleteTarget?.email || '-'}），此操作不可撤销。`"
+        confirm-label="确认删除"
+        confirming-label="删除中..."
+        :confirming="deleteConfirmSubmitting"
+        @confirm="confirmDeleteUser"
+        @cancel="closeDeleteConfirm"
       />
 
       <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">

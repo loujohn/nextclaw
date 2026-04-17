@@ -28,11 +28,14 @@ export default defineEventHandler(async (event) => {
   const skillsWithVersion = skills.map((skill) => {
     const skillDir = join(globalSkillsDir, skill.skillName);
     const globalExists = existsSync(skillDir);
-    const latestVersion = globalExists ? readSkillVersion(skillDir) : null;
+    // 全局技能存在但无 version 字段时，默认视为 1.0.0
+    const latestVersion = globalExists ? (readSkillVersion(skillDir) ?? "1.0.0") : null;
+    // 员工侧未记录版本时，也视为 1.0.0（版本追踪功能上线前绑定的技能）
+    const currentVersion = skill.version || "1.0.0";
     return {
       ...skill,
       latestVersion,
-      hasUpdate: latestVersion != null && latestVersion !== skill.version,
+      hasUpdate: latestVersion != null && latestVersion !== currentVersion,
       /** 全局技能已被删除（文件目录不存在），员工侧副本仍保留 */
       installMissing: !globalExists
     };

@@ -1,5 +1,6 @@
 import type { Knex } from "knex";
 import { createLogger } from "../utils/logger";
+import { HumanEmployeeRepository } from "../repositories/human-employee-repository";
 import { UserRepository } from "../repositories/user-repository";
 
 const log = createLogger("UserSync");
@@ -7,6 +8,7 @@ const PERSONNEL_SYNC_PROVIDER = "personnel-api";
 const PERSONNEL_SYNC_FALLBACK_DOMAIN = "personnel-sync.local";
 const PERSONNEL_SYNC_TIMEOUT_MS = 15_000;
 const PERSONNEL_SYNC_TOKEN_REFRESH_SKEW_MS = 60_000;
+const USER_SYNC_BATCH_SIZE = 100;
 
 let cachedPersonnelAccessToken: { token: string; expiresAt: number } | null = null;
 
@@ -33,13 +35,38 @@ type NormalizedPersonnelUser = {
   displayName: string;
 };
 
+type SyncUserUpdatePlan = {
+  id: string;
+  externalUserId: string;
+  displayName: string;
+  externalUserName: string;
+  externalName: string;
+  externalPostName: string;
+  externalRoleName: string;
+  externalDingTalkId: string;
+  externalPhone: string;
+  externalUserType: string;
+  humanEmployeeId?: string | null;
+};
+
+type SyncUserCreatePlan = NormalizedPersonnelUser & { humanEmployeeId: string | null };
+
+type HumanEmployeeIdentityLookup = {
+  byExternalId: Map<string, string[]>;
+  byUnionId: Map<string, string[]>;
+  employeesById: Map<string, ReturnType<HumanEmployeeRepository["findByDingTalkIdentities"]> extends Promise<(infer T)[]> ? T : never>;
+};
+
 export type UserSyncSummary = {
   total: number;
   created: number;
   updated: number;
   skipped: number;
   failed: number;
+  autoBound: number;
   summary: string;
+  createdUsers: string[];
+  unboundUsers: Array<{ name: string; dingTalkId: string }>;
 };
 
 export type UserSyncResult = {
@@ -233,21 +260,240 @@ function toUsernameCandidate(value: string): string {
   return value.trim().replace(/\s+/g, "-");
 }
 
-async function resolveSyncedUsername(repo: UserRepository, user: NormalizedPersonnelUser): Promise<string> {
-  const candidates = [
+function buildSyncedUsernameCandidates(user: NormalizedPersonnelUser): string[] {
+  return [
     toUsernameCandidate(user.externalUserName),
     toUsernameCandidate(user.externalUserId),
     `sync-${toUsernameCandidate(user.externalUserId)}`,
   ].filter(Boolean);
+}
+
+function resolveSyncedUsername(user: NormalizedPersonnelUser, takenUsernames: Set<string>): string {
+  const candidates = buildSyncedUsernameCandidates(user);
 
   for (const candidate of candidates) {
-    const existing = await repo.findByUsername(candidate);
-    if (!existing) {
+    if (!takenUsernames.has(candidate)) {
+      takenUsernames.add(candidate);
       return candidate;
     }
   }
 
-  return `sync-${user.externalUserId}-${Date.now()}`;
+  const baseCandidate = candidates.at(-1) || `sync-${toUsernameCandidate(user.externalUserId) || "user"}`;
+  let suffix = 1;
+  let nextCandidate = `${baseCandidate}-${suffix}`;
+  while (takenUsernames.has(nextCandidate)) {
+    suffix += 1;
+    nextCandidate = `${baseCandidate}-${suffix}`;
+  }
+  takenUsernames.add(nextCandidate);
+  return nextCandidate;
+}
+
+function chunkItems<T>(items: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function normalizeSyncUsers(rawUsers: PersonnelSyncRawUser[]): {
+  normalizedUsers: NormalizedPersonnelUser[];
+  skipped: number;
+} {
+  let skipped = 0;
+  const normalizedUsers: NormalizedPersonnelUser[] = [];
+  const seenExternalUserIds = new Set<string>();
+
+  for (const rawUser of rawUsers) {
+    const normalized = normalizePersonnelUser(rawUser);
+    if (!normalized.externalUserId || seenExternalUserIds.has(normalized.externalUserId)) {
+      skipped += 1;
+      continue;
+    }
+
+    seenExternalUserIds.add(normalized.externalUserId);
+    normalizedUsers.push(normalized);
+  }
+
+  return { normalizedUsers, skipped };
+}
+
+async function planSyncUserWrites(
+  userRepo: UserRepository,
+  humanEmployeeRepo: HumanEmployeeRepository,
+  normalizedUsers: NormalizedPersonnelUser[]
+): Promise<{
+  usersToUpdate: SyncUserUpdatePlan[];
+  usersToCreate: SyncUserCreatePlan[];
+  autoBound: number;
+  unboundUsers: Array<{ name: string; dingTalkId: string }>;
+}> {
+  const existingUsers = await userRepo.findByExternalUserIds(normalizedUsers.map((user) => user.externalUserId));
+  const existingUserMap = new Map(existingUsers.map((user) => [user.externalUserId ?? "", user]));
+  const matchedHumanEmployees = await humanEmployeeRepo.findByDingTalkIdentities([
+    ...new Set(normalizedUsers.flatMap((user) => buildIdentityCandidates(user.externalDingTalkId))),
+  ]);
+  const humanEmployeeLookup = buildHumanEmployeeIdentityLookup(matchedHumanEmployees);
+  const boundHumanEmployeeMap = new Map(
+    (await userRepo.listBoundHumanEmployeeBindings()).map((binding) => [binding.humanEmployeeId, binding.userId])
+  );
+
+  let autoBound = 0;
+  const unboundUsers = new Map<string, { name: string; dingTalkId: string }>();
+  const usersToUpdate: SyncUserUpdatePlan[] = [];
+  const usersToCreate: SyncUserCreatePlan[] = [];
+
+  for (const normalized of normalizedUsers) {
+    const existing = existingUserMap.get(normalized.externalUserId);
+    const matchedHumanEmployee = resolveMatchedHumanEmployee(normalized, humanEmployeeLookup);
+    let nextHumanEmployeeId = existing?.humanEmployeeId ?? null;
+    let shouldWriteHumanEmployeeId = false;
+
+    if (!nextHumanEmployeeId && matchedHumanEmployee) {
+      const occupiedByUserId = boundHumanEmployeeMap.get(matchedHumanEmployee.id);
+      if (!occupiedByUserId || occupiedByUserId === existing?.id) {
+        nextHumanEmployeeId = matchedHumanEmployee.id;
+        shouldWriteHumanEmployeeId = true;
+        autoBound += 1;
+        boundHumanEmployeeMap.set(matchedHumanEmployee.id, existing?.id ?? `new:${normalized.externalUserId}`);
+      }
+    }
+
+    if (!nextHumanEmployeeId) {
+      const name = normalized.displayName || normalized.externalUserName || normalized.externalUserId;
+      unboundUsers.set(`${name}::${normalized.externalDingTalkId}`, {
+        name,
+        dingTalkId: normalized.externalDingTalkId,
+      });
+    }
+
+    if (existing) {
+      usersToUpdate.push({
+        id: existing.id,
+        externalUserId: normalized.externalUserId,
+        displayName: normalized.displayName,
+        externalUserName: normalized.externalUserName,
+        externalName: normalized.externalName,
+        externalPostName: normalized.externalPostName,
+        externalRoleName: normalized.externalRoleName,
+        externalDingTalkId: normalized.externalDingTalkId,
+        externalPhone: normalized.externalPhone,
+        externalUserType: normalized.externalUserType,
+        ...(shouldWriteHumanEmployeeId ? { humanEmployeeId: nextHumanEmployeeId } : {}),
+      });
+      continue;
+    }
+
+    usersToCreate.push({
+      ...normalized,
+      humanEmployeeId: nextHumanEmployeeId,
+    });
+  }
+
+  return {
+    usersToUpdate,
+    usersToCreate,
+    autoBound,
+    unboundUsers: [...unboundUsers.values()],
+  };
+}
+
+function buildHumanEmployeeIdentityLookup(
+  employees: Awaited<ReturnType<HumanEmployeeRepository["findByDingTalkIdentities"]>>
+): HumanEmployeeIdentityLookup {
+  const byExternalId = new Map<string, string[]>();
+  const byUnionId = new Map<string, string[]>();
+  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
+
+  for (const employee of employees) {
+    for (const candidate of buildIdentityCandidates(employee.externalId)) {
+      pushLookupValue(byExternalId, candidate, employee.id);
+    }
+    for (const candidate of buildIdentityCandidates(employee.unionid)) {
+      pushLookupValue(byUnionId, candidate, employee.id);
+    }
+  }
+
+  return { byExternalId, byUnionId, employeesById };
+}
+
+function pushLookupValue(map: Map<string, string[]>, key: string, employeeId: string): void {
+  if (!key) {
+    return;
+  }
+
+  const next = map.get(key) ?? [];
+  next.push(employeeId);
+  map.set(key, next);
+}
+
+function buildIdentityCandidates(identity: string): string[] {
+  if (!identity) {
+    return [];
+  }
+
+  const candidates = new Set<string>([identity]);
+  if (/^\d+$/.test(identity)) {
+    candidates.add(identity.replace(/^0+(?=\d)/, ""));
+  }
+
+  return [...candidates].filter(Boolean);
+}
+
+function resolveMatchedHumanEmployee(
+  user: NormalizedPersonnelUser,
+  lookup: HumanEmployeeIdentityLookup
+) {
+  if (!user.externalDingTalkId) {
+    return null;
+  }
+
+  const employeeIds = new Set<string>();
+  for (const candidate of buildIdentityCandidates(user.externalDingTalkId)) {
+    for (const employeeId of lookup.byExternalId.get(candidate) ?? []) {
+      employeeIds.add(employeeId);
+    }
+    for (const employeeId of lookup.byUnionId.get(candidate) ?? []) {
+      employeeIds.add(employeeId);
+    }
+  }
+
+  if (employeeIds.size !== 1) {
+    return null;
+  }
+
+  const employeeId = [...employeeIds][0];
+  if (!employeeId) {
+    return null;
+  }
+
+  return lookup.employeesById.get(employeeId) ?? null;
+}
+
+async function buildCreateInputs(
+  userRepo: UserRepository,
+  usersToCreate: SyncUserCreatePlan[],
+  createdUsers: string[]
+): Promise<Array<SyncUserCreatePlan & { username: string; email: string }>> {
+  const candidateUsernames = [...new Set(usersToCreate.flatMap((user) => buildSyncedUsernameCandidates(user)))];
+  const takenUsernames = new Set(await userRepo.findExistingUsernames(candidateUsernames));
+
+  return usersToCreate.map((user) => {
+    createdUsers.push(user.displayName || user.externalUserName || user.externalUserId);
+    return {
+      ...user,
+      username: resolveSyncedUsername(user, takenUsernames),
+      email: buildPlaceholderEmail(user.externalUserId),
+    };
+  });
+}
+
+function buildSyncSummaryMessage(
+  summary: Pick<UserSyncSummary, "created" | "updated" | "skipped" | "autoBound" | "unboundUsers">
+): string {
+  const unboundCount = summary.unboundUsers.length;
+  return `用户同步完成：新增 ${summary.created} 人，更新 ${summary.updated} 人，跳过 ${summary.skipped} 人，自动关联 ${summary.autoBound} 人${unboundCount > 0 ? `，未关联 ${unboundCount} 人` : ""}。`;
 }
 
 function extractPersonnelUsers(payload: unknown): PersonnelSyncRawUser[] {
@@ -319,75 +565,56 @@ export async function performUserPersonnelSync(
 ): Promise<UserSyncSummary> {
   let created = 0;
   let updated = 0;
-  let skipped = 0;
+  const createdUsers: string[] = [];
+  const { normalizedUsers, skipped } = normalizeSyncUsers(rawUsers);
+  let autoBound = 0;
+  let unboundUsers: Array<{ name: string; dingTalkId: string }> = [];
 
   await db.transaction(async (trx) => {
     const userRepo = new UserRepository(trx);
+    const humanEmployeeRepo = new HumanEmployeeRepository(trx);
+    const syncWritePlan = await planSyncUserWrites(userRepo, humanEmployeeRepo, normalizedUsers);
+    autoBound = syncWritePlan.autoBound;
+    unboundUsers = syncWritePlan.unboundUsers;
+    const createInputs = await buildCreateInputs(userRepo, syncWritePlan.usersToCreate, createdUsers);
 
-    for (const [index, rawUser] of rawUsers.entries()) {
-      const normalized = normalizePersonnelUser(rawUser);
-      if (!normalized.externalUserId) {
-        skipped += 1;
-        onProgress?.({
-          stage: "syncing",
-          message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
-          total: rawUsers.length,
-          processed: index + 1,
-          created,
-          updated,
-          skipped,
-          failed: 0,
-        });
-        continue;
-      }
+    let processed = skipped;
+    onProgress?.({
+      stage: "syncing",
+      message: `已整理 ${normalizedUsers.length} 条有效人员，开始批量写入用户数据...`,
+      total: rawUsers.length,
+      processed,
+      created,
+      updated,
+      skipped,
+      failed: 0,
+    });
 
-      const existing = await userRepo.findByExternalUserId(normalized.externalUserId);
-      if (existing) {
-        await userRepo.updateSyncedUser(existing.id, {
-          externalUserId: normalized.externalUserId,
-          displayName: normalized.displayName,
-          externalUserName: normalized.externalUserName,
-          externalName: normalized.externalName,
-          externalPostName: normalized.externalPostName,
-          externalRoleName: normalized.externalRoleName,
-          externalDingTalkId: normalized.externalDingTalkId,
-          externalPhone: normalized.externalPhone,
-          externalUserType: normalized.externalUserType,
-        });
-        updated += 1;
-        onProgress?.({
-          stage: "syncing",
-          message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
-          total: rawUsers.length,
-          processed: index + 1,
-          created,
-          updated,
-          skipped,
-          failed: 0,
-        });
-        continue;
-      }
-
-      const username = await resolveSyncedUsername(userRepo, normalized);
-      await userRepo.createSyncedUser({
-        username,
-        email: buildPlaceholderEmail(normalized.externalUserId),
-        displayName: normalized.displayName,
-        externalUserId: normalized.externalUserId,
-        externalUserName: normalized.externalUserName,
-        externalName: normalized.externalName,
-        externalPostName: normalized.externalPostName,
-        externalRoleName: normalized.externalRoleName,
-        externalDingTalkId: normalized.externalDingTalkId,
-        externalPhone: normalized.externalPhone,
-        externalUserType: normalized.externalUserType,
-      });
-      created += 1;
+    for (const [chunkIndex, chunk] of chunkItems(syncWritePlan.usersToUpdate, USER_SYNC_BATCH_SIZE).entries()) {
+      await userRepo.batchUpdateSyncedUsers(chunk);
+      updated += chunk.length;
+      processed += chunk.length;
       onProgress?.({
         stage: "syncing",
-        message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
+        message: `正在批量更新用户（${chunkIndex + 1}/${Math.max(1, Math.ceil(syncWritePlan.usersToUpdate.length / USER_SYNC_BATCH_SIZE))} 批）...`,
         total: rawUsers.length,
-        processed: index + 1,
+        processed,
+        created,
+        updated,
+        skipped,
+        failed: 0,
+      });
+    }
+
+    for (const [chunkIndex, chunk] of chunkItems(createInputs, USER_SYNC_BATCH_SIZE).entries()) {
+      await userRepo.batchCreateSyncedUsers(chunk);
+      created += chunk.length;
+      processed += chunk.length;
+      onProgress?.({
+        stage: "syncing",
+        message: `正在批量新增用户（${chunkIndex + 1}/${Math.max(1, Math.ceil(createInputs.length / USER_SYNC_BATCH_SIZE))} 批）...`,
+        total: rawUsers.length,
+        processed,
         created,
         updated,
         skipped,
@@ -402,7 +629,10 @@ export async function performUserPersonnelSync(
     updated,
     skipped,
     failed: 0,
-    summary: "用户同步完成",
+    autoBound,
+    summary: buildSyncSummaryMessage({ created, updated, skipped, autoBound, unboundUsers }),
+    createdUsers,
+    unboundUsers,
   };
 }
 
