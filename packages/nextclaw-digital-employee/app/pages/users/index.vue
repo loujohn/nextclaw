@@ -45,6 +45,7 @@ type UserSyncJobView = {
   skipped: number;
   failed: number;
   summary: string;
+  createdUsers: string[];
   startedAt: string;
   finishedAt: string | null;
 };
@@ -63,6 +64,7 @@ function createEmptySyncJob(): UserSyncJobView {
     skipped: 0,
     failed: 0,
     summary: "",
+    createdUsers: [],
     startedAt: "",
     finishedAt: null,
   };
@@ -135,7 +137,7 @@ const syncConfirmError = ref("");
 const syncStarting = ref(false);
 const syncProgressOpen = ref(false);
 const syncResultOpen = ref(false);
-const syncResultSummary = ref({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0, summary: "" });
+const syncResultSummary = ref({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0, summary: "", createdUsers: [] as string[] });
 const syncJob = ref<UserSyncJobView>(createEmptySyncJob());
 const syncJobId = ref("");
 let syncPollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -196,6 +198,7 @@ async function finalizeSyncJob(job: UserSyncJobView) {
       skipped: job.skipped,
       failed: job.failed,
       summary: job.summary || job.message,
+      createdUsers: job.createdUsers ?? [],
     };
     syncResultOpen.value = true;
     await loadUsers();

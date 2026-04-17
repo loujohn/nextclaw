@@ -8,6 +8,7 @@ defineProps<{
     skipped: number;
     failed: number;
     summary: string;
+    createdUsers: string[];
   };
 }>();
 
@@ -47,6 +48,21 @@ const emit = defineEmits<{
         <div class="text-xs text-muted-foreground">失败人数</div>
         <div class="mt-1 text-lg font-semibold" :class="summary.failed > 0 ? 'text-destructive' : 'text-foreground'">
           {{ summary.failed }}
+        </div>
+      </div>
+
+      <div v-if="summary.createdUsers.length > 0" class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+        <div class="text-xs text-emerald-700">本次新增人员</div>
+        <div class="mt-2 max-h-40 overflow-y-auto rounded-lg bg-white/80 px-3 py-2 text-sm text-foreground">
+          <div class="flex flex-wrap gap-2">
+            <span
+              v-for="name in summary.createdUsers"
+              :key="name"
+              class="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-emerald-700"
+            >
+              {{ name }}
+            </span>
+          </div>
         </div>
       </div>
 

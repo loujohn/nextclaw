@@ -24,6 +24,7 @@ export type UserSyncJobView = {
   skipped: number;
   failed: number;
   summary: string;
+  createdUsers: string[];
   startedAt: string;
   finishedAt: string | null;
 };
@@ -46,6 +47,7 @@ function createInitialJob(jobId: string): UserSyncJobState {
     skipped: 0,
     failed: 0,
     summary: "",
+    createdUsers: [],
     startedAt: dbNow(),
     finishedAt: null,
   };
@@ -118,6 +120,7 @@ class UserSyncJobManager {
     job.skipped = summary.skipped;
     job.failed = summary.failed;
     job.summary = summary.summary;
+    job.createdUsers = summary.createdUsers;
     job.finishedAt = dbNow();
     job.alreadyRunning = false;
     if (this.activeJobId === jobId) {

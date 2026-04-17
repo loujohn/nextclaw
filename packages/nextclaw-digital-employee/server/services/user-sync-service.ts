@@ -7,6 +7,7 @@ const PERSONNEL_SYNC_PROVIDER = "personnel-api";
 const PERSONNEL_SYNC_FALLBACK_DOMAIN = "personnel-sync.local";
 const PERSONNEL_SYNC_TIMEOUT_MS = 15_000;
 const PERSONNEL_SYNC_TOKEN_REFRESH_SKEW_MS = 60_000;
+const USER_SYNC_BATCH_SIZE = 100;
 
 let cachedPersonnelAccessToken: { token: string; expiresAt: number } | null = null;
 
@@ -40,6 +41,7 @@ export type UserSyncSummary = {
   skipped: number;
   failed: number;
   summary: string;
+  createdUsers: string[];
 };
 
 export type UserSyncResult = {
@@ -233,21 +235,45 @@ function toUsernameCandidate(value: string): string {
   return value.trim().replace(/\s+/g, "-");
 }
 
-async function resolveSyncedUsername(repo: UserRepository, user: NormalizedPersonnelUser): Promise<string> {
-  const candidates = [
+function buildSyncedUsernameCandidates(user: NormalizedPersonnelUser): string[] {
+  return [
     toUsernameCandidate(user.externalUserName),
     toUsernameCandidate(user.externalUserId),
     `sync-${toUsernameCandidate(user.externalUserId)}`,
   ].filter(Boolean);
+}
+
+function resolveSyncedUsername(user: NormalizedPersonnelUser, takenUsernames: Set<string>): string {
+  const candidates = buildSyncedUsernameCandidates(user);
 
   for (const candidate of candidates) {
-    const existing = await repo.findByUsername(candidate);
-    if (!existing) {
+    if (!takenUsernames.has(candidate)) {
+      takenUsernames.add(candidate);
       return candidate;
     }
   }
 
-  return `sync-${user.externalUserId}-${Date.now()}`;
+  const baseCandidate = candidates.at(-1) || `sync-${toUsernameCandidate(user.externalUserId) || "user"}`;
+  let suffix = 1;
+  let nextCandidate = `${baseCandidate}-${suffix}`;
+  while (takenUsernames.has(nextCandidate)) {
+    suffix += 1;
+    nextCandidate = `${baseCandidate}-${suffix}`;
+  }
+  takenUsernames.add(nextCandidate);
+  return nextCandidate;
+}
+
+function chunkItems<T>(items: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function buildSyncSummaryMessage(summary: Pick<UserSyncSummary, "created" | "updated" | "skipped">): string {
+  return `用户同步完成：新增 ${summary.created} 人，更新 ${summary.updated} 人，跳过 ${summary.skipped} 人。`;
 }
 
 function extractPersonnelUsers(payload: unknown): PersonnelSyncRawUser[] {
@@ -320,30 +346,51 @@ export async function performUserPersonnelSync(
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  const createdUsers: string[] = [];
+
+  const normalizedUsers: NormalizedPersonnelUser[] = [];
+  const seenExternalUserIds = new Set<string>();
+
+  for (const rawUser of rawUsers) {
+    const normalized = normalizePersonnelUser(rawUser);
+    if (!normalized.externalUserId) {
+      skipped += 1;
+      continue;
+    }
+
+    if (seenExternalUserIds.has(normalized.externalUserId)) {
+      skipped += 1;
+      continue;
+    }
+
+    seenExternalUserIds.add(normalized.externalUserId);
+    normalizedUsers.push(normalized);
+  }
 
   await db.transaction(async (trx) => {
     const userRepo = new UserRepository(trx);
 
-    for (const [index, rawUser] of rawUsers.entries()) {
-      const normalized = normalizePersonnelUser(rawUser);
-      if (!normalized.externalUserId) {
-        skipped += 1;
-        onProgress?.({
-          stage: "syncing",
-          message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
-          total: rawUsers.length,
-          processed: index + 1,
-          created,
-          updated,
-          skipped,
-          failed: 0,
-        });
-        continue;
-      }
+    const existingUsers = await userRepo.findByExternalUserIds(normalizedUsers.map((user) => user.externalUserId));
+    const existingUserMap = new Map(existingUsers.map((user) => [user.externalUserId ?? "", user]));
+    const usersToUpdate: Array<{
+      id: string;
+      externalUserId: string;
+      displayName: string;
+      externalUserName: string;
+      externalName: string;
+      externalPostName: string;
+      externalRoleName: string;
+      externalDingTalkId: string;
+      externalPhone: string;
+      externalUserType: string;
+    }> = [];
+    const usersToCreate: NormalizedPersonnelUser[] = [];
 
-      const existing = await userRepo.findByExternalUserId(normalized.externalUserId);
+    for (const normalized of normalizedUsers) {
+      const existing = existingUserMap.get(normalized.externalUserId);
       if (existing) {
-        await userRepo.updateSyncedUser(existing.id, {
+        usersToUpdate.push({
+          id: existing.id,
           externalUserId: normalized.externalUserId,
           displayName: normalized.displayName,
           externalUserName: normalized.externalUserName,
@@ -354,40 +401,68 @@ export async function performUserPersonnelSync(
           externalPhone: normalized.externalPhone,
           externalUserType: normalized.externalUserType,
         });
-        updated += 1;
-        onProgress?.({
-          stage: "syncing",
-          message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
-          total: rawUsers.length,
-          processed: index + 1,
-          created,
-          updated,
-          skipped,
-          failed: 0,
-        });
         continue;
       }
 
-      const username = await resolveSyncedUsername(userRepo, normalized);
-      await userRepo.createSyncedUser({
-        username,
-        email: buildPlaceholderEmail(normalized.externalUserId),
-        displayName: normalized.displayName,
-        externalUserId: normalized.externalUserId,
-        externalUserName: normalized.externalUserName,
-        externalName: normalized.externalName,
-        externalPostName: normalized.externalPostName,
-        externalRoleName: normalized.externalRoleName,
-        externalDingTalkId: normalized.externalDingTalkId,
-        externalPhone: normalized.externalPhone,
-        externalUserType: normalized.externalUserType,
-      });
-      created += 1;
+      usersToCreate.push(normalized);
+    }
+
+    const candidateUsernames = [...new Set(usersToCreate.flatMap((user) => buildSyncedUsernameCandidates(user)))];
+    const takenUsernames = new Set(await userRepo.findExistingUsernames(candidateUsernames));
+    const createInputs = usersToCreate.map((user) => {
+      createdUsers.push(user.displayName || user.externalUserName || user.externalUserId);
+      return {
+        username: resolveSyncedUsername(user, takenUsernames),
+        email: buildPlaceholderEmail(user.externalUserId),
+        displayName: user.displayName,
+        externalUserId: user.externalUserId,
+        externalUserName: user.externalUserName,
+        externalName: user.externalName,
+        externalPostName: user.externalPostName,
+        externalRoleName: user.externalRoleName,
+        externalDingTalkId: user.externalDingTalkId,
+        externalPhone: user.externalPhone,
+        externalUserType: user.externalUserType,
+      };
+    });
+
+    let processed = skipped;
+    onProgress?.({
+      stage: "syncing",
+      message: `已整理 ${normalizedUsers.length} 条有效人员，开始批量写入用户数据...`,
+      total: rawUsers.length,
+      processed,
+      created,
+      updated,
+      skipped,
+      failed: 0,
+    });
+
+    for (const [chunkIndex, chunk] of chunkItems(usersToUpdate, USER_SYNC_BATCH_SIZE).entries()) {
+      await userRepo.batchUpdateSyncedUsers(chunk);
+      updated += chunk.length;
+      processed += chunk.length;
       onProgress?.({
         stage: "syncing",
-        message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
+        message: `正在批量更新用户（${chunkIndex + 1}/${Math.max(1, Math.ceil(usersToUpdate.length / USER_SYNC_BATCH_SIZE))} 批）...`,
         total: rawUsers.length,
-        processed: index + 1,
+        processed,
+        created,
+        updated,
+        skipped,
+        failed: 0,
+      });
+    }
+
+    for (const [chunkIndex, chunk] of chunkItems(createInputs, USER_SYNC_BATCH_SIZE).entries()) {
+      await userRepo.batchCreateSyncedUsers(chunk);
+      created += chunk.length;
+      processed += chunk.length;
+      onProgress?.({
+        stage: "syncing",
+        message: `正在批量新增用户（${chunkIndex + 1}/${Math.max(1, Math.ceil(createInputs.length / USER_SYNC_BATCH_SIZE))} 批）...`,
+        total: rawUsers.length,
+        processed,
         created,
         updated,
         skipped,
@@ -402,7 +477,8 @@ export async function performUserPersonnelSync(
     updated,
     skipped,
     failed: 0,
-    summary: "用户同步完成",
+    summary: buildSyncSummaryMessage({ created, updated, skipped }),
+    createdUsers,
   };
 }
 
