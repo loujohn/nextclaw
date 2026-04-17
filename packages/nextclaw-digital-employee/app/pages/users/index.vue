@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw } from "lucide-vue-next";
+import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw, FileText } from "lucide-vue-next";
 import type { UserListPayload, UserView, UserRole, UpdateUserInput } from "../../../shared/auth-types";
 
 const { getAccessToken, user: currentUser, loading: authLoading } = useAuth();
@@ -296,7 +296,7 @@ function closeSyncProgressDialog() {
   syncProgressOpen.value = false;
 }
 
-async function updateUser(id: string, input: UpdateUserInput) {
+async function updateUser(id: string, input: UpdateUserInput, successMessage = "已更新") {
   const res = await execute(() =>
     $fetch<{ ok: boolean; data: UserView }>(`/api/users/${id}`, {
       method: "PATCH",
@@ -307,8 +307,11 @@ async function updateUser(id: string, input: UpdateUserInput) {
   if (res?.ok) {
     const idx = users.value.findIndex((u) => u.id === id);
     if (idx !== -1) users.value[idx] = res.data;
-    toast.showToast("success", "已更新");
+    toast.showToast("success", successMessage);
+    return true;
   }
+
+  return false;
 }
 
 const roleOptions: { value: UserRole; label: string }[] = [
@@ -373,6 +376,44 @@ function getHumanEmployeeName(id: string | null): string {
   return humanEmployees.value.find((he) => he.id === id)?.name ?? "";
 }
 
+const statusConfirmOpen = ref(false);
+const statusConfirmSubmitting = ref(false);
+const statusConfirmTarget = ref<UserView | null>(null);
+
+function openStatusConfirm(user: UserView) {
+  statusConfirmTarget.value = user;
+  statusConfirmOpen.value = true;
+}
+
+function closeStatusConfirm() {
+  if (statusConfirmSubmitting.value) {
+    return;
+  }
+  statusConfirmOpen.value = false;
+  statusConfirmTarget.value = null;
+}
+
+async function confirmToggleUserStatus() {
+  if (!statusConfirmTarget.value) return;
+
+  const targetUser = statusConfirmTarget.value;
+  const nextStatus = !targetUser.isActive;
+
+  statusConfirmSubmitting.value = true;
+  try {
+    const updated = await updateUser(
+      targetUser.id,
+      { isActive: nextStatus },
+      nextStatus ? "已启用" : "已禁用"
+    );
+    if (updated) {
+      closeStatusConfirm();
+    }
+  } finally {
+    statusConfirmSubmitting.value = false;
+  }
+}
+
 async function confirmBind() {
   if (!bindTargetUser.value || !selectedHumanEmployeeId.value) return;
   await updateUser(bindTargetUser.value.id, { humanEmployeeId: selectedHumanEmployeeId.value });
@@ -390,6 +431,28 @@ function handleRoleChange(u: UserView, newRole: UserRole, event: Event) {
     }
   }
   updateUser(u.id, { role: newRole });
+}
+
+const deleteConfirmOpen = ref(false);
+const deleteConfirmSubmitting = ref(false);
+const deleteTarget = ref<UserView | null>(null);
+
+function openDeleteConfirm(user: UserView) {
+  if (user.id === currentUser.value?.id) {
+    toast.showToast("error", "不能删除自己");
+    return;
+  }
+
+  deleteTarget.value = user;
+  deleteConfirmOpen.value = true;
+}
+
+function closeDeleteConfirm() {
+  if (deleteConfirmSubmitting.value) {
+    return;
+  }
+  deleteConfirmOpen.value = false;
+  deleteTarget.value = null;
 }
 
 const createDialogOpen = ref(false);
@@ -472,23 +535,26 @@ async function confirmResetPassword() {
   }
 }
 
-async function deleteUser(u: UserView) {
-  if (u.id === currentUser.value?.id) {
-    toast.showToast("error", "不能删除自己");
-    return;
-  }
-  const confirmed = window.confirm(`确定删除用户 ${u.displayName} (${u.username || u.email}) ？此操作不可撤销。`);
-  if (!confirmed) return;
+async function confirmDeleteUser() {
+  if (!deleteTarget.value) return;
+
+  const targetUser = deleteTarget.value;
+  deleteConfirmSubmitting.value = true;
   const res = await execute(() =>
-    $fetch<{ ok: boolean }>(`/api/users/${u.id}`, {
+    $fetch<{ ok: boolean }>(`/api/users/${targetUser.id}`, {
       method: "DELETE",
       headers: authHeaders(),
     })
   );
-  if (res?.ok) {
-    toast.showToast("success", "用户已删除");
-    const nextPage = users.value.length === 1 && currentPage.value > 1 ? currentPage.value - 1 : currentPage.value;
-    await loadUsersPage(nextPage);
+  try {
+    if (res?.ok) {
+      toast.showToast("success", "用户已删除");
+      closeDeleteConfirm();
+      const nextPage = users.value.length === 1 && currentPage.value > 1 ? currentPage.value - 1 : currentPage.value;
+      await loadUsersPage(nextPage);
+    }
+  } finally {
+    deleteConfirmSubmitting.value = false;
   }
 }
 
@@ -595,7 +661,7 @@ onUnmounted(() => {
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">角色</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">来源</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">同步资料</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">登录方式</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">关联员工</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">最后登录</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
@@ -641,29 +707,18 @@ onUnmounted(() => {
               <button
                 class="rounded px-2 py-0.5 text-xs font-medium"
                 :class="u.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'"
-                @click="updateUser(u.id, { isActive: !u.isActive })"
+                @click="openStatusConfirm(u)"
               >
                 {{ u.isActive ? "启用" : "禁用" }}
               </button>
             </td>
             <td class="px-4 py-3">
-              <div class="space-y-1">
-                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
-                  {{ sourceLabel(u) }}
-                </span>
-                <div class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</div>
-              </div>
+              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
+                {{ sourceLabel(u) }}
+              </span>
             </td>
             <td class="px-4 py-3">
-              <div v-if="u.userSource === 'sync'" class="space-y-1">
-                <button
-                  class="inline-flex items-center rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
-                  @click="openSyncProfileDialog(u)"
-                >
-                  查看详情
-                </button>
-              </div>
-              <span v-else class="text-xs text-muted-foreground">-</span>
+              <span class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</span>
             </td>
             <td class="px-4 py-3">
               <span v-if="u.humanEmployeeId" class="inline-flex items-center gap-1 text-xs text-emerald-700">
@@ -693,6 +748,14 @@ onUnmounted(() => {
             <td class="px-4 py-3 text-right">
               <div class="flex items-center justify-end gap-1">
                 <button
+                  v-if="u.userSource === 'sync'"
+                  class="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="查看同步资料"
+                  @click="openSyncProfileDialog(u)"
+                >
+                  <FileText class="h-3.5 w-3.5" />
+                </button>
+                <button
                   class="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   title="编辑"
                   @click="openEditDialog(u)"
@@ -711,7 +774,7 @@ onUnmounted(() => {
                   v-if="u.id !== currentUser?.id"
                   class="rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-destructive"
                   title="删除"
-                  @click="deleteUser(u)"
+                  @click="openDeleteConfirm(u)"
                 >
                   <Trash2 class="h-3.5 w-3.5" />
                 </button>
@@ -776,6 +839,30 @@ onUnmounted(() => {
         :open="syncResultOpen"
         :summary="syncResultSummary"
         @close="syncResultOpen = false"
+      />
+
+      <SharedConfirmDialog
+        :open="statusConfirmOpen"
+        :title="statusConfirmTarget?.isActive ? '确认禁用用户' : '确认启用用户'"
+        :message="statusConfirmTarget?.isActive
+          ? `禁用后，用户「${statusConfirmTarget?.displayName ?? ''}」将无法登录系统。`
+          : `启用后，用户「${statusConfirmTarget?.displayName ?? ''}」将恢复系统访问权限。`"
+        :confirm-label="statusConfirmTarget?.isActive ? '确认禁用' : '确认启用'"
+        :confirming-label="statusConfirmTarget?.isActive ? '禁用中...' : '启用中...'"
+        :confirming="statusConfirmSubmitting"
+        @confirm="confirmToggleUserStatus"
+        @cancel="closeStatusConfirm"
+      />
+
+      <SharedConfirmDialog
+        :open="deleteConfirmOpen"
+        title="确认删除用户"
+        :message="`将删除用户「${deleteTarget?.displayName ?? ''}」（${deleteTarget?.username || deleteTarget?.email || '-'}），此操作不可撤销。`"
+        confirm-label="确认删除"
+        confirming-label="删除中..."
+        :confirming="deleteConfirmSubmitting"
+        @confirm="confirmDeleteUser"
+        @cancel="closeDeleteConfirm"
       />
 
       <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
