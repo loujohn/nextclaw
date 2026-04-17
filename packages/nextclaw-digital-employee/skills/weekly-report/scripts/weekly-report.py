@@ -14,6 +14,7 @@ if sys.platform == "win32":
     sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
 
 import os
+import re
 import json
 import argparse
 import urllib.request
@@ -21,7 +22,7 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timedelta
 
-DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginrow"
+DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginner:10003/api"
 LOGIN_ENDPOINT = "/admin/oauth2/token"
 WEEK_REPORT_ENDPOINT = "/admin/week/report"
 DAY_REPORT_QUERY_ENDPOINT = "/admin/day/report/page"
@@ -121,14 +122,51 @@ def get_week_range():
     return monday, sunday
 
 
-def query_daily_reports(base_url, token, week_start, week_end, page=1, size=50):
-    start_str = week_start.strftime("%Y-%m-%d 00:00:00")
-    end_str = week_end.strftime("%Y-%m-%d 00:00:00")
+def get_daily_report_week_dir():
+    """获取日报周目录"""
+    base_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
+    if not os.path.exists(base_dir):
+        return None, None
+
+    today = datetime.now()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    week_dir = os.path.join(
+        base_dir, f"{monday.strftime('%Y-%m-%d')}_{sunday.strftime('%Y-%m-%d')}"
+    )
+
+    if not os.path.exists(week_dir):
+        return None, None
+
+    return week_dir, (monday, sunday)
+
+
+def get_week_report_week_dir():
+    """获取周报周目录"""
+    base_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "weekly-report")
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir, exist_ok=True)
+
+    today = datetime.now()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    week_dir = os.path.join(
+        base_dir, f"{monday.strftime('%Y-%m-%d')}_{sunday.strftime('%Y-%m-%d')}"
+    )
+    os.makedirs(week_dir, exist_ok=True)
+
+    return week_dir, (monday, sunday)
+
+
+def query_daily_reports_from_api(
+    base_url, token, week_start, week_end, page=1, size=50
+):
+    """从API查询日报"""
     params = {
         "dayReportTimeQuery[0]": week_start.strftime("%Y-%m-%d"),
         "dayReportTimeQuery[1]": week_end.strftime("%Y-%m-%d"),
         "dayReportType": 2,
-        "queryType": 2,
+        "queryType": 1,
         "current": page,
         "size": size,
     }
@@ -136,176 +174,350 @@ def query_daily_reports(base_url, token, week_start, week_end, page=1, size=50):
     return fetch_json_get(url, token)
 
 
-def format_daily_reports_for_review(records):
-    if not records:
-        return "本周暂无日报记录"
+def parse_users_md(filepath):
+    """解析用户维度的MD文件，返回结构化数据"""
+    users_data = {}
+    if not os.path.exists(filepath):
+        return users_data
 
-    lines = ["=" * 60]
-    lines.append("本周日报汇总（用于生成周报）")
-    lines.append("=" * 60)
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    project_groups = {}
-    for record in records:
-        project_code = record.get("projectCode", "未知项目")
-        if project_code not in project_groups:
-            project_groups[project_code] = {
-                "projectName": record.get("projectName", ""),
-                "projectManager": record.get("projectManager", ""),
-                "projectStage": record.get("projectStage", ""),
-                "daily_reports": [],
-            }
-        project_groups[project_code]["daily_reports"].append(record)
+    lines = content.split("\n")
+    current_user = None
+    current_date = None
 
-    for project_code, group in project_groups.items():
-        lines.append("")
-        lines.append(f"【项目】{group['projectName']} ({project_code})")
-        lines.append(f"  项目经理: {group['projectManager']}")
-        lines.append(f"  项目阶段: {group['projectStage']}")
-        lines.append("  日报汇总:")
-        for report in group["daily_reports"]:
-            date = report.get("reportDate", report.get("createTime", "")[:10])
-            summarize = report.get("daySummarizeNow", "")
-            plan = report.get("dayPlanNext", "")
-            lines.append(f"    - {date}:")
-            if summarize:
-                lines.append(f"      今日: {summarize}")
-            if plan:
-                lines.append(f"      明日: {plan}")
+    for line in lines:
+        if line.startswith("## "):
+            current_user = line.replace("## ", "").strip()
+            if current_user not in users_data:
+                users_data[current_user] = {"dates": {}}
+        elif line.startswith("### "):
+            current_date = line.replace("### ", "").strip()
+            if current_user and current_date:
+                if current_date not in users_data[current_user]["dates"]:
+                    users_data[current_user]["dates"][current_date] = []
+        elif line.startswith("- **"):
+            parts = line.split("**")
+            if len(parts) >= 3 and current_user and current_date:
+                project_name = parts[1]
+                rest = parts[2].replace("**：", "").replace("：", "").strip()
+                if "。" in rest:
+                    summarize, plan_part = rest.split("。", 1)
+                    plan = plan_part.replace("明日：", "").replace("明日:", "").strip()
+                else:
+                    summarize = rest
+                    plan = ""
+                users_data[current_user]["dates"][current_date].append(
+                    {
+                        "project": project_name,
+                        "summarize": summarize.replace("今日：", "")
+                        .replace("今日:", "")
+                        .strip(),
+                        "plan": plan,
+                    }
+                )
 
-    lines.append("")
-    lines.append("=" * 60)
-    return "\n".join(lines)
-
-
-def validate_week_report_fields(data):
-    errors = []
-    required_fields = [
-        ("weekSummarizeNow", "本周工作总结"),
-        ("weekPlanNext", "下周工作计划"),
-        ("projectCode", "项目编号"),
-        ("projectName", "项目名称"),
-        ("projectManager", "项目经理"),
-        ("weekStartTime", "周开始时间"),
-        ("weekEndTime", "周结束时间"),
-    ]
-    for field, label in required_fields:
-        if not data.get(field):
-            errors.append(f"缺少必填字段: {label}")
-
-    if data.get("weekReportType") is None:
-        data["weekReportType"] = 2
-
-    return errors
+    return users_data
 
 
-def deduplicate_and_summarize(items):
+def parse_projects_md(filepath):
+    """解析项目维度的MD文件，返回结构化数据"""
+    projects_data = {}
+    if not os.path.exists(filepath):
+        return projects_data
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.split("\n")
+    current_project = None
+    project_name = None
+    project_manager = None
+    current_date = None
+
+    for line in lines:
+        if line.startswith("## "):
+            match = re.match(r"## (.+?)（(.+?)）", line)
+            if match:
+                project_name = match.group(1)
+                project_code = match.group(2)
+                current_project = project_code
+                if project_code not in projects_data:
+                    projects_data[project_code] = {
+                        "name": project_name,
+                        "manager": "",
+                        "dates": {},
+                    }
+        elif line.startswith("**经理**: "):
+            if current_project:
+                projects_data[current_project]["manager"] = line.replace(
+                    "**经理**: ", ""
+                ).strip()
+        elif line.startswith("### "):
+            current_date = line.replace("### ", "").strip()
+            if current_project and current_date:
+                if current_date not in projects_data[current_project]["dates"]:
+                    projects_data[current_project]["dates"][current_date] = []
+        elif line.startswith("- **"):
+            parts = line.split("**")
+            if len(parts) >= 3 and current_project and current_date:
+                user_name = parts[1]
+                rest = parts[2].replace("**：", "").replace("：", "").strip()
+                if "。" in rest:
+                    summarize, plan_part = rest.split("。", 1)
+                    plan = plan_part.replace("明日：", "").replace("明日:", "").strip()
+                else:
+                    summarize = rest
+                    plan = ""
+                projects_data[current_project]["dates"][current_date].append(
+                    {
+                        "user": user_name,
+                        "summarize": summarize.replace("今日：", "")
+                        .replace("今日:", "")
+                        .strip(),
+                        "plan": plan,
+                    }
+                )
+
+    return projects_data
+
+
+def deduplicate(items):
+    """去重并保持顺序"""
     seen = set()
     result = []
     for item in items:
-        parts = item.replace("；", ";").split(";")
-        for part in parts:
-            normalized = part.strip()
-            if len(normalized) < 2:
-                continue
-            if normalized.isdigit():
-                continue
-            if normalized in ["无", "暂无", "暂无计划", "无工作"]:
-                continue
-            if normalized not in seen:
-                seen.add(normalized)
-                result.append(normalized)
+        item = item.strip()
+        item = item.replace("今日：", "").replace("今日:", "").replace("今日", "")
+        if item and item not in seen and item not in ["无", "暂无", "暂无计划"]:
+            seen.add(item)
+            result.append(item)
     return result
 
 
-def smart_summarize(daily_records):
-    if not daily_records:
-        return "本周暂无工作总结"
+def split_and_deduplicate(items):
+    """按分号拆分后去重"""
+    all_items = []
+    for item in items:
+        item = item.replace("明日：", "").replace("明日:", "").replace("明日", "")
+        parts = item.replace("；", ";").split(";")
+        for part in parts:
+            part = part.strip()
+            if len(part) >= 2 and not part.isdigit():
+                all_items.append(part)
+    return deduplicate(all_items)
 
-    summarizes = []
-    for r in daily_records:
-        text = r.get("daySummarizeNow", "").strip()
-        if text and text not in ["无", "暂无", "暂无工作"]:
-            summarizes.append(text)
 
-    if not summarizes:
-        return "本周暂无工作总结"
+def generate_personal_week_report(user_name, users_data, week_start, week_end):
+    """生成个人周报"""
+    if user_name not in users_data or not users_data[user_name]["dates"]:
+        return None
 
-    summarized = deduplicate_and_summarize(summarizes)
-    lines = []
-    for i, item in enumerate(summarized, 1):
-        lines.append(f"{i}. {item}")
+    all_summaries = []
+    all_plans = []
+    projects_involved = set()
+
+    for date in sorted(users_data[user_name]["dates"].keys()):
+        for item in users_data[user_name]["dates"][date]:
+            if item["summarize"]:
+                all_summaries.append(item["summarize"])
+            if item["plan"]:
+                all_plans.append(item["plan"])
+            projects_involved.add(item["project"])
+
+    week_summarize = "\n".join(
+        [f"{i + 1}. {s}" for i, s in enumerate(deduplicate(all_summaries))]
+    )
+    week_plan = (
+        "；".join(split_and_deduplicate(all_plans)) if all_plans else "继续推进工作"
+    )
+
+    return {
+        "weekPlanNow": "无",
+        "chanceProjectName": "",
+        "chanceProjectSchedule": "",
+        "projectCode": "",
+        "projectManager": "",
+        "weekSummarizeNow": week_summarize,
+        "weekPlanNext": week_plan,
+        "problemRisk": "无",
+        "requestInstructions": "无",
+        "weekStartTime": f"{week_start.strftime('%Y-%m-%d')} 00:00:00",
+        "weekEndTime": f"{week_end.strftime('%Y-%m-%d')} 23:59:59",
+        "weekReportType": 2,
+        "_userName": user_name,
+        "_projectsCount": len(projects_involved),
+    }
+
+
+def generate_project_week_report(project_code, project_data, week_start, week_end):
+    """生成项目周报"""
+    if not project_data.get("dates"):
+        return None
+
+    all_summaries = []
+    all_plans = []
+    users_involved = set()
+
+    for date in sorted(project_data["dates"].keys()):
+        for item in project_data["dates"][date]:
+            if item["summarize"]:
+                all_summaries.append(item["summarize"])
+            if item["plan"]:
+                all_plans.append(item["plan"])
+            users_involved.add(item["user"])
+
+    week_summarize = "\n".join(
+        [f"{i + 1}. {s}" for i, s in enumerate(deduplicate(all_summaries))]
+    )
+    week_plan = (
+        "；".join(split_and_deduplicate(all_plans)) if all_plans else "继续推进项目"
+    )
+
+    return {
+        "weekPlanNow": "无",
+        "chanceProjectName": project_data["name"],
+        "chanceProjectSchedule": "项目进行中",
+        "projectCode": project_code,
+        "projectManager": project_data["manager"],
+        "weekSummarizeNow": week_summarize,
+        "weekPlanNext": week_plan,
+        "problemRisk": "无",
+        "requestInstructions": "无",
+        "weekStartTime": f"{week_start.strftime('%Y-%m-%d')} 00:00:00",
+        "weekEndTime": f"{week_end.strftime('%Y-%m-%d')} 23:59:59",
+        "weekReportType": 2,
+        "_projectName": project_data["name"],
+        "_usersCount": len(users_involved),
+    }
+
+
+def generate_department_week_report(users_data, projects_data, week_start, week_end):
+    """生成部门周报（汇总所有）"""
+    all_reports = []
+
+    for project_code, project_data in sorted(projects_data.items()):
+        report = generate_project_week_report(
+            project_code, project_data, week_start, week_end
+        )
+        if report:
+            all_reports.append(report)
+
+    return all_reports
+
+
+def format_report_for_display(report, report_type):
+    """格式化周报用于显示"""
+    if report_type == "personal":
+        lines = [
+            f"## 个人周报：{report['_userName']}",
+            f"参与项目数：{report['_projectsCount']}",
+            "",
+            "### 本周工作总结",
+            report["weekSummarizeNow"],
+            "",
+            "### 下周工作计划",
+            report["weekPlanNext"],
+        ]
+    elif report_type == "project":
+        lines = [
+            f"## 项目周报：{report['chanceProjectName']}（{report['projectCode']}）",
+            f"项目经理：{report['projectManager']}",
+            "",
+            "### 本周工作总结",
+            report["weekSummarizeNow"],
+            "",
+            "### 下周工作计划",
+            report["weekPlanNext"],
+        ]
+    else:
+        lines = [
+            f"## {report['chanceProjectName']}（{report['projectCode']}）",
+            f"经理：{report['projectManager']}",
+            f"本周：{report['weekSummarizeNow']}",
+            f"下周：{report['weekPlanNext']}",
+        ]
     return "\n".join(lines)
 
 
-def smart_plan(daily_records, week_end):
-    if not daily_records:
-        return "下周暂无明确工作计划"
-
-    records_by_date = {}
-    for r in daily_records:
-        date_str = r.get("dayReportTime", "")[:10]
-        if date_str:
-            if date_str not in records_by_date:
-                records_by_date[date_str] = []
-            records_by_date[date_str].append(r)
-
-    sorted_dates = sorted(records_by_date.keys(), reverse=True)
-
-    plans = []
-    for r in daily_records:
-        text = r.get("dayPlanNext", "").strip()
-        if text and text not in ["无", "暂无", "暂无计划"]:
-            plans.append(text)
-
-    if not plans:
-        return "继续推进项目进度"
-
-    return "；".join(deduplicate_and_summarize(plans))
+def merge_projects_data(data1, data2):
+    """合并两个项目数据源"""
+    merged = dict(data1)
+    for project_code, project_data in data2.items():
+        if project_code not in merged:
+            merged[project_code] = project_data
+        else:
+            for date, items in project_data.get("dates", {}).items():
+                if date not in merged[project_code]["dates"]:
+                    merged[project_code]["dates"][date] = []
+                merged[project_code]["dates"][date].extend(items)
+    return merged
 
 
-def generate_week_report_from_dailies(daily_records, week_start, week_end):
-    if not daily_records:
-        return None
+def merge_users_data(data1, data2):
+    """合并两个用户数据源"""
+    merged = dict(data1)
+    for user_name, user_data in data2.items():
+        if user_name not in merged:
+            merged[user_name] = user_data
+        else:
+            for date, items in user_data.get("dates", {}).items():
+                if date not in merged[user_name]["dates"]:
+                    merged[user_name]["dates"][date] = []
+                merged[user_name]["dates"][date].extend(items)
+    return merged
 
-    project_groups = {}
-    for record in daily_records:
-        project_code = record.get("projectCode", "未知项目")
-        if project_code not in project_groups:
-            project_groups[project_code] = {
-                "projectName": record.get(
-                    "chanceProjectName", record.get("projectName", "")
-                ),
-                "projectManager": record.get("projectManager", ""),
-                "projectStage": record.get(
-                    "chanceProjectSchedule", record.get("projectStage", "")
-                ),
-                "records": [],
+
+def convert_api_records_to_projects(records):
+    """将API返回的记录转换为项目维度格式"""
+    projects_data = {}
+    for record in records:
+        project_code = record.get("projectCode", "")
+        if not project_code:
+            continue
+        if project_code not in projects_data:
+            projects_data[project_code] = {
+                "name": record.get("chanceProjectName", record.get("projectName", "")),
+                "manager": record.get("projectManager", ""),
+                "dates": {},
             }
-        project_groups[project_code]["records"].append(record)
+        report_date = record.get("dayReportTime", "")[:10]
+        if report_date:
+            if report_date not in projects_data[project_code]["dates"]:
+                projects_data[project_code]["dates"][report_date] = []
+            projects_data[project_code]["dates"][report_date].append(
+                {
+                    "user": record.get("createName", record.get("createBy", "")),
+                    "summarize": record.get("daySummarizeNow", ""),
+                    "plan": record.get("dayPlanNext", ""),
+                }
+            )
+    return projects_data
 
-    reports = []
-    for project_code, group in project_groups.items():
-        week_summarize = smart_summarize(group["records"])
-        week_plan = smart_plan(group["records"], week_end)
 
-        report = {
-            "weekPlanNow": "无",
-            "date": f"{week_start.strftime('%Y-%m-%d')} ~ {week_end.strftime('%Y-%m-%d')}",
-            "chanceProjectName": group["projectName"],
-            "chanceProjectSchedule": group["projectStage"] or "项目进行中",
-            "projectCode": project_code,
-            "projectManager": group["projectManager"],
-            "weekSummarizeNow": week_summarize,
-            "weekPlanNext": week_plan,
-            "problemRisk": "无",
-            "requestInstructions": "无",
-            "weekStartTime": f"{week_start.strftime('%Y-%m-%d')} 00:00:00",
-            "weekEndTime": f"{week_end.strftime('%Y-%m-%d')} 23:59:59",
-            "weekReportType": 2,
-        }
-        reports.append(report)
-
-    return reports
+def convert_api_records_to_users(records):
+    """将API返回的记录转换为用户维度格式"""
+    users_data = {}
+    for record in records:
+        user_name = record.get("createName", record.get("createBy", ""))
+        if not user_name:
+            continue
+        if user_name not in users_data:
+            users_data[user_name] = {"dates": {}}
+        report_date = record.get("dayReportTime", "")[:10]
+        project_name = record.get("chanceProjectName", record.get("projectName", ""))
+        if report_date:
+            if report_date not in users_data[user_name]["dates"]:
+                users_data[user_name]["dates"][report_date] = []
+            users_data[user_name]["dates"][report_date].append(
+                {
+                    "project": project_name,
+                    "summarize": record.get("daySummarizeNow", ""),
+                    "plan": record.get("dayPlanNext", ""),
+                }
+            )
+    return users_data
 
 
 def main():
@@ -313,40 +525,23 @@ def main():
         description="项目周报生成脚本",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--query-dailies", action="store_true", help="查询本周日报")
+    parser.add_argument(
+        "--mode",
+        choices=["personal", "project", "department"],
+        default="project",
+        help="周报模式：personal=个人, project=项目, department=部门（默认project）",
+    )
+    parser.add_argument("--user", dest="user_name", help="指定用户名（用于个人周报）")
+    parser.add_argument(
+        "--project", dest="project_code", help="指定项目编号（用于项目周报）"
+    )
     parser.add_argument("--submit", action="store_true", help="提交周报")
-    parser.add_argument("--review", action="store_true", help="预览周报（不提交）")
-    parser.add_argument("--validate", action="store_true", help="校验周报参数")
+    parser.add_argument("--review", action="store_true", help="预览周报")
     parser.add_argument(
         "--username", default=PM_USERNAME, help="用户名（环境变量 PM_USERNAME）"
     )
     parser.add_argument(
         "--password", default=PM_PASSWORD, help="密码（环境变量 PM_PASSWORD）"
-    )
-    parser.add_argument("--json-file", help="从JSON文件读取周报参数")
-    parser.add_argument("--project-code", help="项目编号")
-    parser.add_argument("--project-name", help="项目名称")
-    parser.add_argument("--project-manager", help="项目经理")
-    parser.add_argument("--week-summarize", dest="week_summarize", help="本周工作总结")
-    parser.add_argument("--week-plan", dest="week_plan", help="下周工作计划")
-    parser.add_argument("--problem-risk", dest="problem_risk", help="问题与风险")
-    parser.add_argument(
-        "--request-instructions", dest="request_instructions", help="请示事项"
-    )
-    parser.add_argument(
-        "--week-report-type",
-        dest="week_report_type",
-        type=int,
-        default=2,
-        help="周报类型（默认2）",
-    )
-    parser.add_argument(
-        "--week-start-time",
-        dest="week_start_time",
-        help="周开始时间 YYYY-MM-DD HH:MM:SS",
-    )
-    parser.add_argument(
-        "--week-end-time", dest="week_end_time", help="周结束时间 YYYY-MM-DD HH:MM:SS"
     )
     parser.add_argument("--size", type=int, default=50, help="查询每页大小")
     args = parser.parse_args()
@@ -354,164 +549,172 @@ def main():
     base_url = PM_BASE_URL
     username = args.username
     password = args.password
+    mode = args.mode
 
-    if args.query_dailies:
-        if not username or not password:
-            print("错误: 需要登录凭据", file=sys.stderr)
-            print("设置环境变量或使用 --username --password 参数", file=sys.stderr)
-            return
+    today = datetime.now()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    week_start, week_end = monday, sunday
 
-        temp_dir = os.path.join(
-            os.path.expanduser("~"), "nextclaw-temp", "weekly-report"
-        )
-        os.makedirs(temp_dir, exist_ok=True)
-        query_file_name = f"daily_reports_query_{username}.json"
+    md_projects_data = {}
+    md_users_data = {}
+    api_projects_data = {}
+    api_users_data = {}
+    data_sources = []
 
+    week_dir, _ = get_daily_report_week_dir()
+    if week_dir:
+        users_file = os.path.join(week_dir, "users.md")
+        projects_file = os.path.join(week_dir, "projects.md")
+        md_users_data = parse_users_md(users_file)
+        md_projects_data = parse_projects_md(projects_file)
+        if md_users_data or md_projects_data:
+            data_sources.append("本地汇总文件")
+
+    if username and password:
         try:
             token = login(base_url, username, password)
-            monday, sunday = get_week_range()
-            result = query_daily_reports(
-                base_url, token, monday, sunday, size=args.size
+            result = query_daily_reports_from_api(
+                base_url, token, week_start, week_end, size=args.size
             )
-
             if result.get("code") == 0 and result.get("data"):
                 records = result["data"].get("records", [])
-                total = result["data"].get("total", 0)
+                if records:
+                    api_projects_data = convert_api_records_to_projects(records)
+                    api_users_data = convert_api_records_to_users(records)
+                    data_sources.append("API接口")
 
-                query_file = os.path.join(temp_dir, query_file_name)
-                with open(query_file, "w", encoding="utf-8") as f:
-                    json.dump(
-                        {
-                            "records": records,
-                            "total": total,
-                            "week_start": monday.strftime("%Y-%m-%d"),
-                            "week_end": sunday.strftime("%Y-%m-%d"),
-                        },
-                        f,
-                        ensure_ascii=False,
-                        indent=2,
+                    report_week_dir, _ = get_week_report_week_dir()
+                    cache_file = os.path.join(
+                        report_week_dir, "daily_reports_query_admin.json"
                     )
-
-                print(format_daily_reports_for_review(records))
-                print(f"\n共 {total} 条日报记录", file=sys.stderr)
-                print(f"查询结果已缓存至: {query_file}", file=sys.stderr)
-                print("\n使用 --review 参数预览周报", file=sys.stderr)
-                print("使用 --submit 参数提交周报", file=sys.stderr)
-            else:
-                print(f"查询失败: {result.get('message', '未知错误')}", file=sys.stderr)
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(
+                            {
+                                "records": records,
+                                "total": len(records),
+                                "week_start": week_start.strftime("%Y-%m-%d"),
+                                "week_end": week_end.strftime("%Y-%m-%d"),
+                            },
+                            f,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
         except Exception as e:
-            print(f"[周报] 错误: {e}", file=sys.stderr)
+            print(f"[警告] API查询失败: {e}，将使用其他数据源", file=sys.stderr)
+
+    projects_data = merge_projects_data(md_projects_data, api_projects_data)
+    users_data = merge_users_data(md_users_data, api_users_data)
+
+    if not projects_data and not users_data:
+        print("错误: 未能获取到任何日报数据", file=sys.stderr)
+        print("请确保已提交日报或API可访问", file=sys.stderr)
         return
 
-    temp_dir = os.path.join(
-        os.path.join(os.path.expanduser("~"), "nextclaw-temp", "weekly-report")
-    )
-    os.makedirs(temp_dir, exist_ok=True)
-    query_file_name = f"daily_reports_query_{username}.json"
-    query_file = os.path.join(temp_dir, query_file_name)
+    source_info = " + ".join(data_sources) if data_sources else "未知"
 
-    if args.review or args.submit:
-        if not os.path.exists(query_file):
+    reports = []
+
+    if mode == "personal":
+        target_user = args.user_name or username
+        if not target_user:
+            print("错误: 个人周报需要指定 --user 参数", file=sys.stderr)
+            return
+        if target_user not in users_data:
+            print(f"错误: 未找到用户 {target_user} 的日报", file=sys.stderr)
+            return
+        report = generate_personal_week_report(
+            target_user, users_data, week_start, week_end
+        )
+        if report:
+            reports.append(report)
+    elif mode == "project":
+        target_project = args.project_code
+        if target_project:
+            if target_project not in projects_data:
+                print(f"错误: 未找到项目 {target_project} 的日报", file=sys.stderr)
+                return
+            report = generate_project_week_report(
+                target_project, projects_data[target_project], week_start, week_end
+            )
+            if report:
+                reports.append(report)
+        else:
+            for project_code, project_data in sorted(projects_data.items()):
+                report = generate_project_week_report(
+                    project_code, project_data, week_start, week_end
+                )
+                if report:
+                    reports.append(report)
+    else:
+        for project_code, project_data in sorted(projects_data.items()):
+            report = generate_project_week_report(
+                project_code, project_data, week_start, week_end
+            )
+            if report:
+                reports.append(report)
+
+    if not reports:
+        print("警告: 未能生成周报数据", file=sys.stderr)
+        return
+
+    print("=" * 60, file=sys.stderr)
+    print(f"周报预览（{len(reports)} 份，数据来源: {source_info}）", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+
+    for report in reports:
+        print(format_report_for_display(report, mode), file=sys.stderr)
+        print(file=sys.stderr)
+
+    print("=" * 60, file=sys.stderr)
+
+    if args.review:
+        print("\n预览完成。使用 --submit 参数确认并提交。", file=sys.stderr)
+        return
+
+    if args.submit:
+        if mode != "personal":
             print(
-                "错误: 没有查询数据，请先使用 --query-dailies 查询本周日报",
+                "提示: 只有个人周报才需要提交，项目周报和部门周报不需要提交",
                 file=sys.stderr,
             )
             return
 
-        with open(query_file, "r", encoding="utf-8") as f:
-            cache_data = json.load(f)
-            records = cache_data.get("records", [])
-            week_start_str = cache_data.get("week_start")
-            week_end_str = cache_data.get("week_end")
-
-        week_start = datetime.strptime(week_start_str, "%Y-%m-%d")
-        week_end = datetime.strptime(week_end_str, "%Y-%m-%d")
-
-        week_reports = generate_week_report_from_dailies(records, week_start, week_end)
-
-        if not week_reports:
-            print("警告: 未能生成周报数据", file=sys.stderr)
-            return
-
-        print("=" * 60, file=sys.stderr)
-        print("周报预览（确认后将提交以下数据）", file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
-        print(json.dumps(week_reports, ensure_ascii=False, indent=2), file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
-
-        if args.review:
-            print("\n预览完成。使用 --submit 参数确认并提交。", file=sys.stderr)
-            return
-
         if not username or not password:
             print("错误: 需要登录凭据", file=sys.stderr)
             return
 
+        submit_reports = []
+        for report in reports:
+            submit_reports.append(
+                {
+                    "weekPlanNow": report["weekPlanNow"],
+                    "chanceProjectName": report["chanceProjectName"],
+                    "chanceProjectSchedule": report["chanceProjectSchedule"],
+                    "projectCode": report["projectCode"],
+                    "projectManager": report["projectManager"],
+                    "weekSummarizeNow": report["weekSummarizeNow"],
+                    "weekPlanNext": report["weekPlanNext"],
+                    "problemRisk": report["problemRisk"],
+                    "requestInstructions": report["requestInstructions"],
+                    "weekStartTime": report["weekStartTime"],
+                    "weekEndTime": report["weekEndTime"],
+                    "weekReportType": report["weekReportType"],
+                }
+            )
+
         try:
             token = login(base_url, username, password)
             url = f"{base_url}{WEEK_REPORT_ENDPOINT}"
-            result = fetch_json_post(url, week_reports, token)
+            result = fetch_json_post(url, submit_reports, token)
 
             if result.get("code") == 0 or result.get("success"):
                 print("周报提交成功", file=sys.stderr)
-                if os.path.exists(query_file):
-                    os.remove(query_file)
             else:
                 print(f"周报提交失败: {result.get('message', result)}", file=sys.stderr)
         except Exception as e:
             print(f"[周报] 错误: {e}", file=sys.stderr)
         return
-
-    if args.validate or args.submit:
-        week_data = {}
-
-        if args.json_file:
-            with open(args.json_file, "r", encoding="utf-8") as f:
-                week_data = json.load(f)
-        else:
-            if not args.project_code or not args.project_name:
-                print("错误: 缺少项目信息", file=sys.stderr)
-                return
-            week_data = {
-                "weekSummarizeNow": args.week_summarize or "",
-                "weekPlanNext": args.week_plan or "",
-                "projectCode": args.project_code,
-                "projectName": args.project_name,
-                "projectManager": args.project_manager or "",
-                "problemRisk": args.problem_risk or "无",
-                "requestInstructions": args.request_instructions or "无",
-                "weekReportType": args.week_report_type,
-            }
-
-            if args.week_start_time:
-                week_data["weekStartTime"] = args.week_start_time
-            if args.week_end_time:
-                week_data["weekEndTime"] = args.week_end_time
-
-        errors = validate_week_report_fields(week_data)
-        if errors:
-            print("参数校验失败:", file=sys.stderr)
-            for err in errors:
-                print(f"  - {err}", file=sys.stderr)
-            return
-
-        if args.validate:
-            print("参数校验通过", file=sys.stderr)
-            print(json.dumps(week_data, ensure_ascii=False, indent=2))
-            return
-
-    print(
-        """
-项目周报生成脚本
-
-用法:
-  python weekly-report.py --query-dailies           # 查询本周日报
-  python weekly-report.py --review                 # 预览周报（基于查询的日报）
-  python weekly-report.py --submit                 # 确认并提交周报
-  python weekly-report.py --validate --json-file <path>  # 校验周报参数
-""",
-        file=sys.stderr,
-    )
 
 
 if __name__ == "__main__":
