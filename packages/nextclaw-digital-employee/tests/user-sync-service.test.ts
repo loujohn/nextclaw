@@ -220,6 +220,36 @@ describe("performUserPersonnelSync unmatched and union binding", () => {
     const syncedUser = await userRepo.findByExternalUserId("external-003");
     expect(syncedUser?.humanEmployeeId).toBe(matchedEmployee.id);
   });
+
+  it("auto binds when employee userid has leading zeros but personnel dingTalkId omits them", async () => {
+    const matchedEmployee = await humanEmployeeRepo.create({
+      externalId: "011208426431021667",
+      name: "前导零员工",
+      title: "测试岗位",
+    });
+
+    const result = await performUserPersonnelSync(db, [
+      {
+        userId: "external-004",
+        userName: "zero-prefix-user",
+        name: "前导零员工",
+        dingTalkId: "11208426431021667",
+      },
+    ]);
+
+    expect(result).toMatchObject({
+      total: 1,
+      created: 1,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      autoBound: 1,
+      unboundUsers: [],
+    });
+
+    const syncedUser = await userRepo.findByExternalUserId("external-004");
+    expect(syncedUser?.humanEmployeeId).toBe(matchedEmployee.id);
+  });
 });
 
 describe("performUserPersonnelSync identity claim", () => {

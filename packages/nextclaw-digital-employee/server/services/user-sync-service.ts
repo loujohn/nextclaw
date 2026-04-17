@@ -332,7 +332,7 @@ async function planSyncUserWrites(
   const existingUsers = await userRepo.findByExternalUserIds(normalizedUsers.map((user) => user.externalUserId));
   const existingUserMap = new Map(existingUsers.map((user) => [user.externalUserId ?? "", user]));
   const matchedHumanEmployees = await humanEmployeeRepo.findByDingTalkIdentities([
-    ...new Set(normalizedUsers.map((user) => user.externalDingTalkId).filter(Boolean)),
+    ...new Set(normalizedUsers.flatMap((user) => buildIdentityCandidates(user.externalDingTalkId))),
   ]);
   const humanEmployeeLookup = buildHumanEmployeeIdentityLookup(matchedHumanEmployees);
   const boundHumanEmployeeMap = new Map(
@@ -407,8 +407,12 @@ function buildHumanEmployeeIdentityLookup(
   const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
 
   for (const employee of employees) {
-    pushLookupValue(byExternalId, employee.externalId, employee.id);
-    pushLookupValue(byUnionId, employee.unionid, employee.id);
+    for (const candidate of buildIdentityCandidates(employee.externalId)) {
+      pushLookupValue(byExternalId, candidate, employee.id);
+    }
+    for (const candidate of buildIdentityCandidates(employee.unionid)) {
+      pushLookupValue(byUnionId, candidate, employee.id);
+    }
   }
 
   return { byExternalId, byUnionId, employeesById };
@@ -424,6 +428,19 @@ function pushLookupValue(map: Map<string, string[]>, key: string, employeeId: st
   map.set(key, next);
 }
 
+function buildIdentityCandidates(identity: string): string[] {
+  if (!identity) {
+    return [];
+  }
+
+  const candidates = new Set<string>([identity]);
+  if (/^\d+$/.test(identity)) {
+    candidates.add(identity.replace(/^0+(?=\d)/, ""));
+  }
+
+  return [...candidates].filter(Boolean);
+}
+
 function resolveMatchedHumanEmployee(
   user: NormalizedPersonnelUser,
   lookup: HumanEmployeeIdentityLookup
@@ -432,10 +449,15 @@ function resolveMatchedHumanEmployee(
     return null;
   }
 
-  const employeeIds = new Set<string>([
-    ...(lookup.byExternalId.get(user.externalDingTalkId) ?? []),
-    ...(lookup.byUnionId.get(user.externalDingTalkId) ?? []),
-  ]);
+  const employeeIds = new Set<string>();
+  for (const candidate of buildIdentityCandidates(user.externalDingTalkId)) {
+    for (const employeeId of lookup.byExternalId.get(candidate) ?? []) {
+      employeeIds.add(employeeId);
+    }
+    for (const employeeId of lookup.byUnionId.get(candidate) ?? []) {
+      employeeIds.add(employeeId);
+    }
+  }
 
   if (employeeIds.size !== 1) {
     return null;
