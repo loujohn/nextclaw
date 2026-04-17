@@ -102,7 +102,7 @@ function createEditFormState() {
 
 interface CrudOptions {
   refresh: () => Promise<void>;
-  showToast: (type: "success" | "error", message: string) => void;
+  showToast: (type: "success" | "error" | "info", message: string) => void;
   selectedDeptId: Ref<string | null>;
   buildWorkbenchRoute: (id: string) => { path: string; query: Record<string, string> };
 }

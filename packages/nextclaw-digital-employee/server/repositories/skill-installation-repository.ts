@@ -89,6 +89,13 @@ export class SkillInstallationRepository {
     return rows.map(toView);
   }
 
+  async deleteBySkillName(skillName: string): Promise<boolean> {
+    const deleted = await this.db<SkillInstallationRecord>(PLATFORM_TABLES.skillInstallations)
+      .where({ skill_name: skillName })
+      .delete();
+    return deleted > 0;
+  }
+
   async setEnabled(skillName: string, enabled: boolean): Promise<SkillInstallationView | null> {
     const existing = await this.db<SkillInstallationRecord>(PLATFORM_TABLES.skillInstallations)
       .where({ skill_name: skillName })

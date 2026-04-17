@@ -153,6 +153,16 @@ export type UserRecord = {
   avatar_url: string;
   role: string;
   is_active: number;
+  user_source: string;
+  sync_provider: string | null;
+  external_user_id: string | null;
+  external_user_name: string;
+  external_name: string;
+  external_post_name: string;
+  external_role_name: string;
+  external_dingtalk_id: string;
+  external_phone: string;
+  external_user_type: string;
   department_id: string | null;
   human_employee_id: string | null;
   preferences: string;
@@ -160,6 +170,7 @@ export type UserRecord = {
   auth_provider: string;
   password_hash: string | null;
   last_login_at: string | null;
+  last_synced_at: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,22 +1,84 @@
 <script setup lang="ts">
-import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2 } from "lucide-vue-next";
-import type { UserView, UserRole, UpdateUserInput } from "../../../shared/auth-types";
+import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw } from "lucide-vue-next";
+import type { UserListPayload, UserView, UserRole, UpdateUserInput } from "../../../shared/auth-types";
 
 const { getAccessToken, user: currentUser } = useAuth();
 
 const toast = useToast();
-const { loading, execute } = useApiCall({ toast: { composable: toast, prefix: "操作失败" } });
+const USERS_PAGE_SIZE = 10;
+
+function extractApiError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const payload = error as { data?: { message?: string; statusMessage?: string } };
+    if (payload.data?.message) return payload.data.message;
+    if (payload.data?.statusMessage) return payload.data.statusMessage;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+const { execute } = useApiCall({
+  extractError: extractApiError,
+  toast: { composable: toast, prefix: "操作失败" },
+});
 
 const users = ref<UserView[]>([]);
 const search = ref("");
+const usersLoading = ref(false);
+const totalUsers = ref(0);
+const currentPage = ref(1);
+const syncProfileDialogOpen = ref(false);
+const syncProfileTarget = ref<UserView | null>(null);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-const filteredUsers = computed(() => {
-  if (!search.value) return users.value;
-  const q = search.value.toLowerCase();
-  return users.value.filter(
-    (u) => u.displayName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-  );
-});
+type UserSyncJobView = {
+  jobId: string;
+  alreadyRunning: boolean;
+  status: "running" | "completed" | "failed";
+  stage: "queued" | "authenticating" | "fetching" | "syncing" | "completed" | "failed";
+  message: string;
+  total: number | null;
+  processed: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  summary: string;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
+function createEmptySyncJob(): UserSyncJobView {
+  return {
+    jobId: "",
+    alreadyRunning: false,
+    status: "running",
+    stage: "queued",
+    message: "",
+    total: null,
+    processed: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    summary: "",
+    startedAt: "",
+    finishedAt: null,
+  };
+}
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalUsers.value / USERS_PAGE_SIZE)));
+
+function authProviderLabel(user: UserView): string {
+  return user.authProvider === "local" ? "本地登录" : "Keycloak";
+}
+
+function sourceBadgeClass(user: UserView): string {
+  return user.userSource === "sync" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700";
+}
+
+function sourceLabel(user: UserView): string {
+  return user.userSource === "sync" ? "外部同步" : "系统创建";
+}
 
 function authHeaders(): Record<string, string> {
   const t = getAccessToken();
@@ -24,10 +86,203 @@ function authHeaders(): Record<string, string> {
 }
 
 async function loadUsers() {
-  const res = await execute(() =>
-    $fetch<{ ok: boolean; data: UserView[] }>("/api/users", { headers: authHeaders() })
-  );
-  if (res?.ok) users.value = res.data;
+  usersLoading.value = true;
+  try {
+    const res = await execute(() =>
+      $fetch<UserListPayload>("/api/users", {
+        headers: authHeaders(),
+        query: {
+          page: currentPage.value,
+          pageSize: USERS_PAGE_SIZE,
+          search: search.value.trim() || undefined,
+        },
+      })
+    );
+    if (res?.ok) {
+      users.value = res.data;
+      totalUsers.value = res.total;
+      currentPage.value = res.page;
+    }
+  } finally {
+    usersLoading.value = false;
+  }
+}
+
+async function loadUsersPage(page: number) {
+  currentPage.value = Math.max(1, page);
+  await loadUsers();
+}
+
+function openSyncProfileDialog(user: UserView) {
+  syncProfileTarget.value = user;
+  syncProfileDialogOpen.value = true;
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleString() : "-";
+}
+
+const syncConfirmOpen = ref(false);
+const syncConfirmError = ref("");
+const syncStarting = ref(false);
+const syncProgressOpen = ref(false);
+const syncResultOpen = ref(false);
+const syncResultSummary = ref({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0, summary: "" });
+const syncJob = ref<UserSyncJobView>(createEmptySyncJob());
+const syncJobId = ref("");
+let syncPollingTimer: ReturnType<typeof setInterval> | null = null;
+
+const syncRunning = computed(() => syncJobId.value !== "" && syncJob.value.status === "running");
+const syncButtonBusy = computed(() => syncStarting.value || syncRunning.value);
+
+const syncProgressPercent = computed(() => {
+  if (syncJob.value.status === "completed") return 100;
+  if (syncJob.value.stage === "authenticating") return 10;
+  if (syncJob.value.stage === "fetching") return 30;
+  if (syncJob.value.stage === "syncing") {
+    if (syncJob.value.total && syncJob.value.total > 0) {
+      return Math.min(95, 30 + Math.round((syncJob.value.processed / syncJob.value.total) * 65));
+    }
+    return 50;
+  }
+  if (syncJob.value.stage === "failed") return 100;
+  return 5;
+});
+
+const syncStageLabel = computed(() => {
+  switch (syncJob.value.stage) {
+    case "queued":
+      return "等待开始";
+    case "authenticating":
+      return "认证中";
+    case "fetching":
+      return "拉取数据中";
+    case "syncing":
+      return "同步写入中";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "失败";
+    default:
+      return "处理中";
+  }
+});
+
+function stopSyncPolling() {
+  if (syncPollingTimer) {
+    clearInterval(syncPollingTimer);
+    syncPollingTimer = null;
+  }
+}
+
+async function finalizeSyncJob(job: UserSyncJobView) {
+  syncJob.value = job;
+  if (job.status === "completed") {
+    stopSyncPolling();
+    syncJobId.value = "";
+    syncProgressOpen.value = false;
+    syncResultSummary.value = {
+      total: job.total ?? 0,
+      created: job.created,
+      updated: job.updated,
+      skipped: job.skipped,
+      failed: job.failed,
+      summary: job.summary || job.message,
+    };
+    syncResultOpen.value = true;
+    await loadUsers();
+    return;
+  }
+
+  if (job.status === "failed") {
+    stopSyncPolling();
+    syncJobId.value = "";
+    syncProgressOpen.value = true;
+    toast.showToast("error", job.message || "同步失败，请稍后重试");
+  }
+}
+
+async function pollSyncJobStatus() {
+  if (!syncJobId.value) return;
+
+  try {
+    const res = await $fetch<{ ok: boolean; data: UserSyncJobView }>(`/api/users/sync-status/${encodeURIComponent(syncJobId.value)}`, {
+      headers: authHeaders(),
+    });
+    if (!res?.ok) return;
+    syncJob.value = res.data;
+    if (res.data.status !== "running") {
+      await finalizeSyncJob(res.data);
+    }
+  } catch (error) {
+    const message = extractApiError(error);
+    syncJob.value = {
+      ...syncJob.value,
+      status: "failed",
+      stage: "failed",
+      message,
+      failed: Math.max(syncJob.value.failed, 1),
+      finishedAt: new Date().toISOString(),
+    };
+    await finalizeSyncJob(syncJob.value);
+  }
+}
+
+function startSyncPolling() {
+  stopSyncPolling();
+  syncPollingTimer = setInterval(() => {
+    void pollSyncJobStatus();
+  }, 1000);
+}
+
+function openSyncConfirm() {
+  if (syncRunning.value) {
+    syncProgressOpen.value = true;
+    return;
+  }
+  syncConfirmError.value = "";
+  syncConfirmOpen.value = true;
+}
+
+async function confirmSyncUsers() {
+  syncConfirmError.value = "";
+  syncStarting.value = true;
+
+  try {
+    const res = await $fetch<{ ok: boolean; data: UserSyncJobView }>(
+      "/api/users/sync-trigger",
+      {
+        method: "POST",
+        headers: authHeaders(),
+      }
+    );
+
+    if (!res?.ok) return;
+    syncConfirmOpen.value = false;
+    syncJob.value = res.data;
+    syncJobId.value = res.data.jobId;
+    syncProgressOpen.value = true;
+    if (res.data.alreadyRunning) {
+      toast.showToast("info", "已有同步任务正在执行，已为你打开最新进度。");
+    }
+    if (res.data.status === "running") {
+      startSyncPolling();
+      void pollSyncJobStatus();
+      return;
+    }
+    await finalizeSyncJob(res.data);
+  } catch (error) {
+    syncConfirmError.value = extractApiError(error);
+  } finally {
+    syncStarting.value = false;
+  }
+}
+
+function closeSyncProgressDialog() {
+  if (syncRunning.value) {
+    toast.showToast("info", "关闭弹窗不会终止同步，你可以稍后再次点击“同步中”查看进度。");
+  }
+  syncProgressOpen.value = false;
 }
 
 async function updateUser(id: string, input: UpdateUserInput) {
@@ -54,12 +309,12 @@ const roleOptions: { value: UserRole; label: string }[] = [
 const bindDialogOpen = ref(false);
 const bindTargetUser = ref<UserView | null>(null);
 const humanEmployees = ref<Array<{ id: string; name: string; title: string; avatar: string }>>([]);
+const bindCandidates = ref<Array<{ id: string; name: string; title: string; avatar: string }>>([]);
 const selectedHumanEmployeeId = ref<string>("");
 const bindSearch = ref("");
 
 const filteredHumanEmployees = computed(() => {
-  const bound = new Set(users.value.filter((u) => u.humanEmployeeId).map((u) => u.humanEmployeeId));
-  let list = humanEmployees.value.filter((he) => !bound.has(he.id));
+  let list = bindCandidates.value;
   if (bindSearch.value) {
     const q = bindSearch.value.toLowerCase();
     list = list.filter((he) => he.name.toLowerCase().includes(q) || he.title.toLowerCase().includes(q));
@@ -72,7 +327,7 @@ function openBindDialog(u: UserView) {
   selectedHumanEmployeeId.value = "";
   bindSearch.value = "";
   bindDialogOpen.value = true;
-  loadHumanEmployees();
+  loadAvailableHumanEmployees();
 }
 
 async function loadHumanEmployees() {
@@ -87,6 +342,21 @@ async function loadHumanEmployees() {
   }
 }
 
+async function loadAvailableHumanEmployees() {
+  try {
+    const res = await $fetch<{ ok: boolean; data: Array<{ id: string; name: string; title: string; avatar: string }> }>(
+      "/api/org/human-employees",
+      {
+        headers: authHeaders(),
+        query: { excludeBound: "true" },
+      }
+    );
+    if (res?.ok) bindCandidates.value = res.data;
+  } catch {
+    bindCandidates.value = [];
+  }
+}
+
 function getHumanEmployeeName(id: string | null): string {
   if (!id) return "";
   return humanEmployees.value.find((he) => he.id === id)?.name ?? "";
@@ -96,6 +366,7 @@ async function confirmBind() {
   if (!bindTargetUser.value || !selectedHumanEmployeeId.value) return;
   await updateUser(bindTargetUser.value.id, { humanEmployeeId: selectedHumanEmployeeId.value });
   bindDialogOpen.value = false;
+  await loadAvailableHumanEmployees();
 }
 
 function handleRoleChange(u: UserView, newRole: UserRole, event: Event) {
@@ -131,7 +402,7 @@ async function createLocalUser() {
     toast.showToast("success", "用户已创建");
     createDialogOpen.value = false;
     newUser.value = { username: "", displayName: "", password: "", role: "user" };
-    await loadUsers();
+    await loadUsersPage(1);
   }
 }
 
@@ -204,14 +475,27 @@ async function deleteUser(u: UserView) {
     })
   );
   if (res?.ok) {
-    users.value = users.value.filter((x) => x.id !== u.id);
     toast.showToast("success", "用户已删除");
+    const nextPage = users.value.length === 1 && currentPage.value > 1 ? currentPage.value - 1 : currentPage.value;
+    await loadUsersPage(nextPage);
   }
 }
 
+watch(search, () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    void loadUsersPage(1);
+  }, 250);
+});
+
 onMounted(() => {
-  loadUsers();
-  loadHumanEmployees();
+  void loadUsers();
+  void loadHumanEmployees();
+});
+
+onUnmounted(() => {
+  stopSyncPolling();
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
 });
 </script>
 
@@ -222,12 +506,21 @@ onMounted(() => {
         <h1 class="text-xl font-semibold text-foreground">用户管理</h1>
         <p class="text-sm text-muted-foreground">管理平台用户角色与权限</p>
       </div>
-      <button
-        class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-        @click="createDialogOpen = true"
-      >
-        <Plus class="h-4 w-4" /> 新建用户
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="syncStarting"
+          @click="openSyncConfirm"
+        >
+          <RefreshCw class="h-4 w-4" :class="syncButtonBusy ? 'animate-spin' : ''" /> {{ syncRunning ? "同步中" : "同步人员" }}
+        </button>
+        <button
+          class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+          @click="createDialogOpen = true"
+        >
+          <Plus class="h-4 w-4" /> 新建用户
+        </button>
+      </div>
     </div>
 
     <div class="relative">
@@ -235,19 +528,20 @@ onMounted(() => {
       <input
         v-model="search"
         class="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
-        placeholder="搜索用户名或邮箱..."
+        placeholder="搜索姓名、用户名、邮箱、外部 ID、岗位..."
       />
     </div>
 
-    <div class="rounded-lg border border-border">
+    <div class="overflow-x-auto rounded-lg border border-border">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/50">
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">用户</th>
-            <th class="px-4 py-3 text-left font-medium text-muted-foreground">用户名</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">标识</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">角色</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">状态</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">来源</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">同步资料</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">关联员工</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">最后登录</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">操作</th>
@@ -255,7 +549,7 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr
-            v-for="u in filteredUsers"
+            v-for="u in users"
             :key="u.id"
             class="border-b border-border last:border-0 hover:bg-muted/30 transition"
           >
@@ -264,10 +558,20 @@ onMounted(() => {
                 <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
                   {{ u.displayName?.charAt(0) ?? "?" }}
                 </div>
-                <span class="font-medium">{{ u.displayName }}</span>
+                <div class="min-w-0">
+                  <div class="font-medium">{{ u.displayName }}</div>
+                  <div v-if="u.externalName && u.externalName !== u.displayName" class="text-xs text-muted-foreground">
+                    外部姓名：{{ u.externalName }}
+                  </div>
+                </div>
               </div>
             </td>
-            <td class="px-4 py-3 text-muted-foreground">{{ u.username || u.email }}</td>
+            <td class="px-4 py-3 text-muted-foreground">
+              <div class="space-y-1">
+                <div>{{ u.username || "-" }}</div>
+                <div class="text-xs">{{ u.email }}</div>
+              </div>
+            </td>
             <td class="px-4 py-3">
               <select
                 :value="u.role"
@@ -289,12 +593,23 @@ onMounted(() => {
               </button>
             </td>
             <td class="px-4 py-3">
-              <span
-                class="rounded px-2 py-0.5 text-xs font-medium"
-                :class="u.authProvider === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'"
-              >
-                {{ u.authProvider === "local" ? "本地" : "SSO" }}
-              </span>
+              <div class="space-y-1">
+                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="sourceBadgeClass(u)">
+                  {{ sourceLabel(u) }}
+                </span>
+                <div class="text-xs text-muted-foreground">{{ authProviderLabel(u) }}</div>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <div v-if="u.userSource === 'sync'" class="space-y-1">
+                <button
+                  class="inline-flex items-center rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                  @click="openSyncProfileDialog(u)"
+                >
+                  查看详情
+                </button>
+              </div>
+              <span v-else class="text-xs text-muted-foreground">-</span>
             </td>
             <td class="px-4 py-3">
               <span v-if="u.humanEmployeeId" class="inline-flex items-center gap-1 text-xs text-emerald-700">
@@ -352,12 +667,62 @@ onMounted(() => {
         </tbody>
       </table>
 
-      <div v-if="filteredUsers.length === 0" class="py-12 text-center text-sm text-muted-foreground">
+      <div v-if="usersLoading" class="py-12 text-center text-sm text-muted-foreground">
+        正在加载用户...
+      </div>
+
+      <div v-else-if="users.length === 0" class="py-12 text-center text-sm text-muted-foreground">
         {{ search ? "未找到匹配用户" : "暂无用户" }}
       </div>
+
+      <UsersListPagination
+        :total="totalUsers"
+        :page-size="USERS_PAGE_SIZE"
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :loading="usersLoading"
+        @change="loadUsersPage"
+      />
     </div>
 
     <Teleport to="body">
+      <SharedConfirmDialog
+        :open="syncConfirmOpen"
+        title="确认同步人员"
+        message="将从外部接口同步人员到用户表。"
+        confirm-label="确认同步"
+        confirming-label="同步中..."
+        :confirming="syncStarting"
+        :error="syncConfirmError"
+        @confirm="confirmSyncUsers"
+        @cancel="syncConfirmOpen = false"
+      >
+        <div class="space-y-2 text-sm text-muted-foreground">
+          <p>已存在用户会更新资料，不存在用户会新增，系统已有但外部未返回的用户不会被删除。</p>
+          <p class="rounded-lg bg-muted/60 px-3 py-2 text-xs">同步开始后可关闭进度弹窗，后台同步不会因此中断。</p>
+        </div>
+      </SharedConfirmDialog>
+
+      <UsersSyncProgressDialog
+        :open="syncProgressOpen"
+        :job="syncJob"
+        :progress-percent="syncProgressPercent"
+        :stage-label="syncStageLabel"
+        @close="closeSyncProgressDialog"
+      />
+
+      <UsersSyncProfileDialog
+        :open="syncProfileDialogOpen"
+        :user="syncProfileTarget"
+        @close="syncProfileDialogOpen = false"
+      />
+
+      <UsersSyncResultDialog
+        :open="syncResultOpen"
+        :summary="syncResultSummary"
+        @close="syncResultOpen = false"
+      />
+
       <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
         <div class="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
           <h3 class="text-lg font-semibold">新建本地用户</h3>
@@ -391,6 +756,9 @@ onMounted(() => {
           <h3 class="text-lg font-semibold">编辑用户</h3>
           <p class="mt-1 text-sm text-muted-foreground">修改 {{ editTarget?.username || editTarget?.email }} 的信息</p>
           <div class="mt-4 space-y-3">
+            <div v-if="editTarget?.userSource === 'sync'" class="rounded bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              外部同步用户的资料会在下次同步时更新，建议仅维护平台侧角色、启停和必要展示字段。
+            </div>
             <div v-if="editTarget?.authProvider === 'local'">
               <label class="text-xs text-muted-foreground">用户名</label>
               <input v-model="editForm.username" type="text"
