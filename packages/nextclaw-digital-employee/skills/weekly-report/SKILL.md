@@ -1,7 +1,6 @@
 ---
 name: weekly-report
 name_zh: 项目周报生成
-version: 1.0.1
 description: "查询本周日报数据，综合整理生成周报并提交至内部系统。自动完成登录鉴权、日报汇总与周报提交。当需要生成项目周报、提交周报或汇总本周工作时日报时使用。"
 metadata:
   nextclaw:
