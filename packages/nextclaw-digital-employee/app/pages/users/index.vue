@@ -5,7 +5,20 @@ import type { UserView, UserRole, UpdateUserInput } from "../../../shared/auth-t
 const { getAccessToken, user: currentUser } = useAuth();
 
 const toast = useToast();
-const { loading, execute } = useApiCall({ toast: { composable: toast, prefix: "操作失败" } });
+
+function extractApiError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const payload = error as { data?: { message?: string; statusMessage?: string } };
+    if (payload.data?.message) return payload.data.message;
+    if (payload.data?.statusMessage) return payload.data.statusMessage;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+const { loading, error: apiError, execute } = useApiCall({
+  extractError: extractApiError,
+  toast: { composable: toast, prefix: "操作失败" },
+});
 
 const users = ref<UserView[]>([]);
 const search = ref("");
@@ -51,11 +64,18 @@ async function loadUsers() {
   if (res?.ok) users.value = res.data;
 }
 
-async function syncUsers() {
-  const confirmed = window.confirm(
-    "将从外部接口同步人员到用户表。\n\n已存在用户会更新资料，不存在用户会新增，系统已有但外部未返回的用户不会被删除。\n\n确定继续同步？"
-  );
-  if (!confirmed) return;
+const syncConfirmOpen = ref(false);
+const syncConfirmError = ref("");
+const syncResultOpen = ref(false);
+const syncResultSummary = ref({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0, summary: "" });
+
+function openSyncConfirm() {
+  syncConfirmError.value = "";
+  syncConfirmOpen.value = true;
+}
+
+async function confirmSyncUsers() {
+  syncConfirmError.value = "";
 
   const res = await execute(() =>
     $fetch<{ ok: boolean; data: { total: number; created: number; updated: number; skipped: number; failed: number; summary: string } }>(
@@ -68,12 +88,14 @@ async function syncUsers() {
   );
 
   if (res?.ok) {
-    toast.showToast(
-      "success",
-      `${res.data.summary}：新增 ${res.data.created}，更新 ${res.data.updated}，跳过 ${res.data.skipped}`
-    );
+    syncConfirmOpen.value = false;
+    syncResultSummary.value = res.data;
+    syncResultOpen.value = true;
     await loadUsers();
+    return;
   }
+
+  syncConfirmError.value = apiError.value ?? "同步失败，请稍后重试";
 }
 
 async function updateUser(id: string, input: UpdateUserInput) {
@@ -272,7 +294,7 @@ onMounted(() => {
         <button
           class="flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="loading"
-          @click="syncUsers"
+          @click="openSyncConfirm"
         >
           <RefreshCw class="h-4 w-4" :class="loading ? 'animate-spin' : ''" /> 同步人员
         </button>
@@ -436,6 +458,57 @@ onMounted(() => {
     </div>
 
     <Teleport to="body">
+      <SharedConfirmDialog
+        :open="syncConfirmOpen"
+        title="确认同步人员"
+        message="将从外部接口同步人员到用户表。已存在用户会更新资料，不存在用户会新增，系统已有但外部未返回的用户不会被删除。"
+        confirm-label="确认同步"
+        confirming-label="同步中..."
+        :confirming="loading"
+        :error="syncConfirmError"
+        @confirm="confirmSyncUsers"
+        @cancel="syncConfirmOpen = false"
+      />
+
+      <div v-if="syncResultOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+          <h3 class="text-base font-semibold text-foreground">同步完成</h3>
+          <p class="mt-2 text-sm text-muted-foreground">
+            {{ syncResultSummary.summary || "用户同步已完成，本次结果如下。" }}
+          </p>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <div class="text-xs text-muted-foreground">拉取人数</div>
+              <div class="mt-1 text-lg font-semibold text-foreground">{{ syncResultSummary.total }}</div>
+            </div>
+            <div class="rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <div class="text-xs text-muted-foreground">新增人数</div>
+              <div class="mt-1 text-lg font-semibold text-emerald-600">{{ syncResultSummary.created }}</div>
+            </div>
+            <div class="rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <div class="text-xs text-muted-foreground">更新人数</div>
+              <div class="mt-1 text-lg font-semibold text-primary">{{ syncResultSummary.updated }}</div>
+            </div>
+            <div class="rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <div class="text-xs text-muted-foreground">跳过人数</div>
+              <div class="mt-1 text-lg font-semibold text-amber-600">{{ syncResultSummary.skipped }}</div>
+            </div>
+          </div>
+
+          <div class="mt-3 rounded-xl border border-border bg-muted/20 px-4 py-3">
+            <div class="text-xs text-muted-foreground">失败人数</div>
+            <div class="mt-1 text-lg font-semibold" :class="syncResultSummary.failed > 0 ? 'text-destructive' : 'text-foreground'">
+              {{ syncResultSummary.failed }}
+            </div>
+          </div>
+
+          <div class="mt-5 flex justify-end gap-2">
+            <button class="btn-primary text-sm" @click="syncResultOpen = false">我知道了</button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
         <div class="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
           <h3 class="text-lg font-semibold">新建本地用户</h3>

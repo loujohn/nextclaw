@@ -286,6 +286,7 @@ export async function performUserPersonnelSync(db: Knex, rawUsers: PersonnelSync
       const existing = await userRepo.findByExternalUserId(normalized.externalUserId);
       if (existing) {
         await userRepo.updateSyncedUser(existing.id, {
+          externalUserId: normalized.externalUserId,
           displayName: normalized.displayName,
           externalUserName: normalized.externalUserName,
           externalName: normalized.externalName,

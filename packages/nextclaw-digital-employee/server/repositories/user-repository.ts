@@ -26,6 +26,7 @@ export type CreateSyncedUserInput = {
 };
 
 export type UpdateSyncedUserInput = {
+  externalUserId: string;
   displayName: string;
   externalUserName: string;
   externalName: string;
@@ -35,6 +36,10 @@ export type UpdateSyncedUserInput = {
   externalPhone: string;
   externalUserType: string;
 };
+
+function buildSyncedKeycloakSub(externalUserId: string): string {
+  return `personnel-sync:${externalUserId}`;
+}
 
 function toUserView(record: UserRecord): UserView {
   return {
@@ -261,7 +266,7 @@ export class UserRepository {
     const now = dbNow();
     const record: UserRecord = {
       id: randomUUID(),
-      keycloak_sub: "",
+      keycloak_sub: buildSyncedKeycloakSub(input.externalUserId),
       username: input.username,
       email: input.email,
       display_name: input.displayName,
@@ -297,6 +302,7 @@ export class UserRepository {
     const count = await this.db(PLATFORM_TABLES.users)
       .where({ id })
       .update({
+        keycloak_sub: buildSyncedKeycloakSub(input.externalUserId),
         display_name: input.displayName,
         user_source: "sync",
         sync_provider: "personnel-api",
