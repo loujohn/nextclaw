@@ -43,7 +43,13 @@ export type UserContext = {
   humanEmployeeId: string | null;
 };
 
-export type UserListPayload = { ok: boolean; data: UserView[] };
+export type UserListPayload = {
+  ok: boolean;
+  data: UserView[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
 export type UserPayload = { ok: boolean; data: UserView };
 export type AuthMePayload = { ok: boolean; data: UserView };
 

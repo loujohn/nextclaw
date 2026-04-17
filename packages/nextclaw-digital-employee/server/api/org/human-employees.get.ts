@@ -10,8 +10,20 @@ export function invalidateHumanEmployeeCache() {
 }
 
 export default defineEventHandler(async (event) => {
-  const { departmentId } = getQuery(event);
+  const { departmentId, excludeBound } = getQuery(event);
   const ctx = await getPlatformContext();
+
+  const shouldExcludeBound = excludeBound === "true";
+
+  if (shouldExcludeBound) {
+    const filter = typeof departmentId === "string" ? { departmentId } : undefined;
+    const [list, boundHumanEmployeeIds] = await Promise.all([
+      ctx.humanEmployeeRepo.list(filter),
+      ctx.userRepo.listBoundHumanEmployeeIds(),
+    ]);
+    const boundSet = new Set(boundHumanEmployeeIds);
+    return { ok: true, data: list.filter((item) => !boundSet.has(item.id)) };
+  }
 
   if (!departmentId) {
     if (cachedAll && Date.now() < cachedAll.expiresAt) {

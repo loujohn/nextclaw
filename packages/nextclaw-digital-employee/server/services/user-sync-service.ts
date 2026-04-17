@@ -47,6 +47,22 @@ export type UserSyncResult = {
   data: UserSyncSummary;
 };
 
+export type UserSyncStage = "queued" | "authenticating" | "fetching" | "syncing" | "completed" | "failed";
+
+export type UserSyncProgressSnapshot = {
+  stage: UserSyncStage;
+  message: string;
+  total: number | null;
+  processed: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  summary: string;
+};
+
+export type UserSyncProgressReporter = (progress: Partial<UserSyncProgressSnapshot>) => void;
+
 type PersonnelSyncConfig = {
   url: string;
   token: string;
@@ -169,6 +185,20 @@ async function resolvePersonnelAccessToken(config: PersonnelSyncConfig): Promise
   return requestPersonnelAccessToken(config);
 }
 
+function createProgressSnapshot(): UserSyncProgressSnapshot {
+  return {
+    stage: "queued",
+    message: "同步任务已创建，等待执行。",
+    total: null,
+    processed: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    summary: "",
+  };
+}
+
 function normalizeString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -238,12 +268,16 @@ function extractPersonnelUsers(payload: unknown): PersonnelSyncRawUser[] {
   throw new Error("人员同步接口返回结构不符合预期，必须返回数组列表");
 }
 
-async function fetchPersonnelUsers(): Promise<PersonnelSyncRawUser[]> {
+async function fetchPersonnelUsers(onProgress?: UserSyncProgressReporter): Promise<PersonnelSyncRawUser[]> {
   const config = getPersonnelSyncConfig();
   if (!config.url) {
     throw new Error("未配置人员同步接口地址 PERSONNEL_SYNC_API_URL");
   }
 
+  onProgress?.({
+    stage: "authenticating",
+    message: "正在获取同步认证信息...",
+  });
   const accessToken = await resolvePersonnelAccessToken(config);
 
   const headers: Record<string, string> = {
@@ -251,6 +285,10 @@ async function fetchPersonnelUsers(): Promise<PersonnelSyncRawUser[]> {
     Authorization: `Bearer ${accessToken}`,
   };
 
+  onProgress?.({
+    stage: "fetching",
+    message: "正在拉取外部人员数据...",
+  });
   log.info(`开始拉取人员同步数据: ${config.url}`);
   const response = await fetch(config.url, {
     method: "GET",
@@ -265,10 +303,20 @@ async function fetchPersonnelUsers(): Promise<PersonnelSyncRawUser[]> {
   const payload = (await response.json()) as unknown;
   const users = extractPersonnelUsers(payload);
   log.info(`人员同步数据拉取完成，总数=${users.length}`);
+  onProgress?.({
+    stage: "syncing",
+    message: users.length > 0 ? `已拉取 ${users.length} 条人员信息，开始写入用户数据...` : "未拉取到可同步的人员信息。",
+    total: users.length,
+    processed: 0,
+  });
   return users;
 }
 
-export async function performUserPersonnelSync(db: Knex, rawUsers: PersonnelSyncRawUser[]): Promise<UserSyncSummary> {
+export async function performUserPersonnelSync(
+  db: Knex,
+  rawUsers: PersonnelSyncRawUser[],
+  onProgress?: UserSyncProgressReporter
+): Promise<UserSyncSummary> {
   let created = 0;
   let updated = 0;
   let skipped = 0;
@@ -276,10 +324,20 @@ export async function performUserPersonnelSync(db: Knex, rawUsers: PersonnelSync
   await db.transaction(async (trx) => {
     const userRepo = new UserRepository(trx);
 
-    for (const rawUser of rawUsers) {
+    for (const [index, rawUser] of rawUsers.entries()) {
       const normalized = normalizePersonnelUser(rawUser);
       if (!normalized.externalUserId) {
         skipped += 1;
+        onProgress?.({
+          stage: "syncing",
+          message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
+          total: rawUsers.length,
+          processed: index + 1,
+          created,
+          updated,
+          skipped,
+          failed: 0,
+        });
         continue;
       }
 
@@ -297,6 +355,16 @@ export async function performUserPersonnelSync(db: Knex, rawUsers: PersonnelSync
           externalUserType: normalized.externalUserType,
         });
         updated += 1;
+        onProgress?.({
+          stage: "syncing",
+          message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
+          total: rawUsers.length,
+          processed: index + 1,
+          created,
+          updated,
+          skipped,
+          failed: 0,
+        });
         continue;
       }
 
@@ -315,6 +383,16 @@ export async function performUserPersonnelSync(db: Knex, rawUsers: PersonnelSync
         externalUserType: normalized.externalUserType,
       });
       created += 1;
+      onProgress?.({
+        stage: "syncing",
+        message: `正在同步用户 ${index + 1}/${rawUsers.length}...`,
+        total: rawUsers.length,
+        processed: index + 1,
+        created,
+        updated,
+        skipped,
+        failed: 0,
+      });
     }
   });
 
@@ -328,13 +406,51 @@ export async function performUserPersonnelSync(db: Knex, rawUsers: PersonnelSync
   };
 }
 
-export async function runUserPersonnelSync(db: Knex): Promise<UserSyncResult> {
-  const rawUsers = await fetchPersonnelUsers();
-  const data = await performUserPersonnelSync(db, rawUsers);
+export async function runUserPersonnelSync(db: Knex, onProgress?: UserSyncProgressReporter): Promise<UserSyncResult> {
+  onProgress?.(createProgressSnapshot());
+  const rawUsers = await fetchPersonnelUsers(onProgress);
+  const data = await performUserPersonnelSync(db, rawUsers, onProgress);
+  onProgress?.({
+    stage: "completed",
+    message: "用户同步完成。",
+    total: data.total,
+    processed: data.total,
+    created: data.created,
+    updated: data.updated,
+    skipped: data.skipped,
+    failed: data.failed,
+    summary: data.summary,
+  });
   log.info(
     `用户同步完成: provider=${PERSONNEL_SYNC_PROVIDER} total=${data.total} created=${data.created} updated=${data.updated} skipped=${data.skipped}`
   );
   return { ok: true, data };
+}
+
+export function explainUserSyncError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+
+  if (rawMessage.includes("idx_users_keycloak_sub")) {
+    return "用户同步失败：同步用户登录标识发生冲突。系统已改为为同步用户生成独立登录标识，请重新执行同步；若仍失败，请检查历史同步数据。";
+  }
+
+  if (rawMessage.includes("idx_users_external_user_id")) {
+    return "用户同步失败：外部接口返回了重复的 userId，请先检查外部人员数据是否存在重复记录。";
+  }
+
+  if (rawMessage.includes("PERSONNEL_SYNC_TOKEN") || rawMessage.includes("access_token") || rawMessage.includes("token")) {
+    return `用户同步失败：人员同步认证异常。${rawMessage}`;
+  }
+
+  if (rawMessage.includes("HTTP 401") || rawMessage.includes("HTTP 403")) {
+    return "用户同步失败：外部人员接口认证失败，请检查同步账号、密码和 Basic 认证配置。";
+  }
+
+  if (rawMessage.includes("HTTP 404")) {
+    return "用户同步失败：未找到外部人员同步接口或 token 接口，请检查环境变量中的接口地址。";
+  }
+
+  return `用户同步失败：${rawMessage}`;
 }
 
 export function hasPersonnelSyncConfig(): boolean {

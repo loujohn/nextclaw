@@ -37,8 +37,25 @@ export type UpdateSyncedUserInput = {
   externalUserType: string;
 };
 
+export type ListUsersPageInput = {
+  page: number;
+  pageSize: number;
+  search?: string;
+};
+
+export type ListUsersPageResult = {
+  data: UserView[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 function buildSyncedKeycloakSub(externalUserId: string): string {
   return `personnel-sync:${externalUserId}`;
+}
+
+function normalizeSearchKeyword(search?: string): string {
+  return search?.trim().toLowerCase() ?? "";
 }
 
 function toUserView(record: UserRecord): UserView {
@@ -86,6 +103,30 @@ function toUserContext(record: UserRecord): UserContext {
 
 export class UserRepository {
   constructor(private db: Knex) {}
+
+  private applyListSearch(query: Knex.QueryBuilder, search?: string) {
+    const keyword = normalizeSearchKeyword(search);
+    if (!keyword) return;
+
+    const pattern = `%${keyword}%`;
+    const columns = [
+      "display_name",
+      "username",
+      "email",
+      "external_user_id",
+      "external_user_name",
+      "external_name",
+      "external_post_name",
+      "external_role_name",
+      "external_dingtalk_id",
+    ];
+
+    query.where((builder) => {
+      for (const column of columns) {
+        builder.orWhereRaw("LOWER(COALESCE(??, '')) LIKE ?", [column, pattern]);
+      }
+    });
+  }
 
   async upsertFromToken(input: UpsertUserFromTokenInput): Promise<UserContext> {
     const now = dbNow();
@@ -186,6 +227,39 @@ export class UserRepository {
       .orderBy("created_at", "desc")
       .select<UserRecord[]>("*");
     return records.map(toUserView);
+  }
+
+  async listPage(input: ListUsersPageInput): Promise<ListUsersPageResult> {
+    const page = Math.max(1, input.page);
+    const pageSize = Math.max(1, Math.min(input.pageSize, 100));
+    const baseQuery = this.db(PLATFORM_TABLES.users);
+    this.applyListSearch(baseQuery, input.search);
+
+    const totalRow = await baseQuery.clone().count<{ count: number | string }>({ count: "id" }).first();
+    const total = Number(totalRow?.count ?? 0);
+    const records = await baseQuery
+      .clone()
+      .orderBy("created_at", "desc")
+      .offset((page - 1) * pageSize)
+      .limit(pageSize)
+      .select<UserRecord[]>("*");
+
+    return {
+      data: records.map(toUserView),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async listBoundHumanEmployeeIds(): Promise<string[]> {
+    const records = await this.db(PLATFORM_TABLES.users)
+      .whereNotNull("human_employee_id")
+      .select<Array<Pick<UserRecord, "human_employee_id">>>("human_employee_id");
+
+    return records
+      .map((record) => record.human_employee_id)
+      .filter((humanEmployeeId): humanEmployeeId is string => Boolean(humanEmployeeId));
   }
 
   async updateUser(id: string, input: UpdateUserInput): Promise<UserView | null> {
