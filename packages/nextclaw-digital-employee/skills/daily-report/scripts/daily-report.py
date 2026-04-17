@@ -24,12 +24,13 @@ if sys.platform == "win32":
 
 import os
 import sys
+import re
 import json
 import argparse
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginner:10003"
 LOGIN_ENDPOINT = "/admin/oauth2/token"
@@ -259,6 +260,291 @@ def submit_report(base_url, token, report_data):
     return fetch_json_post(url, data, token)
 
 
+def get_week_range(date_str):
+    """获取某日期所在周的起止时间"""
+    date = datetime.strptime(date_str, "%Y-%m-%d")
+    monday = date - timedelta(days=date.weekday())
+    sunday = monday + timedelta(days=6)
+    return monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
+
+
+def append_to_file(filepath, content):
+    """追加内容到文件（不存在则创建）"""
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "a", encoding="utf-8") as f:
+        f.write(content)
+
+
+def generate_daily_report_md_files(report_data, username):
+    """生成两个维度的日报汇总MD文件"""
+    report_date = report_data.get("date", "")
+    project_code = report_data.get("projectCode", "")
+    project_name = report_data.get(
+        "chanceProjectName", report_data.get("projectName", "")
+    )
+    project_manager = report_data.get("projectManager", "")
+    create_by = report_data.get("createBy", username)
+    create_name = report_data.get("createName", username)
+
+    summarize = report_data.get("daySummarizeNow", "无")
+    plan = report_data.get("dayPlanNext", "无")
+    summarize = (
+        summarize.replace("今日：", "").replace("今日:", "").replace("今日", "").strip()
+    )
+    plan = plan.replace("明日：", "").replace("明日:", "").replace("明日", "").strip()
+
+    week_start, week_end = get_week_range(report_date)
+
+    base_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
+    week_dir = os.path.join(base_dir, f"{week_start}_{week_end}")
+    os.makedirs(week_dir, exist_ok=True)
+
+    # 保存原始数据JSON
+    raw_json_file = os.path.join(week_dir, "raw_dailies.json")
+    raw_data = []
+    if os.path.exists(raw_json_file):
+        with open(raw_json_file, "r", encoding="utf-8") as f:
+            raw_data = json.load(f)
+
+    # 检查是否已存在相同记录（同一日期、同一项目、同一填报人）
+    exists = any(
+        d.get("date") == report_date
+        and d.get("projectCode") == project_code
+        and d.get("createBy") == create_by
+        for d in raw_data
+    )
+    if not exists:
+        raw_data.append(
+            {
+                "date": report_date,
+                "projectCode": project_code,
+                "projectName": project_name,
+                "projectManager": project_manager,
+                "createBy": create_by,
+                "createName": create_name,
+                "summarize": summarize or "无",
+                "plan": plan or "无",
+                "submittedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        with open(raw_json_file, "w", encoding="utf-8") as f:
+            json.dump(raw_data, f, ensure_ascii=False, indent=2)
+
+    projects_file = os.path.join(week_dir, "projects.md")
+    users_file = os.path.join(week_dir, "users.md")
+
+    # 项目维度：项目 -> 日期 -> 人员 -> 日报
+    projects_data = _load_md_structure(projects_file)
+    if project_code not in projects_data:
+        projects_data[project_code] = {
+            "name": project_name,
+            "manager": project_manager,
+            "dates": {},
+        }
+    if report_date not in projects_data[project_code]["dates"]:
+        projects_data[project_code]["dates"][report_date] = {}
+    projects_data[project_code]["dates"][report_date][create_name] = {
+        "summarize": summarize or "无",
+        "plan": plan or "无",
+    }
+    _save_projects_md(projects_file, projects_data, week_start, week_end)
+
+    # 人员维度：人员 -> 日期 -> 项目 -> 日报
+    users_data = _load_users_md_structure(users_file)
+    if create_name not in users_data:
+        users_data[create_name] = {"dates": {}}
+    if report_date not in users_data[create_name]["dates"]:
+        users_data[create_name]["dates"][report_date] = {}
+    users_data[create_name]["dates"][report_date][project_name] = {
+        "projectName": project_name,
+        "manager": project_manager,
+        "summarize": summarize or "无",
+        "plan": plan or "无",
+    }
+    _save_users_md(users_file, users_data, week_start, week_end)
+
+    return week_dir
+
+
+def _load_md_structure(filepath):
+    """加载项目维度的结构化数据"""
+    data = {}
+    if not os.path.exists(filepath):
+        return data
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.split("\n")
+    current_project = None
+    current_date = None
+
+    for line in lines:
+        if line.startswith("## "):
+            match = re.match(r"## (.+?)（(.+?)）", line)
+            if match:
+                project_name = match.group(1)
+                project_code = match.group(2)
+                current_project = project_code
+                if project_code not in data:
+                    data[project_code] = {
+                        "name": project_name,
+                        "manager": "",
+                        "dates": {},
+                    }
+        elif line.startswith("**经理**: "):
+            if current_project:
+                data[current_project]["manager"] = line.replace("**经理**: ", "")
+        elif line.startswith("### "):
+            current_date = line.replace("### ", "").strip()
+            if current_project and current_date:
+                if current_date not in data[current_project]["dates"]:
+                    data[current_project]["dates"][current_date] = {}
+        elif line.startswith("- **"):
+            parts = line.split("**")
+            if len(parts) >= 3 and current_project and current_date:
+                user_name = parts[1]
+                rest = parts[2].replace("**：", "").replace("：", "").strip()
+                if "。" in rest:
+                    summarize, plan_part = rest.split("。", 1)
+                    plan = plan_part.replace("明日：", "").strip()
+                else:
+                    summarize = rest
+                    plan = ""
+                data[current_project]["dates"][current_date][user_name] = {
+                    "summarize": summarize.replace("今日：", "").strip(),
+                    "plan": plan,
+                }
+    return data
+
+
+def _load_users_md_structure(filepath):
+    """加载人员维度的结构化数据"""
+    data = {}
+    if not os.path.exists(filepath):
+        return data
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.split("\n")
+    current_user = None
+    current_date = None
+
+    for line in lines:
+        if line.startswith("## "):
+            current_user = line.replace("## ", "").strip()
+            if current_user not in data:
+                data[current_user] = {"dates": {}}
+        elif line.startswith("### "):
+            current_date = line.replace("### ", "").strip()
+            if current_user and current_date:
+                if current_date not in data[current_user]["dates"]:
+                    data[current_user]["dates"][current_date] = {}
+        elif line.startswith("- **"):
+            parts = line.split("**")
+            if len(parts) >= 3 and current_user and current_date:
+                project_name = parts[1]
+                rest = parts[2].replace("**：", "").replace("：", "").strip()
+                if "。" in rest:
+                    summarize, plan_part = rest.split("。", 1)
+                    plan = plan_part.replace("明日：", "").strip()
+                else:
+                    summarize = rest
+                    plan = ""
+                data[current_user]["dates"][current_date][project_name] = {
+                    "projectName": project_name,
+                    "summarize": summarize.replace("今日：", "").strip(),
+                    "plan": plan,
+                }
+    return data
+
+
+def _save_projects_md(filepath, data, week_start, week_end):
+    """保存项目维度的MD文件"""
+    lines = []
+    lines.append("# 本周项目日报汇总\n")
+    lines.append(f"> 统计周期：{week_start} ~ {week_end}\n")
+
+    for project_code in sorted(data.keys()):
+        project = data[project_code]
+        lines.append(f"\n## {project['name']}（{project_code}）\n")
+        if project["manager"]:
+            lines.append(f"**经理**: {project['manager']}\n")
+
+        for date in sorted(project["dates"].keys()):
+            lines.append(f"\n### {date}\n")
+            for user_name, user_data in sorted(project["dates"][date].items()):
+                summarize = user_data.get("summarize", "无")
+                plan = user_data.get("plan", "无")
+                summarize = (
+                    summarize.replace("今日：", "")
+                    .replace("今日:", "")
+                    .replace("今日", "")
+                    .strip()
+                )
+                plan = (
+                    plan.replace("明日：", "")
+                    .replace("明日:", "")
+                    .replace("明日", "")
+                    .strip()
+                )
+                if summarize == "无":
+                    continue
+                if plan and plan != "无":
+                    lines.append(
+                        f"- **{user_name}**：今日：{summarize}。明日：{plan}\n"
+                    )
+                else:
+                    lines.append(f"- **{user_name}**：今日：{summarize}\n")
+        lines.append("\n---\n")
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+def _save_users_md(filepath, data, week_start, week_end):
+    """保存人员维度的MD文件"""
+    lines = []
+    lines.append("# 本周个人日报汇总\n")
+    lines.append(f"> 统计周期：{week_start} ~ {week_end}\n")
+
+    for user_name in sorted(data.keys()):
+        user = data[user_name]
+        lines.append(f"\n## {user_name}\n")
+
+        for date in sorted(user["dates"].keys()):
+            lines.append(f"\n### {date}\n")
+            for project_name, project_data in sorted(user["dates"][date].items()):
+                summarize = project_data.get("summarize", "无")
+                plan = project_data.get("plan", "无")
+                project_name = project_data.get("projectName", project_name)
+                summarize = (
+                    summarize.replace("今日：", "")
+                    .replace("今日:", "")
+                    .replace("今日", "")
+                    .strip()
+                )
+                plan = (
+                    plan.replace("明日：", "")
+                    .replace("明日:", "")
+                    .replace("明日", "")
+                    .strip()
+                )
+                if summarize == "无":
+                    continue
+                if plan and plan != "无":
+                    lines.append(
+                        f"- **{project_name}**：今日：{summarize}。明日：{plan}\n"
+                    )
+                else:
+                    lines.append(f"- **{project_name}**：今日：{summarize}\n")
+        lines.append("\n---\n")
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
 def format_missing_fields_message(missing):
     """格式化缺失字段提示"""
     lines = ["请补充以下信息："]
@@ -347,7 +633,17 @@ def main():
         return
 
     temp_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
-    os.makedirs(temp_dir, exist_ok=True)
+
+    def get_week_dir(date_str=None):
+        if date_str:
+            date = datetime.strptime(date_str, "%Y-%m-%d")
+        else:
+            date = datetime.now()
+        monday = date - timedelta(days=date.weekday())
+        sunday = monday + timedelta(days=6)
+        return os.path.join(
+            temp_dir, f"{monday.strftime('%Y-%m-%d')}_{sunday.strftime('%Y-%m-%d')}"
+        )
 
     query_file_name = (
         f"projects_query_{username}.json" if username else "projects_query.json"
@@ -363,7 +659,9 @@ def main():
             if result.get("code") == 0 and result.get("data"):
                 records = result["data"].get("records", [])
                 total = result["data"].get("total", 0)
-                query_file = os.path.join(temp_dir, query_file_name)
+                week_dir = get_week_dir()
+                os.makedirs(week_dir, exist_ok=True)
+                query_file = os.path.join(week_dir, query_file_name)
                 with open(query_file, "w", encoding="utf-8") as f:
                     json.dump(
                         {"records": records, "total": total}, f, ensure_ascii=False
@@ -382,7 +680,8 @@ def main():
         return
 
     if args.select:
-        query_file = os.path.join(temp_dir, query_file_name)
+        week_dir = get_week_dir()
+        query_file = os.path.join(week_dir, query_file_name)
         if not os.path.exists(query_file):
             print(
                 "错误: 没有可选择的项目，请先使用 --query-projects 查询",
@@ -524,12 +823,12 @@ def main():
     print("=" * 50, flush=True)
     print(flush=True)
 
-    temp_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
-    os.makedirs(temp_dir, exist_ok=True)
+    week_dir = get_week_dir(prepared_data["date"])
+    os.makedirs(week_dir, exist_ok=True)
 
     now = datetime.now().strftime("%Y%m%d%H%M%S")
     file_name = f"param_{prepared_data['projectCode']}_{username}_{now}.json"
-    param_file = os.path.join(temp_dir, file_name)
+    param_file = os.path.join(week_dir, file_name)
 
     with open(param_file, "w", encoding="utf-8") as f:
         json.dump(prepared_data, f, ensure_ascii=False, indent=2)
@@ -552,9 +851,20 @@ def main():
         result = submit_report(base_url, token, prepared_data)
 
         if result.get("code") == 0:
+            try:
+                result_data = result.get("data", {})
+                if isinstance(result_data, str):
+                    result_data = {}
+                prepared_data.update(result_data)
+            except:
+                pass
+
+            md_dir = generate_daily_report_md_files(prepared_data, username)
+
             print("", flush=True)
             print("==================================================", flush=True)
             print("【成功】日报提交成功", flush=True)
+            print(f"【存档】MD文件已生成: {md_dir}", flush=True)
             print("==================================================", flush=True)
         else:
             error_msg = result.get("message", "提交失败")

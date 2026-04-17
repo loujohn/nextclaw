@@ -1,7 +1,7 @@
 ---
 name: daily-report
 name_zh: 项目日报生成
-version: 1.0.0
+version: 1.0.1
 description: "封装并提交项目日报数据至内部系统。自动完成登录鉴权、参数校验与接口调用。当需要生成项目日报、提交工作汇报或补充项目进度信息时使用。"
 metadata:
   nextclaw:
