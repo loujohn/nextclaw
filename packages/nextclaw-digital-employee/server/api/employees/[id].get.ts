@@ -1,4 +1,5 @@
 import { createError, getRouterParam } from "h3";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getPlatformContext } from "../../runtime/platform-context";
 import { buildAutomationSummary } from "../../../shared/ui-models";
@@ -25,13 +26,15 @@ export default defineEventHandler(async (event) => {
   // 附加版本对比信息 & 全局技能是否已被删除
   const globalSkillsDir = join(ctx.workspaceDir, "skills");
   const skillsWithVersion = skills.map((skill) => {
-    const latestVersion = readSkillVersion(join(globalSkillsDir, skill.skillName));
+    const skillDir = join(globalSkillsDir, skill.skillName);
+    const globalExists = existsSync(skillDir);
+    const latestVersion = globalExists ? readSkillVersion(skillDir) : null;
     return {
       ...skill,
       latestVersion,
       hasUpdate: latestVersion != null && latestVersion !== skill.version,
       /** 全局技能已被删除（文件目录不存在），员工侧副本仍保留 */
-      installMissing: latestVersion === null
+      installMissing: !globalExists
     };
   });
 
