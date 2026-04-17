@@ -24,6 +24,7 @@ export type CreateSyncedUserInput = {
   externalDingTalkId: string;
   externalPhone: string;
   externalUserType: string;
+  humanEmployeeId: string | null;
 };
 
 export type UpdateSyncedUserInput = {
@@ -36,6 +37,7 @@ export type UpdateSyncedUserInput = {
   externalDingTalkId: string;
   externalPhone: string;
   externalUserType: string;
+  humanEmployeeId?: string | null;
 };
 
 export type BatchUpdateSyncedUserInput = {
@@ -137,7 +139,7 @@ export class UserRepository {
       external_phone: input.externalPhone,
       external_user_type: input.externalUserType,
       department_id: null,
-      human_employee_id: null,
+      human_employee_id: input.humanEmployeeId,
       preferences: "{}",
       auth_provider: "keycloak",
       password_hash: null,
@@ -151,9 +153,9 @@ export class UserRepository {
   private buildCaseExpression<T extends { id: string }>(
     items: T[],
     columnName: string,
-    resolveValue: (item: T) => string
+    resolveValue: (item: T) => string | null
   ) {
-    const bindings: string[] = ["id"];
+    const bindings: Array<string | null> = ["id"];
     const clauses = items.map((item) => {
       bindings.push(item.id, resolveValue(item));
       return "WHEN ? THEN ?";
@@ -418,6 +420,20 @@ export class UserRepository {
       .filter((humanEmployeeId): humanEmployeeId is string => Boolean(humanEmployeeId));
   }
 
+  async listBoundHumanEmployeeBindings(): Promise<Array<{ userId: string; humanEmployeeId: string }>> {
+    const records = await this.db(PLATFORM_TABLES.users)
+      .whereNotNull("human_employee_id")
+      .select<Array<Pick<UserRecord, "id" | "human_employee_id">>>("id", "human_employee_id");
+
+    return records.flatMap((record) => {
+      if (!record.human_employee_id) {
+        return [];
+      }
+
+      return [{ userId: record.id, humanEmployeeId: record.human_employee_id }];
+    });
+  }
+
   async updateUser(id: string, input: UpdateUserInput): Promise<UserView | null> {
     const now = dbNow();
     const updates: Partial<UserRecord> = { updated_at: now };
@@ -523,24 +539,30 @@ export class UserRepository {
 
   async updateSyncedUser(id: string, input: UpdateSyncedUserInput): Promise<UserView | null> {
     const now = dbNow();
+    const updates: Partial<UserRecord> = {
+      keycloak_sub: buildSyncedKeycloakSub(input.externalUserId),
+      display_name: input.displayName,
+      user_source: "sync",
+      sync_provider: "personnel-api",
+      auth_provider: "keycloak",
+      external_user_name: input.externalUserName,
+      external_name: input.externalName,
+      external_post_name: input.externalPostName,
+      external_role_name: input.externalRoleName,
+      external_dingtalk_id: input.externalDingTalkId,
+      external_phone: input.externalPhone,
+      external_user_type: input.externalUserType,
+      last_synced_at: now,
+      updated_at: now,
+    };
+
+    if (input.humanEmployeeId !== undefined) {
+      updates.human_employee_id = input.humanEmployeeId;
+    }
+
     const count = await this.db(PLATFORM_TABLES.users)
       .where({ id })
-      .update({
-        keycloak_sub: buildSyncedKeycloakSub(input.externalUserId),
-        display_name: input.displayName,
-        user_source: "sync",
-        sync_provider: "personnel-api",
-        auth_provider: "keycloak",
-        external_user_name: input.externalUserName,
-        external_name: input.externalName,
-        external_post_name: input.externalPostName,
-        external_role_name: input.externalRoleName,
-        external_dingtalk_id: input.externalDingTalkId,
-        external_phone: input.externalPhone,
-        external_user_type: input.externalUserType,
-        last_synced_at: now,
-        updated_at: now,
-      });
+      .update(updates);
 
     if (count === 0) {
       return null;
@@ -556,25 +578,33 @@ export class UserRepository {
 
     const now = dbNow();
     const ids = inputs.map((input) => input.id);
+    const updates: Record<string, unknown> = {
+      keycloak_sub: this.buildCaseExpression(inputs, "keycloak_sub", (input) => buildSyncedKeycloakSub(input.externalUserId)),
+      display_name: this.buildCaseExpression(inputs, "display_name", (input) => input.displayName),
+      user_source: "sync",
+      sync_provider: "personnel-api",
+      auth_provider: "keycloak",
+      external_user_name: this.buildCaseExpression(inputs, "external_user_name", (input) => input.externalUserName),
+      external_name: this.buildCaseExpression(inputs, "external_name", (input) => input.externalName),
+      external_post_name: this.buildCaseExpression(inputs, "external_post_name", (input) => input.externalPostName),
+      external_role_name: this.buildCaseExpression(inputs, "external_role_name", (input) => input.externalRoleName),
+      external_dingtalk_id: this.buildCaseExpression(inputs, "external_dingtalk_id", (input) => input.externalDingTalkId),
+      external_phone: this.buildCaseExpression(inputs, "external_phone", (input) => input.externalPhone),
+      external_user_type: this.buildCaseExpression(inputs, "external_user_type", (input) => input.externalUserType),
+      last_synced_at: now,
+      updated_at: now,
+    };
+
+    const boundInputs = inputs.filter(
+      (input): input is BatchUpdateSyncedUserInput & { humanEmployeeId: string | null } => input.humanEmployeeId !== undefined
+    );
+    if (boundInputs.length > 0) {
+      updates.human_employee_id = this.buildCaseExpression(boundInputs, "human_employee_id", (input) => input.humanEmployeeId);
+    }
 
     await this.db(PLATFORM_TABLES.users)
       .whereIn("id", ids)
-      .update({
-        keycloak_sub: this.buildCaseExpression(inputs, "keycloak_sub", (input) => buildSyncedKeycloakSub(input.externalUserId)),
-        display_name: this.buildCaseExpression(inputs, "display_name", (input) => input.displayName),
-        user_source: "sync",
-        sync_provider: "personnel-api",
-        auth_provider: "keycloak",
-        external_user_name: this.buildCaseExpression(inputs, "external_user_name", (input) => input.externalUserName),
-        external_name: this.buildCaseExpression(inputs, "external_name", (input) => input.externalName),
-        external_post_name: this.buildCaseExpression(inputs, "external_post_name", (input) => input.externalPostName),
-        external_role_name: this.buildCaseExpression(inputs, "external_role_name", (input) => input.externalRoleName),
-        external_dingtalk_id: this.buildCaseExpression(inputs, "external_dingtalk_id", (input) => input.externalDingTalkId),
-        external_phone: this.buildCaseExpression(inputs, "external_phone", (input) => input.externalPhone),
-        external_user_type: this.buildCaseExpression(inputs, "external_user_type", (input) => input.externalUserType),
-        last_synced_at: now,
-        updated_at: now,
-      });
+      .update(updates);
   }
 
   async updateLastLogin(id: string): Promise<void> {

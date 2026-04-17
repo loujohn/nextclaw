@@ -23,8 +23,10 @@ export type UserSyncJobView = {
   updated: number;
   skipped: number;
   failed: number;
+  autoBound: number;
   summary: string;
   createdUsers: string[];
+  unboundUsers: Array<{ name: string; dingTalkId: string }>;
   startedAt: string;
   finishedAt: string | null;
 };
@@ -46,8 +48,10 @@ function createInitialJob(jobId: string): UserSyncJobState {
     updated: 0,
     skipped: 0,
     failed: 0,
+    autoBound: 0,
     summary: "",
     createdUsers: [],
+    unboundUsers: [],
     startedAt: dbNow(),
     finishedAt: null,
   };
@@ -119,8 +123,10 @@ class UserSyncJobManager {
     job.updated = summary.updated;
     job.skipped = summary.skipped;
     job.failed = summary.failed;
+    job.autoBound = summary.autoBound;
     job.summary = summary.summary;
     job.createdUsers = summary.createdUsers;
+    job.unboundUsers = summary.unboundUsers;
     job.finishedAt = dbNow();
     job.alreadyRunning = false;
     if (this.activeJobId === jobId) {

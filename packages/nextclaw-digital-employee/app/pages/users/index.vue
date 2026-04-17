@@ -44,8 +44,10 @@ type UserSyncJobView = {
   updated: number;
   skipped: number;
   failed: number;
+  autoBound: number;
   summary: string;
   createdUsers: string[];
+  unboundUsers: Array<{ name: string; dingTalkId: string }>;
   startedAt: string;
   finishedAt: string | null;
 };
@@ -63,8 +65,10 @@ function createEmptySyncJob(): UserSyncJobView {
     updated: 0,
     skipped: 0,
     failed: 0,
+    autoBound: 0,
     summary: "",
     createdUsers: [],
+    unboundUsers: [],
     startedAt: "",
     finishedAt: null,
   };
@@ -137,7 +141,17 @@ const syncConfirmError = ref("");
 const syncStarting = ref(false);
 const syncProgressOpen = ref(false);
 const syncResultOpen = ref(false);
-const syncResultSummary = ref({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0, summary: "", createdUsers: [] as string[] });
+const syncResultSummary = ref({
+  total: 0,
+  created: 0,
+  updated: 0,
+  skipped: 0,
+  failed: 0,
+  autoBound: 0,
+  summary: "",
+  createdUsers: [] as string[],
+  unboundUsers: [] as Array<{ name: string; dingTalkId: string }>,
+});
 const syncJob = ref<UserSyncJobView>(createEmptySyncJob());
 const syncJobId = ref("");
 let syncPollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -197,8 +211,10 @@ async function finalizeSyncJob(job: UserSyncJobView) {
       updated: job.updated,
       skipped: job.skipped,
       failed: job.failed,
+      autoBound: job.autoBound,
       summary: job.summary || job.message,
       createdUsers: job.createdUsers ?? [],
+      unboundUsers: job.unboundUsers ?? [],
     };
     syncResultOpen.value = true;
     await loadUsers();
