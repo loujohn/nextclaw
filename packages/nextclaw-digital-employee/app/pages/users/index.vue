@@ -2,7 +2,7 @@
 import { Search, Link2, Unlink, Plus, Pencil, KeyRound, Trash2, RefreshCw } from "lucide-vue-next";
 import type { UserListPayload, UserView, UserRole, UpdateUserInput } from "../../../shared/auth-types";
 
-const { getAccessToken, user: currentUser } = useAuth();
+const { getAccessToken, user: currentUser, loading: authLoading } = useAuth();
 
 const toast = useToast();
 const USERS_PAGE_SIZE = 10;
@@ -26,6 +26,8 @@ const search = ref("");
 const usersLoading = ref(false);
 const totalUsers = ref(0);
 const currentPage = ref(1);
+const permissionNoticeShown = ref(false);
+const pageDataInitialized = ref(false);
 const syncProfileDialogOpen = ref(false);
 const syncProfileTarget = ref<UserView | null>(null);
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -67,6 +69,7 @@ function createEmptySyncJob(): UserSyncJobView {
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalUsers.value / USERS_PAGE_SIZE)));
+const hasUserManagementAccess = computed(() => currentUser.value?.role === "admin");
 
 function authProviderLabel(user: UserView): string {
   return user.authProvider === "local" ? "本地登录" : "Keycloak";
@@ -86,6 +89,12 @@ function authHeaders(): Record<string, string> {
 }
 
 async function loadUsers() {
+  if (!hasUserManagementAccess.value) {
+    users.value = [];
+    totalUsers.value = 0;
+    usersLoading.value = false;
+    return;
+  }
   usersLoading.value = true;
   try {
     const res = await execute(() =>
@@ -109,6 +118,9 @@ async function loadUsers() {
 }
 
 async function loadUsersPage(page: number) {
+  if (!hasUserManagementAccess.value) {
+    return;
+  }
   currentPage.value = Math.max(1, page);
   await loadUsers();
 }
@@ -116,10 +128,6 @@ async function loadUsersPage(page: number) {
 function openSyncProfileDialog(user: UserView) {
   syncProfileTarget.value = user;
   syncProfileDialogOpen.value = true;
-}
-
-function formatDateTime(value: string | null | undefined): string {
-  return value ? new Date(value).toLocaleString() : "-";
 }
 
 const syncConfirmOpen = ref(false);
@@ -482,16 +490,47 @@ async function deleteUser(u: UserView) {
 }
 
 watch(search, () => {
+  if (!hasUserManagementAccess.value) {
+    return;
+  }
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(() => {
     void loadUsersPage(1);
   }, 250);
 });
 
-onMounted(() => {
-  void loadUsers();
-  void loadHumanEmployees();
-});
+watch(
+  [authLoading, hasUserManagementAccess],
+  ([loading, allowed]) => {
+    if (loading) {
+      return;
+    }
+
+    if (!allowed) {
+      users.value = [];
+      totalUsers.value = 0;
+      pageDataInitialized.value = false;
+      stopSyncPolling();
+      syncJobId.value = "";
+      usersLoading.value = false;
+      if (!permissionNoticeShown.value) {
+        toast.showToast("info", "当前账号暂无用户管理权限，请联系管理员开通。");
+        permissionNoticeShown.value = true;
+      }
+      return;
+    }
+
+    if (pageDataInitialized.value) {
+      return;
+    }
+
+    permissionNoticeShown.value = false;
+    pageDataInitialized.value = true;
+    void loadUsers();
+    void loadHumanEmployees();
+  },
+  { immediate: true }
+);
 
 onUnmounted(() => {
   stopSyncPolling();
@@ -523,16 +562,28 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="relative">
+    <div v-if="authLoading" class="rounded-lg border border-border bg-background px-4 py-10 text-center text-sm text-muted-foreground">
+      正在确认当前账号权限...
+    </div>
+
+    <div
+      v-else-if="!hasUserManagementAccess"
+      class="rounded-lg border border-amber-200 bg-amber-50 px-5 py-6 text-sm text-amber-800"
+    >
+      当前账号暂无用户管理权限。如需查看或维护平台用户，请联系管理员为你开通权限。
+    </div>
+
+    <template v-else>
+      <div class="relative">
       <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input
         v-model="search"
         class="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-4 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
         placeholder="搜索姓名、用户名、邮箱、外部 ID、岗位..."
       />
-    </div>
+      </div>
 
-    <div class="overflow-x-auto rounded-lg border border-border">
+      <div class="overflow-x-auto rounded-lg border border-border">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/50">
@@ -683,7 +734,8 @@ onUnmounted(() => {
         :loading="usersLoading"
         @change="loadUsersPage"
       />
-    </div>
+      </div>
+    </template>
 
     <Teleport to="body">
       <SharedConfirmDialog
