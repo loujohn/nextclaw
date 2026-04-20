@@ -2,7 +2,7 @@ import type { InboundMessage, OutboundMessage } from "../bus/events.js";
 import type { MessageBus } from "../bus/queue.js";
 import type { ProviderManager } from "../providers/provider_manager.js";
 import type { LLMResponse } from "../providers/base.js";
-import { ContextBuilder } from "./context.js";
+import { ContextBuilder, type RuntimeMode } from "./context.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { ReadFileTool, WriteFileTool, EditFileTool, ListDirTool } from "./tools/filesystem.js";
 import { ExecTool } from "./tools/shell.js";
@@ -69,11 +69,19 @@ export class AgentLoop {
       config?: Config;
       extensionRegistry?: ExtensionRegistry;
       resolveMessageToolHints?: MessageToolHintsResolver;
+      runtimeMode?: RuntimeMode;
+      excludeSkills?: ReadonlySet<string>;
       agentId?: string;
       envOverlay?: Record<string, string>;
     }
   ) {
-    this.context = new ContextBuilder(options.workspace, options.contextConfig, options.additionalSkillsDirs);
+    this.context = new ContextBuilder({
+      workspace: options.workspace,
+      contextConfig: options.contextConfig,
+      additionalSkillsDirs: options.additionalSkillsDirs,
+      runtimeMode: options.runtimeMode,
+      excludeSkills: options.excludeSkills
+    });
     this.sessions = options.sessionManager ?? new SessionManager(options.workspace);
     this.tools = new ToolRegistry();
     this.subagents = new SubagentManager({
@@ -84,7 +92,8 @@ export class AgentLoop {
       contextTokens: options.contextTokens,
       searchConfig: options.searchConfig,
       execConfig: options.execConfig ?? { timeout: 60 },
-      restrictToWorkspace: options.restrictToWorkspace ?? false
+      restrictToWorkspace: options.restrictToWorkspace ?? false,
+      envOverlay: options.envOverlay
     });
     this.agentId = normalizeAgentId(options.agentId);
 

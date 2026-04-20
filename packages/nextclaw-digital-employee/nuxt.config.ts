@@ -6,6 +6,8 @@ export default defineNuxtConfig({
     keycloakUrl: process.env.KEYCLOAK_URL ?? "",
     keycloakRealm: process.env.KEYCLOAK_REALM ?? "",
     jwtSecret: process.env.JWT_SECRET ?? "de-platform-default-secret-change-me",
+    localAccessTokenTtl: process.env.LOCAL_ACCESS_TOKEN_TTL ?? "1h",
+    localRefreshTokenTtl: process.env.LOCAL_REFRESH_TOKEN_TTL ?? "14d",
     public: {
       keycloakUrl: process.env.KEYCLOAK_URL ?? "",
       keycloakRealm: process.env.KEYCLOAK_REALM ?? "",
@@ -45,6 +47,18 @@ export default defineNuxtConfig({
       {
         baseName: "skills",
         dir: "./skills"
+      },
+      // NOTE: `baseName: "usage"` intentionally names the *purpose* of this
+      // asset namespace (platform usage guide), not the on-disk directory.
+      // The directory currently contains a single file (PLATFORM_USAGE.md),
+      // but any future asset added under `./server/assets/` would land in the
+      // same `assets:usage` storage scope. If you introduce a second asset
+      // type, create a dedicated subdirectory + baseName pair (e.g.
+      // `{ baseName: "backup", dir: "./server/assets/backup" }`) rather than
+      // cross-loading through this namespace, to keep storage scopes tight.
+      {
+        baseName: "usage",
+        dir: "./server/assets"
       }
     ]
   },

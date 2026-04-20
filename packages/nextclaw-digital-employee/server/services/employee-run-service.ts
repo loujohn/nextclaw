@@ -24,8 +24,6 @@ import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
 import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
 import { EmployeeUploadFileService } from "./employee-upload-file-service";
-import type { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
-import { buildChannelNotificationHint } from "../utils/channel-notification-hint";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -56,6 +54,7 @@ type ActiveChatRun = {
 type ChatSessionResolveOptions = {
   createIfMissing?: boolean;
   title?: string;
+  actorUserId?: string;
 };
 
 type StoredRunMetadata = {
@@ -518,8 +517,7 @@ export class EmployeeRunService {
     private readonly gateway: NextclawEngineGateway,
     private readonly skillInstallationRepo?: SkillInstallationRepository,
     private readonly chatSessionRepo?: ChatSessionRepository,
-    private readonly chatMessageRepo?: ChatMessageRepository,
-    private readonly integrationConnectionRepo?: IntegrationConnectionRepository
+    private readonly chatMessageRepo?: ChatMessageRepository
   ) {}
 
   private requireChatPersistence(): {
@@ -592,7 +590,8 @@ export class EmployeeRunService {
         return sessionRepo.create({
           employeeId,
           sessionKey: decodedSessionKey,
-          title: buildAutomatedSessionTitle(options.title)
+          title: buildAutomatedSessionTitle(options.title),
+          createdByUserId: options.actorUserId,
         });
       }
       throw new Error(`Chat session not found: ${sessionKey}`);
@@ -600,7 +599,8 @@ export class EmployeeRunService {
     return sessionRepo.create({
       employeeId,
       sessionKey: buildEmployeeChatSessionKey(employeeId),
-      title: options?.title ? buildAutomatedSessionTitle(options.title) : "新对话"
+      title: options?.title ? buildAutomatedSessionTitle(options.title) : "新对话",
+      createdByUserId: options?.actorUserId,
     });
   }
 
@@ -629,13 +629,14 @@ export class EmployeeRunService {
     return sessionRepo.listByEmployeeId(params);
   }
 
-  async createChatSession(employeeId: string): Promise<ChatSessionView> {
+  async createChatSession(employeeId: string, actorUserId?: string): Promise<ChatSessionView> {
     await this.getEmployeeOrThrow(employeeId);
     const { sessionRepo } = this.requireChatPersistence();
     return sessionRepo.create({
       employeeId,
       sessionKey: buildEmployeeChatSessionKey(employeeId),
-      title: "新对话"
+      title: "新对话",
+      createdByUserId: actorUserId,
     });
   }
 
@@ -687,12 +688,15 @@ export class EmployeeRunService {
     message: string;
     attachments?: ChatAttachmentView[];
     sessionKey?: string;
+    actorUserId?: string;
     signal?: AbortSignal;
     onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
   }): Promise<{ runId: string; sessionKey: string; reply: string }> {
     const { sessionRepo, messageRepo } = this.requireChatPersistence();
     const { employee, workspace, skillNames } = await this.prepareRuntime(params.employeeId);
-    const session = await this.resolveChatSession(employee.id, params.sessionKey);
+    const session = await this.resolveChatSession(employee.id, params.sessionKey, {
+      actorUserId: params.actorUserId,
+    });
     const run = await this.runRepo.create({
       employeeId: employee.id,
       triggerType: "manual",
@@ -737,7 +741,8 @@ export class EmployeeRunService {
       sessionId: session.id,
       messageCountIncrement: 1,
       latestContent: params.message,
-      titleSeed: params.message
+      titleSeed: params.message,
+      updatedByUserId: params.actorUserId,
     });
     const abortController = new AbortController();
     if (params.signal) {
@@ -1057,7 +1062,6 @@ export class EmployeeRunService {
     }
   }
 
-  private static readonly HEADLESS_TRIGGER_TYPES = new Set(["webhook", "scheduled"]);
 
   async runEmployeeTurn(params: {
     employeeId: string;
@@ -1078,11 +1082,7 @@ export class EmployeeRunService {
         })
       : null;
 
-    let message = params.message;
-    if (EmployeeRunService.HEADLESS_TRIGGER_TYPES.has(params.triggerType) && this.integrationConnectionRepo) {
-      const hint = await buildChannelNotificationHint(this.integrationConnectionRepo, employee.code);
-      if (hint) message = message + hint;
-    }
+    const message = params.message;
 
     const run = await this.runRepo.create({
       employeeId: employee.id,

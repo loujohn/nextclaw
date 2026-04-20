@@ -1,5 +1,6 @@
 import { createError, readBody } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
+import { requireAuth } from "../../utils/auth-guards";
 
 type CreateDepartmentBody = {
   name?: string;
@@ -9,6 +10,7 @@ type CreateDepartmentBody = {
 };
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const body = await readBody<CreateDepartmentBody>(event);
   const name = body?.name?.trim() ?? "";
   if (!name) {
@@ -19,7 +21,8 @@ export default defineEventHandler(async (event) => {
     name,
     description: body?.description ?? "",
     parentId: body?.parentId ?? null,
-    sortOrder: typeof body?.sortOrder === "number" ? body.sortOrder : 0
+    sortOrder: typeof body?.sortOrder === "number" ? body.sortOrder : 0,
+    createdByUserId: user.id,
   });
   return { ok: true, data: department };
 });

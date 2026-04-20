@@ -16,6 +16,8 @@ type EmployeeScheduleJobRecord = {
   enabled: number | boolean;
   runtime_job_id: string | null;
   next_run_at: string | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -33,6 +35,8 @@ export type EmployeeScheduleJobView = {
   enabled: boolean;
   runtimeJobId: string | null;
   nextRunAt: string | null;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -49,9 +53,12 @@ export type CreateEmployeeScheduleJobInput = {
   enabled?: boolean;
   runtimeJobId?: string | null;
   nextRunAt?: string | null;
+  createdByUserId?: string | null;
 };
 
-export type UpdateEmployeeScheduleJobInput = Partial<Omit<CreateEmployeeScheduleJobInput, "employeeId">>;
+export type UpdateEmployeeScheduleJobInput = Partial<Omit<CreateEmployeeScheduleJobInput, "employeeId" | "createdByUserId">> & {
+  updatedByUserId?: string | null;
+};
 
 function toView(record: EmployeeScheduleJobRecord): EmployeeScheduleJobView {
   return {
@@ -67,6 +74,8 @@ function toView(record: EmployeeScheduleJobRecord): EmployeeScheduleJobView {
     enabled: Boolean(record.enabled),
     runtimeJobId: record.runtime_job_id,
     nextRunAt: record.next_run_at,
+    createdByUserId: record.created_by_user_id ?? null,
+    updatedByUserId: record.updated_by_user_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   };
@@ -90,6 +99,8 @@ export class EmployeeScheduleJobRepository {
       enabled: input.enabled ?? true,
       runtime_job_id: input.runtimeJobId ?? null,
       next_run_at: input.nextRunAt ?? null,
+      created_by_user_id: input.createdByUserId ?? null,
+      updated_by_user_id: input.createdByUserId ?? null,
       created_at: now,
       updated_at: now
     };
@@ -110,6 +121,7 @@ export class EmployeeScheduleJobRepository {
     if (input.enabled !== undefined) payload.enabled = input.enabled;
     if (input.runtimeJobId !== undefined) payload.runtime_job_id = input.runtimeJobId;
     if (input.nextRunAt !== undefined) payload.next_run_at = input.nextRunAt;
+    if (input.updatedByUserId !== undefined) payload.updated_by_user_id = input.updatedByUserId;
     await this.db<EmployeeScheduleJobRecord>(PLATFORM_TABLES.employeeScheduleJobs)
       .where({ id: jobId })
       .update(payload);

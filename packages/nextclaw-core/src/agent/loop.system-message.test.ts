@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboundMessage } from "../bus/events.js";
 import { SessionManager } from "../session/manager.js";
+import { getSessionsPath } from "../utils/helpers.js";
 import { AgentLoop } from "./loop.js";
 
 const tempWorkspaces: string[] = [];
@@ -14,7 +15,25 @@ function createWorkspace(): string {
   return workspace;
 }
 
+/**
+ * SessionManager currently stores session files under a global
+ * ~/.nextclaw/sessions/ directory regardless of the constructor's workspace
+ * argument. Clear the specific session file used by this test to ensure
+ * hermetic runs.
+ */
+function cleanupSharedSessionFile(sessionKey: string): void {
+  const path = join(getSessionsPath(), `${sessionKey.replace(/:/g, "_")}.jsonl`);
+  rmSync(path, { force: true });
+}
+
+const TEST_SESSION_KEY = "agent:main:ui:direct:web-ui";
+
+beforeEach(() => {
+  cleanupSharedSessionFile(TEST_SESSION_KEY);
+});
+
 afterEach(() => {
+  cleanupSharedSessionFile(TEST_SESSION_KEY);
   while (tempWorkspaces.length > 0) {
     const workspace = tempWorkspaces.pop();
     if (!workspace) {
@@ -61,7 +80,7 @@ describe("AgentLoop system message handling", () => {
       timestamp: new Date("2026-03-08T10:00:00.000Z"),
       attachments: [],
       metadata: {
-        session_key_override: "agent:main:ui:direct:web-ui",
+        session_key_override: TEST_SESSION_KEY,
         target_agent_id: "main",
         system_event_kind: "subagent_completion",
         subagent_label: "research-task"
@@ -70,7 +89,7 @@ describe("AgentLoop system message handling", () => {
 
     const response = await loop.handleInbound({
       message,
-      sessionKey: "agent:main:ui:direct:web-ui",
+      sessionKey: TEST_SESSION_KEY,
       publishResponse: false
     });
 
@@ -80,7 +99,7 @@ describe("AgentLoop system message handling", () => {
     expect(providerManager.chat).toHaveBeenCalledTimes(1);
     expect(bus.publishOutbound).not.toHaveBeenCalled();
 
-    const session = sessionManager.getIfExists("agent:main:ui:direct:web-ui");
+    const session = sessionManager.getIfExists(TEST_SESSION_KEY);
     expect(session).not.toBeNull();
     expect(session?.messages.map((item) => item.role)).toEqual(["assistant"]);
     expect(session?.events.some((event) => event.type === "message.user")).toBe(false);
@@ -94,7 +113,7 @@ describe("AgentLoop system message handling", () => {
       sourceChatId: "ui:web-ui",
       originChannel: "ui",
       originChatId: "web-ui",
-      sessionKey: "agent:main:ui:direct:web-ui"
+      sessionKey: TEST_SESSION_KEY
     });
   });
 });

@@ -28,7 +28,10 @@ function ensureInit(): Promise<void> {
     const config = useRuntimeConfig();
 
     if (config.jwtSecret) {
-      initLocalJwt(config.jwtSecret as string);
+      initLocalJwt(config.jwtSecret as string, {
+        accessTokenTtl: config.localAccessTokenTtl as string | undefined,
+        refreshTokenTtl: config.localRefreshTokenTtl as string | undefined,
+      });
     }
 
     if (config.keycloakUrl && config.keycloakRealm) {

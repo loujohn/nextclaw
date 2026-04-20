@@ -115,7 +115,9 @@ describe("EmployeeRunService chat session persistence", () => {
     const homeDir = createTempDir("chat-session-");
     const { employee, service, chatMessageRepo } = await createService(homeDir);
 
-    const session = await service.createChatSession(employee.id);
+    const session = await service.createChatSession(employee.id, "user-chat-owner");
+    expect(session.createdByUserId).toBe("user-chat-owner");
+    expect(session.updatedByUserId).toBe("user-chat-owner");
     await chatMessageRepo.createMany([
       { sessionId: session.id, role: "user", content: "第一条", createdAt: "2026-01-01T00:00:00.000Z" },
       { sessionId: session.id, role: "assistant", content: "第二条", createdAt: "2026-01-01T00:00:01.000Z" },
@@ -146,7 +148,8 @@ describe("EmployeeRunService chat session persistence", () => {
     const alpha = await chatSessionRepo.create({
       employeeId: employee.id,
       sessionKey: "session-alpha",
-      title: "会话 A"
+      title: "会话 A",
+      createdByUserId: "user-alpha",
     });
     const beta = await chatSessionRepo.create({
       employeeId: employee.id,
@@ -190,6 +193,7 @@ describe("EmployeeRunService chat session persistence", () => {
     expect(firstPage.items[0]?.lastMessageAt).toBe("2026-01-04T00:00:00.000Z");
     expect(firstPage.items[1]?.sessionKey).toBe("session-beta");
     expect(firstPage.items[1]?.lastMessageAt).toBe("2026-01-03T00:00:00.000Z");
+    expect(secondPage.items[0]?.createdByUserId).toBe("user-alpha");
     expect(firstPage.nextCursor).toBeTruthy();
 
     const secondPage = await service.listChatSessions({

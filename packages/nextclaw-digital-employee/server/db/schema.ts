@@ -24,6 +24,8 @@ export type DepartmentRecord = {
   external_id: string | null;
   parent_id: string | null;
   sort_order: number;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -67,6 +69,8 @@ export type EmployeeRecord = {
   model: string;
   status: string;
   department_id: string | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
   webhook_enabled: number;
   webhook_secret: string | null;
   created_at: string;
@@ -115,6 +119,8 @@ export type ChatSessionRecord = {
   title: string;
   preview: string;
   message_count: number;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };

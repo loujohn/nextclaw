@@ -1,7 +1,7 @@
 import { defineEventHandler, readBody, createError } from "h3";
 import { compareSync } from "bcryptjs";
 import { getPlatformContext } from "../../runtime/platform-context";
-import { signLocalJwt } from "../../utils/local-jwt";
+import { signLocalJwt, signLocalRefreshJwt } from "../../utils/local-jwt";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ username?: string; password?: string }>(event);
@@ -39,11 +39,16 @@ export default defineEventHandler(async (event) => {
     name: user.display_name,
     role: user.role,
   });
+  const { refreshToken, expiresIn: refreshExpiresIn } = await signLocalRefreshJwt({
+    sub: user.id,
+  });
 
   return {
     ok: true,
     access_token: accessToken,
     expires_in: expiresIn,
+    refresh_token: refreshToken,
+    refresh_expires_in: refreshExpiresIn,
     token_type: "Bearer",
   };
 });

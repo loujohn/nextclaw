@@ -5,6 +5,8 @@ export type LocalChatSessionListItem = {
   title: string;
   preview: string;
   messageCount: number;
+  createdByUserId?: string | null;
+  updatedByUserId?: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;

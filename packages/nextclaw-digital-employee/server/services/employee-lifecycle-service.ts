@@ -29,8 +29,12 @@ export class EmployeeLifecycleService {
       everyMs?: number;
     };
     workspaceFiles?: Record<string, string>;
+    actorUserId?: string;
   }): Promise<EmployeeView & { skills: unknown[]; schedule: unknown }> {
-    const employee = await this.employeeRepo.create(input.employee);
+    const employee = await this.employeeRepo.create({
+      ...input.employee,
+      createdByUserId: input.actorUserId,
+    });
 
     try {
       ensureEmployeeWorkspace(this.gateway.homeDir, {
@@ -76,7 +80,7 @@ export class EmployeeLifecycleService {
     }
   }
 
-  async deleteEmployee(id: string): Promise<{ id: string; code: string }> {
+  async deleteEmployee(id: string, actorUserId?: string): Promise<{ id: string; code: string }> {
     const employee = await this.employeeRepo.getById(id);
     if (!employee) {
       throw Object.assign(new Error(`employee not found: ${id}`), { statusCode: 404 });
@@ -90,7 +94,7 @@ export class EmployeeLifecycleService {
       }
     }
 
-    await this.employeeRepo.archiveById(id);
+    await this.employeeRepo.archiveByIdWithActor(id, actorUserId);
 
     logger.info(`Employee archived: ${employee.code} (${id})`);
     return { id, code: employee.code };
@@ -109,6 +113,7 @@ export class EmployeeLifecycleService {
       workspaceFiles?: Record<string, string>;
       webhookEnabled?: boolean;
       webhookSecret?: string | null;
+      actorUserId?: string;
     }
   ): Promise<{ employee: EmployeeView; skills: unknown[]; jobs: unknown[] }> {
     const existing = await this.employeeRepo.getById(id);
@@ -131,6 +136,9 @@ export class EmployeeLifecycleService {
     }
     if (input.webhookSecret !== undefined) {
       updateInput.webhookSecret = input.webhookSecret;
+    }
+    if (input.actorUserId !== undefined) {
+      updateInput.updatedByUserId = input.actorUserId;
     }
     const updated = await this.employeeRepo.updateById(id, updateInput);
     if (!updated) {

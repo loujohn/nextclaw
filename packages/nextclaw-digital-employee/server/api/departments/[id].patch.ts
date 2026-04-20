@@ -1,5 +1,6 @@
 import { createError, getRouterParam, readBody } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
+import { requireAuth } from "../../utils/auth-guards";
 
 type UpdateDepartmentBody = {
   name?: string;
@@ -9,6 +10,7 @@ type UpdateDepartmentBody = {
 };
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const id = getRouterParam(event, "id") ?? "";
   const body = await readBody<UpdateDepartmentBody>(event);
   const ctx = await getPlatformContext();
@@ -35,7 +37,8 @@ export default defineEventHandler(async (event) => {
     name: body?.name,
     description: body?.description,
     parentId: "parentId" in (body ?? {}) ? body!.parentId : undefined,
-    sortOrder: body?.sortOrder
+    sortOrder: body?.sortOrder,
+    updatedByUserId: user.id,
   });
 
   if (!updated) {

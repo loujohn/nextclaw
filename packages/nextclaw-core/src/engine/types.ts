@@ -7,6 +7,8 @@ import type { SessionManager } from "../session/manager.js";
 import type { CronService } from "../cron/service.js";
 import type { GatewayController } from "../agent/tools/gateway.js";
 import type { ExtensionRegistry } from "../extensions/types.js";
+import type { RuntimeMode } from "../agent/context.js";
+export type { RuntimeMode };
 
 export type AssistantDeltaHandler = (delta: string) => void;
 export type SessionEventHandler = (event: SessionEvent) => void;
@@ -55,6 +57,10 @@ export type AgentEngineFactoryContext = {
   config: Config;
   extensionRegistry?: ExtensionRegistry;
   resolveMessageToolHints?: AgentEngineMessageToolHintsResolver;
+  runtimeMode?: RuntimeMode;
+  /** Readonly: consumers must not mutate. Using `ReadonlySet` lets callers
+   * share a frozen module-level set without a defensive clone per engine. */
+  excludeSkills?: ReadonlySet<string>;
   additionalSkillsDirs?: string[];
   envOverlay?: Record<string, string>;
 };

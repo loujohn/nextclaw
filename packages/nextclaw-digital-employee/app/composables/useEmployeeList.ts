@@ -7,6 +7,8 @@ type EmployeeResponse = {
   model: string;
   status: string;
   departmentId: string | null;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   skills: Array<{ skillName: string }>;
   schedule?: { scheduleKind: string; nextRunAt?: string | null } | null;
   latestRun?: { status: string; summary: string; finishedAt: string | null } | null;

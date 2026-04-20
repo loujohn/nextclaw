@@ -217,6 +217,7 @@ export function useAuth() {
         ok: boolean;
         access_token: string;
         expires_in: number;
+        refresh_token?: string;
       }>("/api/auth/login", {
         method: "POST",
         body: { username, password },
@@ -226,12 +227,10 @@ export function useAuth() {
         return { ok: false, error: "认证失败" };
       }
 
-      setAccessToken(res.access_token);
-      await fetchMe();
+      await handleTokenResponse(res as unknown as Record<string, unknown>);
       if (!state.value.user) {
         return { ok: false, error: "无法获取用户信息" };
       }
-      scheduleTokenRefresh(res.expires_in ?? 3600);
       return { ok: true };
     } catch (err: unknown) {
       const msg = (err as { data?: { message?: string } })?.data?.message
