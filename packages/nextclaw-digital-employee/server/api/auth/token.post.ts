@@ -1,4 +1,11 @@
 import { defineEventHandler, readBody, createError } from "h3";
+import { getPlatformContext } from "../../runtime/platform-context";
+import {
+  isLocalJwtToken,
+  signLocalJwt,
+  signLocalRefreshJwt,
+  verifyLocalRefreshJwt,
+} from "../../utils/local-jwt";
 
 /**
  * Server-side proxy for Keycloak token endpoint.
@@ -11,6 +18,40 @@ export default defineEventHandler(async (event) => {
 
   if (!grantType || !["authorization_code", "refresh_token"].includes(grantType)) {
     throw createError({ statusCode: 400, statusMessage: "Unsupported grant_type" });
+  }
+
+  if (grantType === "refresh_token" && body.refresh_token && isLocalJwtToken(body.refresh_token)) {
+    const payload = await verifyLocalRefreshJwt(body.refresh_token);
+    if (!payload?.sub) {
+      throw createError({ statusCode: 401, statusMessage: "Invalid or expired refresh token" });
+    }
+
+    const ctx = await getPlatformContext();
+    const user = await ctx.userRepo.findById(payload.sub);
+    if (!user) {
+      throw createError({ statusCode: 401, statusMessage: "User not found" });
+    }
+    if (!user.isActive) {
+      throw createError({ statusCode: 403, statusMessage: "Account disabled" });
+    }
+
+    const { accessToken, expiresIn } = await signLocalJwt({
+      sub: user.id,
+      email: user.email,
+      name: user.displayName,
+      role: user.role,
+    });
+    const { refreshToken, expiresIn: refreshExpiresIn } = await signLocalRefreshJwt({
+      sub: user.id,
+    });
+
+    return {
+      access_token: accessToken,
+      expires_in: expiresIn,
+      refresh_token: refreshToken,
+      refresh_expires_in: refreshExpiresIn,
+      token_type: "Bearer",
+    };
   }
 
   const config = useRuntimeConfig();
