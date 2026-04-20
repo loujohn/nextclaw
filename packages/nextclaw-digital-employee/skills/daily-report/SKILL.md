@@ -30,11 +30,9 @@ Authorization: Bearer {token}
 ### 项目查询接口
 
 ```
-POST {PM_BASE_URL}/admin/project/pageProject?current=1&size=50&queryType=3&projectName={关键词}
+POST {PM_BASE_URL}/admin/pageProjectForReport?username={填报人用户名}&queryType=3&current=1&size=50&projectName={关键词}
 Content-Type: application/json
 Authorization: Bearer {token}
-
-Body: {}（空对象）
 ```
 
 ### 返回示例
