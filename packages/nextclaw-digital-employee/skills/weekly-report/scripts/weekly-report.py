@@ -122,40 +122,67 @@ def get_week_range():
     return monday, sunday
 
 
-def get_daily_report_week_dir():
+def get_daily_report_week_dir(week_start=None, week_end=None):
     """获取日报周目录"""
     base_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
     if not os.path.exists(base_dir):
         return None, None
 
-    today = datetime.now()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
+    if not week_start or not week_end:
+        today = datetime.now()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        week_start, week_end = monday, sunday
+
     week_dir = os.path.join(
-        base_dir, f"{monday.strftime('%Y-%m-%d')}_{sunday.strftime('%Y-%m-%d')}"
+        base_dir, f"{week_start.strftime('%Y-%m-%d')}_{week_end.strftime('%Y-%m-%d')}"
     )
 
     if not os.path.exists(week_dir):
         return None, None
 
-    return week_dir, (monday, sunday)
+    return week_dir, (week_start, week_end)
 
 
-def get_week_report_week_dir():
+def scan_daily_report_dirs():
+    """扫描所有日报周目录"""
+    base_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "daily-report")
+    if not os.path.exists(base_dir):
+        return []
+
+    dirs = []
+    for folder in os.listdir(base_dir):
+        week_path = os.path.join(base_dir, folder)
+        if os.path.isdir(week_path):
+            parts = folder.split("_")
+            if len(parts) == 2:
+                try:
+                    start = datetime.strptime(parts[0], "%Y-%m-%d")
+                    end = datetime.strptime(parts[1], "%Y-%m-%d")
+                    dirs.append((week_path, (start, end), folder))
+                except:
+                    pass
+    return sorted(dirs, key=lambda x: x[1][0], reverse=True)
+
+
+def get_week_report_week_dir(week_start=None, week_end=None):
     """获取周报周目录"""
     base_dir = os.path.join(os.path.expanduser("~"), "nextclaw-temp", "weekly-report")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir, exist_ok=True)
 
-    today = datetime.now()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
+    if not week_start or not week_end:
+        today = datetime.now()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        week_start, week_end = monday, sunday
+
     week_dir = os.path.join(
-        base_dir, f"{monday.strftime('%Y-%m-%d')}_{sunday.strftime('%Y-%m-%d')}"
+        base_dir, f"{week_start.strftime('%Y-%m-%d')}_{week_end.strftime('%Y-%m-%d')}"
     )
     os.makedirs(week_dir, exist_ok=True)
 
-    return week_dir, (monday, sunday)
+    return week_dir, (week_start, week_end)
 
 
 def query_daily_reports_from_api(
@@ -544,17 +571,34 @@ def main():
         "--password", default=PM_PASSWORD, help="密码（环境变量 PM_PASSWORD）"
     )
     parser.add_argument("--size", type=int, default=50, help="查询每页大小")
+    parser.add_argument("--week", dest="week_offset", type=int, default=0, help="周偏移量：0=本周（默认），-1=上周，-2=上上周，以此类推")
+    parser.add_argument("--week-start", dest="week_start_date", help="指定周开始日期 YYYY-MM-DD")
+    parser.add_argument("--week-end", dest="week_end_date", help="指定周结束日期 YYYY-MM-DD")
     args = parser.parse_args()
+
+    if args.week_offset != 0:
+        offset = args.week_offset
+        today = datetime.now()
+        for _ in range(abs(offset)):
+            if offset < 0:
+                today = today - timedelta(days=7)
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        week_start, week_end = monday, sunday
+    elif args.week_start_date and args.week_end_date:
+        week_start = datetime.strptime(args.week_start_date, "%Y-%m-%d")
+        week_end = datetime.strptime(args.week_end_date, "%Y-%m-%d")
 
     base_url = PM_BASE_URL
     username = args.username
     password = args.password
     mode = args.mode
 
-    today = datetime.now()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
-    week_start, week_end = monday, sunday
+    if args.week_offset == 0 and not args.week_start_date:
+        today = datetime.now()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        week_start, week_end = monday, sunday
 
     md_projects_data = {}
     md_users_data = {}
@@ -562,7 +606,7 @@ def main():
     api_users_data = {}
     data_sources = []
 
-    week_dir, _ = get_daily_report_week_dir()
+    week_dir, _ = get_daily_report_week_dir(week_start, week_end)
     if week_dir:
         users_file = os.path.join(week_dir, "users.md")
         projects_file = os.path.join(week_dir, "projects.md")
@@ -614,8 +658,9 @@ def main():
     source_info = " + ".join(data_sources) if data_sources else "未知"
 
     reports = []
+    current_mode = mode
 
-    if mode == "personal":
+    if current_mode == "personal":
         target_user = args.user_name or username
         if not target_user:
             print("错误: 个人周报需要指定 --user 参数", file=sys.stderr)
@@ -628,7 +673,7 @@ def main():
         )
         if report:
             reports.append(report)
-    elif mode == "project":
+    elif current_mode == "project":
         target_project = args.project_code
         if target_project:
             if target_project not in projects_data:
@@ -662,18 +707,19 @@ def main():
     print(f"周报预览（{len(reports)} 份，数据来源: {source_info}）", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
 
-    for report in reports:
-        print(format_report_for_display(report, mode), file=sys.stderr)
+    for i, report in enumerate(reports):
+        display_type = current_mode
+        print(format_report_for_display(report, display_type), file=sys.stderr)
         print(file=sys.stderr)
 
     print("=" * 60, file=sys.stderr)
 
     if args.review:
-        print("\n预览完成。使用 --submit 参数确认并提交。", file=sys.stderr)
+        print("\n预览完成。", file=sys.stderr)
         return
 
     if args.submit:
-        if mode != "personal":
+        if current_mode != "personal":
             print(
                 "提示: 只有个人周报才需要提交，项目周报和部门周报不需要提交",
                 file=sys.stderr,
@@ -684,36 +730,43 @@ def main():
             print("错误: 需要登录凭据", file=sys.stderr)
             return
 
-        submit_reports = []
-        for report in reports:
-            submit_reports.append(
-                {
-                    "weekPlanNow": report["weekPlanNow"],
-                    "chanceProjectName": report["chanceProjectName"],
-                    "chanceProjectSchedule": report["chanceProjectSchedule"],
-                    "projectCode": report["projectCode"],
-                    "projectManager": report["projectManager"],
-                    "weekSummarizeNow": report["weekSummarizeNow"],
-                    "weekPlanNext": report["weekPlanNext"],
-                    "problemRisk": report["problemRisk"],
-                    "requestInstructions": report["requestInstructions"],
-                    "weekStartTime": report["weekStartTime"],
-                    "weekEndTime": report["weekEndTime"],
-                    "weekReportType": report["weekReportType"],
-                }
-            )
+        print(f"\n将提交 {len(reports)} 份个人周报", file=sys.stderr)
 
-        try:
-            token = login(base_url, username, password)
-            url = f"{base_url}{WEEK_REPORT_ENDPOINT}"
-            result = fetch_json_post(url, submit_reports, token)
+        for i, report in enumerate(reports):
+            submit_report = {
+                "weekPlanNow": report["weekPlanNow"],
+                "chanceProjectName": report["chanceProjectName"],
+                "chanceProjectSchedule": report["chanceProjectSchedule"],
+                "projectCode": report["projectCode"],
+                "projectManager": report["projectManager"],
+                "weekSummarizeNow": report["weekSummarizeNow"],
+                "weekPlanNext": report["weekPlanNext"],
+                "problemRisk": report["problemRisk"],
+                "requestInstructions": report["requestInstructions"],
+                "weekStartTime": report["weekStartTime"],
+                "weekEndTime": report["weekEndTime"],
+                "weekReportType": report["weekReportType"],
+            }
 
-            if result.get("code") == 0 or result.get("success"):
-                print("周报提交成功", file=sys.stderr)
-            else:
-                print(f"周报提交失败: {result.get('message', result)}", file=sys.stderr)
-        except Exception as e:
-            print(f"[周报] 错误: {e}", file=sys.stderr)
+            print(f"\n[{i + 1}/{len(reports)}] 正在提交个人周报...", file=sys.stderr)
+            try:
+                token = login(base_url, username, password)
+                url = f"{base_url}{WEEK_REPORT_ENDPOINT}"
+                result = fetch_json_post(url, [submit_report], token)
+
+                if result.get("code") == 0 or result.get("success"):
+                    print(f"[{i + 1}/{len(reports)}] 个人周报提交成功", file=sys.stderr)
+                else:
+                    print(
+                        f"[{i + 1}/{len(reports)}] 个人周报提交失败: {result.get('message', result)}",
+                        file=sys.stderr,
+                    )
+            except Exception as e:
+                print(
+                    f"[{i + 1}/{len(reports)}] 个人周报提交错误: {e}", file=sys.stderr
+                )
+
+        print("\n周报提交完成", file=sys.stderr)
         return
 
 

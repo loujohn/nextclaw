@@ -104,46 +104,50 @@ python daily-report.py --submit \
 
 ### 命令行选项
 
-| 选项                  | 说明                           |
-| --------------------- | ------------------------------ |
-| `--submit`            | 生成参数文件并提交             |
-| `--validate`          | 仅校验参数，返回 JSON 校验结果 |
-| `--json-file`         | 从文件读取日报参数（备用）     |
-| `--date`              | 日期（YYYY-MM-DD，默认当天）   |
-| `--project-code`      | 项目编号                       |
-| `--project-name`      | 项目名称                       |
-| `--project-stage`     | 项目阶段                       |
-| `--project-manager`   | 项目经理                       |
-| `--day-summarize-now` | 今日工作总结                   |
-| `--day-plan-next`     | 明日工作计划                   |
-| `--day-report-type`   | 日报类型（默认2）              |
-| `--query-projects`    | 根据关键词查询项目列表         |
-| `--select`            | 从缓存的查询结果中选择项目     |
+| 选项                     | 说明                           |
+| ------------------------ | ------------------------------ |
+| `--query-projects`       | 查询可选项目列表               |
+| `--select <数字>`        | 从查询结果中选择项目         |
+| `--submit`              | 提交日报                      |
+| `--validate`            | 预览日报（不提交）            |
+| `--date`                | 日期 YYYY-MM-DD               |
+| `--project-code`        | 项目编号                      |
+| `--project-name`        | 项目名称                      |
+| `--project-stage`      | 项目阶段                      |
+| `--project-manager`    | 项目经理                      |
+| `--day-summarize-now`  | 今日工作总结                 |
+| `--day-plan-next`       | 明日工作计划                 |
+| `--report-user`        | 填报人用户名（必填）          |
+| `--report-name`        | 填报人中文名（必填）          |
 
 ### 使用示例
 
 ```bash
-# 1. 查询项目
-python daily-report.py --query-projects "测试"
-
-# 2. 选择项目（返回项目信息）
-python daily-report.py --select 1
-
-# 3. 校验参数
-python daily-report.py --validate --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
-
-# 4. 生成参数文件并提交
-python daily-report.py --submit --project-code "XM202503112160" --project-name "测试项目" --project-stage "开发中" --project-manager "张三" --day-summarize-now "完成工作" --day-plan-next "继续工作"
+python skills/daily-report/scripts/daily-report.py \
+  --submit \
+  --project-code XM202602105600 \
+  --project-name 测试项目 \
+  --project-stage 开发中 \
+  --project-manager 张三 \
+  --day-summarize-now "完成功能开发" \
+  --day-plan-next "继续测试" \
+  --date 2026-04-19 \
+  --report-user zhangsan \
+  --report-name 张三
 ```
+
+**注：** `--report-user` 和 `--report-name` 必填，用于指定填报人。
 
 ## 交互式反问
 
 按以下顺序收集信息：
 
-1. **日期**：默认当天，可指定
-2. **今日总结**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
-3. **明日计划**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
-4. **项目选择**：必填
+1. **填报人信息**：必填
+   - 询问填报人的用户名和中文名（必填参数）
+2. **日期**：默认当天，可指定
+3. **今日总结**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
+4. **明日计划**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
+5. **项目选择**：必填
    - 若用户已提及项目 → 直接使用
    - 若用户未提及项目 → 调用 `--query-projects` 查询全部项目（不传关键词），列出供用户选择
 
@@ -170,7 +174,7 @@ python daily-report.py --submit --project-code "XM202503112160" --project-name "
 
 ## 流程说明
 
-1. **收集信息**：询问用户日期、今日总结、明日计划
+1. **收集信息**：询问填报人（用户名+中文名）、日期、今日总结、明日计划
 2. **查询项目**：先询问用户要填哪个项目，再调用 `--query-projects` 查询（可传关键词或空）
 3. **确认提交**：用户确认后，调用 `--submit` 执行提交
 
