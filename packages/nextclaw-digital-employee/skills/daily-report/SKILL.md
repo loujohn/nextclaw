@@ -69,6 +69,8 @@ Body: {}（空对象）
 | `projectManager`     | 项目经理              | 是          |
 | `daySummarizeNow`    | 今日工作总结          | 是          |
 | `dayPlanNext`        | 明日工作计划          | 是          |
+| `problemRisk`        | 问题与风险            | 否          |
+| `requestInstructions`| 请示事项              | 否          |
 | `dayReportType`      | 日报类型（默认2）     | 否，默认2   |
 | `workHourProportion` | 工时占比（0-1）       | 否，默认0.0 |
 
@@ -117,6 +119,8 @@ python daily-report.py --submit \
 | `--project-manager`    | 项目经理                      |
 | `--day-summarize-now`  | 今日工作总结                 |
 | `--day-plan-next`       | 明日工作计划                 |
+| `--problem-risk`        | 问题与风险（选填）           |
+| `--request-instructions`| 请示事项（选填）             |
 | `--report-user`        | 填报人用户名（必填）          |
 | `--report-name`        | 填报人中文名（必填）          |
 
@@ -147,7 +151,9 @@ python skills/daily-report/scripts/daily-report.py \
 2. **日期**：默认当天，可指定
 3. **今日总结**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
 4. **明日计划**：必填，需对用户输入进行丰富和提炼，但不得偏离原意
-5. **项目选择**：必填
+5. **问题与风险**：选填，轻提醒"有问题/风险吗？"
+6. **请示事项**：选填，轻提醒"有需要请示的吗？"
+7. **项目选择**：必填
    - 若用户已提及项目 → 直接使用
    - 若用户未提及项目 → 调用 `--query-projects` 查询全部项目（不传关键词），列出供用户选择
 
@@ -174,7 +180,7 @@ python skills/daily-report/scripts/daily-report.py \
 
 ## 流程说明
 
-1. **收集信息**：询问填报人（用户名+中文名）、日期、今日总结、明日计划
+1. **收集信息**：询问填报人（用户名+中文名）、日期、今日总结、明日计划、问题与风险、请示事项
 2. **查询项目**：先询问用户要填哪个项目，再调用 `--query-projects` 查询（可传关键词或空）
 3. **确认提交**：用户确认后，调用 `--submit` 执行提交
 
