@@ -25,7 +25,13 @@ export default defineNitroPlugin(async () => {
         .map((k) => k.split(":")[0])
         .filter((v, i, arr) => arr.indexOf(v) === i);
 
+  const userImportedSkills = await ctx.skillInstallationRepository.findUserImportedNames();
+
   for (const skillName of skillNames) {
+    if (userImportedSkills.has(skillName)) {
+      log.info(`skipping user-imported skill: ${skillName}`);
+      continue;
+    }
     const installPath = join(workspaceSkillsDir, skillName);
 
     const srcPath = resolve(process.cwd(), "skills", skillName);
