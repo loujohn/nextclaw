@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createLogger } from "../utils/logger";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -220,6 +221,48 @@ class MissingProvider extends LLMProvider {
 
 const gatewayLog = createLogger("EngineGateway");
 
+/** Sentinel agentId used only by `fallbackEngine` (see below). The fallback
+ * engine is never stored in `this.engines`, so this value does not collide in
+ * the cacheKey space; the sentinel only surfaces inside the fallback engine's
+ * `AgentLoop.agentId`. Still kept as a `__…__` string so that if anyone adds
+ * logic that *does* compare it against `employee.code` later, a sanity check
+ * at the repository layer (`EmployeeRepository.create`) can reject codes
+ * matching `/^__.*__$/`. */
+const FALLBACK_AGENT_ID = "__fallback__";
+
+/** Excluded skills for platform runtime mode.
+ * Platform employees manage themselves via UI + schedule tool, not the CLI
+ * self-management flow; cron is replaced by the structured `schedule` tool.
+ *
+ * Exposed as a frozen readonly set rather than a list so the Gateway can
+ * pass the same instance to every `AgentEngineFactoryContext` — avoiding a
+ * per-invocation `new Set(...)` allocation. Contained values must never be
+ * mutated; ContextBuilder defensively copies if it needs a mutable view. */
+const PLATFORM_EXCLUDED_SKILLS: ReadonlySet<string> = Object.freeze(
+  new Set<string>(["nextclaw-self-manage", "cron"])
+);
+
+/** Stable content digest for a record of env var overrides, used solely as
+ * part of the engine cache key so that rotating a secret produces a new entry.
+ *
+ * NOTE: this is NOT a security primitive. We only need collision resistance
+ * within a single process's engine cache (<= engineCacheMax entries), so a
+ * 48-bit sha1 prefix is plenty. Do not reuse this for tokens, signing, or
+ * anywhere an attacker could exploit collisions. */
+function hashEnvOverlay(overlay?: Record<string, string>): string {
+  if (!overlay) return "";
+  const keys = Object.keys(overlay).sort();
+  if (keys.length === 0) return "";
+  const hash = createHash("sha1");
+  for (const key of keys) {
+    hash.update(key);
+    hash.update("=");
+    hash.update(overlay[key] ?? "");
+    hash.update("\n");
+  }
+  return hash.digest("hex").slice(0, 12);
+}
+
 export class NextclawEngineGateway {
   readonly homeDir: string;
   readonly workspaceDir: string;
@@ -229,7 +272,22 @@ export class NextclawEngineGateway {
   private readonly providerManager: ProviderManager;
   private extensionRegistry: ExtensionRegistry;
   private readonly cronService: CronService | null;
+  /** LRU-capped engine cache. Map iteration order is insertion order in JS,
+   * so we treat the first entry as the least-recently-used and the last as
+   * the most-recently-used. See `getOrCreateEngineCached` for eviction logic.
+   * Unbounded growth previously allowed one engine per employee × model ×
+   * envHash × cron-mode — a stale secret rotation or per-turn model switch
+   * would leak one instance each time. */
   private readonly engines: Map<string, AgentEngine> = new Map();
+  /** Upper bound on `engines.size`. Overridable via `NEXTCLAW_ENGINE_CACHE_MAX`
+   * env var (parsed once at construction). Default sized for ~100 concurrent
+   * employees with a couple of variants each; measured engine footprint is
+   * small so this ceiling is intentionally generous. */
+  private readonly engineCacheMax: number;
+  /** Bootstrap-time fallback engine. Returned by `getOrCreateEngine` when the
+   * caller does not supply a workspace (e.g. early startup paths or tests).
+   * NOT stored in `this.engines`, so it never participates in LRU eviction
+   * and its sentinel agentId cannot collide with per-employee cache keys. */
   private fallbackEngine: AgentEngine;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
   private readonly builtinSkillNames: Set<string>;
@@ -242,6 +300,10 @@ export class NextclawEngineGateway {
     mkdirSync(this.homeDir, { recursive: true });
     mkdirSync(this.workspaceDir, { recursive: true });
     this.builtinSkillNames = seedBuiltinSkills(this.workspaceDir);
+    // PLATFORM_USAGE.md is seeded by the Nitro plugin
+    // `server/plugins/seed-platform-usage.ts` so construction stays free of
+    // extra I/O. The plugin consumes `getPlatformContext().workspaceDir`,
+    // which resolves to the same directory computed above.
     this.bus = options.bus ?? new MessageBus();
     this.sessionManager = options.sessionManager ?? new SessionManager(this.workspaceDir);
     this.cronService = options.cronService ?? null;
@@ -257,7 +319,15 @@ export class NextclawEngineGateway {
     });
     this.extensionRegistry = options.extensionRegistry ?? { tools: [], channels: [], diagnostics: [], engines: [] };
     this.secretsRepo = options.secretsRepo;
-    this.fallbackEngine = this.createEngineForWorkspace("main", this.workspaceDir);
+    this.engineCacheMax = this.resolveEngineCacheMax();
+    this.fallbackEngine = this.createEngineForWorkspace(FALLBACK_AGENT_ID, this.workspaceDir);
+  }
+
+  private resolveEngineCacheMax(): number {
+    const raw = process.env.NEXTCLAW_ENGINE_CACHE_MAX?.trim();
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 128;
   }
 
   private createEngineForWorkspace(
@@ -285,6 +355,11 @@ export class NextclawEngineGateway {
       contextConfig: this.config.agents.context,
       config: this.config,
       extensionRegistry: this.extensionRegistry,
+      runtimeMode: "platform",
+      // Share the frozen module-level set across all engines; ContextBuilder
+      // and AgentLoop both type `excludeSkills` as `ReadonlySet<string>` and
+      // never mutate it, so no defensive clone is required here.
+      excludeSkills: PLATFORM_EXCLUDED_SKILLS,
       additionalSkillsDirs: workspace !== this.workspaceDir ? [globalSkillsDir] : undefined,
       envOverlay
     };
@@ -335,10 +410,73 @@ export class NextclawEngineGateway {
 
   getOrCreateEngine(agentId: string, workspace?: string, model?: string): AgentEngine {
     if (!workspace) return this.fallbackEngine;
-    const cacheKey = model ? `${agentId}:${model}` : agentId;
+    return this.getOrCreateEngineCached({ agentId, workspace, model });
+  }
+
+  /** Unified engine cache. Key components:
+   *   agentId | workspace | model | envHash | cronMode
+   * An unchanged envOverlay (content-hashed) reuses the cached engine, so the
+   * envOverlay-backed code path no longer rebuilds the engine on every turn.
+   * A rotated secret produces a new hash and a new cache entry; the stale
+   * entry is eligible for GC once no longer referenced. */
+  private getOrCreateEngineCached(params: {
+    agentId: string;
+    workspace: string;
+    model?: string;
+    envOverlay?: Record<string, string>;
+    disableCronTool?: boolean;
+  }): AgentEngine {
+    const envHash = hashEnvOverlay(params.envOverlay);
+    const workspaceKey = params.workspace === this.workspaceDir ? "default" : params.workspace;
+    const cacheKey = [
+      params.agentId,
+      workspaceKey,
+      params.model || "default",
+      envHash || "no-env",
+      params.disableCronTool ? "no-cron" : "cron"
+    ].join("|");
     const cached = this.engines.get(cacheKey);
-    if (cached) return cached;
-    const engine = this.createEngineForWorkspace(agentId, workspace, model);
+    if (cached) {
+      // LRU touch: delete + re-insert moves the entry to the tail (most
+      // recently used). Cheap because Map preserves insertion order.
+      this.engines.delete(cacheKey);
+      this.engines.set(cacheKey, cached);
+      return cached;
+    }
+    const engine = this.createEngineForWorkspace(
+      params.agentId,
+      params.workspace,
+      params.model,
+      params.envOverlay,
+      params.disableCronTool ? null : undefined
+    );
+    // Evict least-recently-used entries until we're under the cap. Usually
+    // this runs at most once per insertion, but the loop handles concurrent
+    // inserts racing past the limit.
+    while (this.engines.size >= this.engineCacheMax) {
+      const oldestKey = this.engines.keys().next().value;
+      if (oldestKey === undefined) break;
+      const evicted = this.engines.get(oldestKey);
+      this.engines.delete(oldestKey);
+      // Best-effort cleanup for engines that carry external subscriptions.
+      // The default `NativeAgentEngine` currently has nothing to release, but
+      // exposing an optional dispose() hook lets future engine variants
+      // participate without leaking listeners when they fall out of the LRU.
+      const disposeFn = (evicted as { dispose?: () => void | Promise<void> } | undefined)?.dispose;
+      if (typeof disposeFn === "function") {
+        try {
+          const result = disposeFn.call(evicted);
+          if (result && typeof (result as Promise<void>).then === "function") {
+            void (result as Promise<void>).catch((err) =>
+              gatewayLog.warn(`engine dispose() failed during LRU eviction key=${oldestKey}`, err)
+            );
+          }
+        } catch (err) {
+          gatewayLog.warn(`engine dispose() threw during LRU eviction key=${oldestKey}`, err);
+        }
+      }
+      gatewayLog.debug(`engine cache evicted LRU entry key=${oldestKey}`);
+    }
     this.engines.set(cacheKey, engine);
     return engine;
   }
@@ -357,24 +495,13 @@ export class NextclawEngineGateway {
         envOverlay = Object.fromEntries(secrets);
       }
     }
-    if (params.disableCronTool) {
-      return this.createEngineForWorkspace(
-        params.agentId,
-        params.workspace ?? this.workspaceDir,
-        params.model,
-        envOverlay,
-        null
-      );
-    }
-    if (envOverlay) {
-      return this.createEngineForWorkspace(
-        params.agentId,
-        params.workspace ?? this.workspaceDir,
-        params.model,
-        envOverlay
-      );
-    }
-    return this.getOrCreateEngine(params.agentId, params.workspace, params.model);
+    return this.getOrCreateEngineCached({
+      agentId: params.agentId,
+      workspace: params.workspace ?? this.workspaceDir,
+      model: params.model,
+      envOverlay,
+      disableCronTool: params.disableCronTool
+    });
   }
 
   private createEngine(context: AgentEngineFactoryContext): AgentEngine {

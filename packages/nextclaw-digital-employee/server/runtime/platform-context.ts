@@ -30,6 +30,10 @@ import { UserRepository } from "../repositories/user-repository";
 import { DigitalEmployeeChannelRuntime } from "./channel-runtime";
 import { getDingTalkRuntimeConfig } from "./dingtalk-config";
 import { loadPlatformRuntimeState } from "./openclaw-runtime";
+import {
+  createPlatformScheduleToolFactory,
+  type PlatformScheduleToolDeps
+} from "../engine/platform-schedule-tool";
 
 type PlatformContext = {
   homeDir: string;
@@ -133,12 +137,35 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const cronService = new CronService(join(homeDir, "cron", "jobs.json"));
       const secretsRepo = new SecretsRepository(db, homeDir);
       const userRepo = new UserRepository(db);
+
+      // Late-binding container: the schedule tool factory is registered
+      // BEFORE `automationService` exists (AutomationService itself depends on
+      // the gateway we are about to construct). We pass this shared
+      // `scheduleDeps` object into the factory; every tool invocation reads
+      // `deps.automationService` fresh, so once we assign it below
+      // (`scheduleDeps.automationService = automationService`) all future
+      // tool calls pick it up without re-registration. If the AI happens to
+      // call `schedule` during the narrow startup window, the tool returns
+      // a structured `retriable: true` error instead of crashing.
+      const scheduleDeps: PlatformScheduleToolDeps = { automationService: null };
+      initialRuntimeState.extensionRegistry.tools.push({
+        extensionId: "platform.schedule",
+        factory: createPlatformScheduleToolFactory(scheduleDeps),
+        names: ["schedule"],
+        optional: false,
+        source: "platform"
+      });
+
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
         bus,
         sessionManager,
-        cronService,
+        // AI engines must NOT see the raw `cronService` cron tool — scheduling
+        // is exposed via the structured `schedule` ExtensionTool instead. The
+        // underlying `CronService` is still used by `AutomationService` below
+        // for actual dispatch; it is just hidden from the LLM's tool surface.
+        cronService: null,
         config: initialRuntimeState.config,
         extensionRegistry: initialRuntimeState.extensionRegistry,
         defaultConfig: buildPlatformGatewayConfig(),
@@ -162,8 +189,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         gateway,
         skillInstallationRepo,
         chatSessionRepo,
-        chatMessageRepo,
-        integrationConnectionRepo
+        chatMessageRepo
       );
       const channelRuntime = new DigitalEmployeeChannelRuntime({
         gateway,
@@ -171,12 +197,21 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeSkillRepo,
         skillInstallationRepo,
         runRepo,
-        loadState: async () =>
-          loadPlatformRuntimeState({
+        loadState: async () => {
+          const state = loadPlatformRuntimeState({
             workspaceDir,
             overrideConfig: buildPlatformGatewayConfig(),
             runtimeConfig: await getDingTalkRuntimeConfig(integrationConnectionRepo)
-          })
+          });
+          state.extensionRegistry.tools.push({
+            extensionId: "platform.schedule",
+            factory: createPlatformScheduleToolFactory(scheduleDeps),
+            names: ["schedule"],
+            optional: false,
+            source: "platform"
+          });
+          return state;
+        }
       });
       const automationService = new AutomationService(
         employeeScheduleRepo,
@@ -186,41 +221,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         cronService,
         gateway
       );
-      // 当 Agent 通过对话创建定时任务时，同步写入数据库以便 UI 显示。
-      // 达梦可能出现锁等待——保留单次重试作为防御。
-      cronService.onJobAdded = (job) => {
-        if (!job.agentId) return;
-        const agentCode = job.agentId;
-        const syncToDb = async (isRetry = false): Promise<void> => {
-          try {
-            const employee = await employeeRepo.getByCode(agentCode);
-            if (!employee) return;
-            const schedule = job.schedule;
-            const scheduleKind = schedule.kind === "every" ? "every" as const : "cron" as const;
-            const cronExpr = schedule.kind === "cron" ? (schedule.expr ?? null) : null;
-            const everyMs = schedule.kind === "every" ? (schedule.everyMs ?? null) : null;
-            await employeeScheduleJobRepo.create({
-              employeeId: employee.id,
-              name: job.name,
-              description: `通过对话创建 (${job.id})`,
-              scheduleKind,
-              cronExpr,
-              everyMs,
-              taskPrompt: job.payload.message,
-              enabled: job.enabled,
-              runtimeJobId: job.id
-            });
-          } catch (err) {
-            if (!isRetry) {
-              logger.warn(`定时任务 "${job.name}" (${job.id}) 同步失败，500ms 后重试`);
-              await new Promise((r) => setTimeout(r, 500));
-              return syncToDb(true);
-            }
-            logger.error(`定时任务 "${job.name}" (${job.id}) 同步数据库失败:`, err);
-          }
-        };
-        void syncToDb();
-      };
+      scheduleDeps.automationService = automationService;
       const healthService = new EmployeeHealthService(runRepo, gateway);
       const lifecycleService = new EmployeeLifecycleService(
         employeeRepo,
@@ -235,8 +236,16 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       if (recoveredRuns > 0) {
         logger.info(`Recovered ${recoveredRuns} interrupted run(s) from previous session`);
       }
-      await channelRuntime.start();
+      // Order matters: start the cron-backed AutomationService first so that
+      // any `schedule create` / `addJob` calls triggered by inbound channel
+      // messages land on a fully booted scheduler. Starting `channelRuntime`
+      // first would open a brief window where the AI can be invoked, reach
+      // `createJob`, and register a cron entry before `cronService.start()`
+      // wires up the `onJob` dispatcher — the job would then fire with no
+      // handler. `scheduleDeps.automationService` is already bound above so
+      // the `schedule` tool resolves correctly once `channelRuntime` starts.
       await automationService.start();
+      await channelRuntime.start();
       return {
         homeDir,
         workspaceDir,

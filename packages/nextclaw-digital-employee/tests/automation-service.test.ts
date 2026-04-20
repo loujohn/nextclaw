@@ -605,8 +605,8 @@ describe("automation service - chat persistence", () => {
       enabled: true
     });
 
-    const triggered = await automation.runJobNow(job.id);
-    expect(triggered).toBe(true);
+    const outcome = await automation.runJobNow(job.id);
+    expect(outcome.triggered).toBe(true);
 
     const sessionKey = `employee:${employee.id}:scheduled:job:${job.id}`;
     const sessions = await chatSessionRepo.listByEmployeeId(employee.id);
@@ -665,7 +665,12 @@ describe("automation service - chat persistence", () => {
       enabled: true
     });
 
-    await expect(automation.runJobNow(job.id)).rejects.toThrow("engine crash");
+    const outcome = await automation.runJobNow(job.id);
+    expect(outcome).toMatchObject({
+      triggered: false,
+      reason: "engine_failed"
+    });
+    expect((outcome as { message: string }).message).toContain("engine crash");
 
     const sessionKey = `employee:${employee.id}:scheduled:job:${job.id}`;
     const sessions = await chatSessionRepo.listByEmployeeId(employee.id);

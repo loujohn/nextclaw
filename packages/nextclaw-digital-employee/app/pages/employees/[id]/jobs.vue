@@ -136,8 +136,32 @@ async function runJobNow(jobId: string) {
     await $fetch(`/api/employees/${employeeId.value}/jobs/${jobId}/run`, { method: "POST" });
     await refresh();
     showToast("success", "任务已触发，正在后台执行中");
-  } catch {
-    showToast("error", "触发失败，请稍后重试");
+  } catch (err) {
+    // Surface the backend's structured reason when present so users can tell
+    // a disabled job apart from an engine blow-up. `$fetch` surfaces the
+    // `createError({ statusMessage })` only on the top-level `statusMessage`,
+    // and our API mirrors the same copy on `data.message` for a single
+    // canonical field. `e.data.statusMessage` never actually exists — that
+    // was a defensive-but-dead fallback that has been removed.
+    const e = err as { statusMessage?: string; data?: { message?: string; reason?: string } };
+    const reason = e?.data?.reason;
+    const detail = e?.data?.message ?? e?.statusMessage;
+    let message = detail ? `触发失败：${detail}` : "触发失败，请稍后重试";
+    // `runtime_missing` means the scheduler registration drifted from the
+    // DB, which can't self-recover. The only working recovery path today is
+    // a manual disable→enable cycle (which runs through `updateJob`), so
+    // guide the user instead of just echoing the raw message.
+    if (reason === "runtime_missing") {
+      message = "该任务调度器状态异常，请先关闭再启用任务以重置调度。";
+    }
+    showToast("error", message);
+    // If the backend says the job itself is gone, reload so the UI drops
+    // the stale row instead of letting the user click again on a phantom
+    // entry that will keep failing the same way. `runtime_missing` does
+    // NOT delete the DB row, so we leave the list alone there.
+    if (reason === "job_not_found") {
+      await refresh();
+    }
   } finally {
     runningJobId.value = null;
   }

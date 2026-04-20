@@ -12,6 +12,60 @@ import {
   EmployeeScheduleJobRepository,
   type EmployeeScheduleJobView
 } from "../repositories/employee-schedule-job-repository";
+
+export type { EmployeeScheduleJobView } from "../repositories/employee-schedule-job-repository";
+
+/** Optional ownership assertion accepted by `updateJob` / `deleteJob` /
+ * `runJobNow`. Callers that already know which employee should own the job
+ * (e.g. the `schedule` tool, keyed by `employeeId` in the session context, or
+ * HTTP endpoints keyed by `:id` in the URL) can pass this in so the service
+ * layer enforces the check — protecting any future caller that forgets to do
+ * it itself. Internal administrative callers (e.g. lifecycle bulk updates)
+ * may omit the option. */
+export type JobOwnershipOptions = { expectedEmployeeId?: string };
+
+/** Structured outcome of `runJobNow`. Callers (HTTP / LLM tool / tests) can
+ * map `reason` to a user-facing message + HTTP status code instead of
+ * squashing every failure into a vague 400.
+ *
+ * Only four reasons survive by design. `runtime_missing` is the single
+ * "state-drift" reason: whatever the underlying cause (DB null pointer,
+ * short id not in cron store, heartbeat scheduler missing), the right user
+ * action is the same — disable then re-enable the job to reset the
+ * scheduler. Collapsing these into one reason avoids the previous leak
+ * where `runtime_missing` vs `heartbeat_not_running` forced the LLM tool
+ * to distinguish cases it couldn't act on differently.
+ *
+ * `engine_failed` stays separate because it signals the dispatch path
+ * itself worked (cron runtime found, onJob callback invoked) but the
+ * agent/engine turn threw. CronService swallows that into
+ * `job.state.lastError` to keep the auto scheduler alive; we surface it
+ * here so manual invocations don't appear as silent successes. */
+export type RunJobNowReason =
+  | "job_not_found"
+  | "job_disabled"
+  | "runtime_missing"
+  | "engine_failed";
+
+export type RunJobNowOutcome =
+  | { triggered: true }
+  | { triggered: false; reason: RunJobNowReason; message: string };
+
+class JobNotFoundError extends Error {
+  constructor(public readonly jobId: string) {
+    super(`Schedule job not found: ${jobId}`);
+    this.name = "JobNotFoundError";
+  }
+}
+
+class JobOwnershipError extends Error {
+  constructor(public readonly jobId: string) {
+    super(`Schedule job ${jobId} is not owned by the expected employee`);
+    this.name = "JobOwnershipError";
+  }
+}
+
+export { JobNotFoundError, JobOwnershipError };
 import { EmployeeRunService } from "./employee-run-service";
 import type { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 import { resolveEmployeeWorkspace } from "../engine/employee-workspace";
@@ -28,6 +82,14 @@ export class AutomationService {
   private started = false;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
   private readonly jobHeartbeats: Map<string, HeartbeatService> = new Map();
+  /** Per-job mutex chain. `updateJob` and `deleteJob` touch DB + cron store
+   * + heartbeat map in several non-atomic steps; concurrent callers on the
+   * same jobId could race and leave orphan runtime entries (the same kind
+   * of drift reconciliation already fixes). We serialize those writers on
+   * a per-job basis. Map value is the "tail" promise — next caller chains
+   * after it. Tails always resolve (errors are swallowed for the chain
+   * only; the `await` path re-throws the real error to the caller). */
+  private readonly jobLocks: Map<string, Promise<void>> = new Map();
 
   constructor(
     private readonly scheduleRepo: EmployeeScheduleRepository,
@@ -124,9 +186,40 @@ export class AutomationService {
     }
   }
 
+  /** Reconcile the cron-runtime store with the DB on service start.
+   *
+   * Pre-fix behavior matched on the runtime short id (`job.runtimeJobId`)
+   * stored in DB. Under Nitro HMR / concurrent server instances, the DB
+   * `runtime_job_id` column and the in-memory cron store can drift: the DB
+   * column points at a short id that isn't in the current store snapshot,
+   * the reconciliation code treats that as "runtime gone" and `addJob` adds
+   * *another* entry with the same `ejob:{jobId}` name but a fresh short id.
+   * Over multiple restarts this accumulates one extra entry per restart per
+   * enabled job (we observed 30+ duplicates for some jobs), while the
+   * newest short id the DB points at isn't guaranteed to match either
+   * entry — stale entries outnumber the live one.
+   *
+   * The stable identity of a runtime is `ejob:{jobId}` (by construction),
+   * so match on *name*, not short id. For each DB job we pick exactly one
+   * canonical runtime — preferring the one the DB currently points at,
+   * else the most-recently-updated existing one, else freshly registered.
+   * All other same-name runtimes are removed, and cron entries whose DB
+   * owner no longer exists (disabled/deleted) are also pruned. Heartbeat
+   * jobs still go through their own scheduler. */
   private async restartJobSchedules(): Promise<void> {
     const jobs = await this.jobRepo.listAllEnabled();
-    const existingCronJobIds = new Set(this.cronService.listJobs(true).map((j) => j.id));
+
+    // Bucket all existing cron runtimes by name so we can diff against DB.
+    // Include disabled entries so stale disabled duplicates get pruned too.
+    const cronByName = new Map<string, CronJob[]>();
+    for (const cj of this.cronService.listJobs(true)) {
+      const list = cronByName.get(cj.name);
+      if (list) list.push(cj);
+      else cronByName.set(cj.name, [cj]);
+    }
+
+    const canonicalRuntimeIds = new Set<string>();
+    let prunedDuplicates = 0;
 
     for (const job of jobs) {
       const employee = await this.employeeRepo.getById(job.employeeId);
@@ -138,24 +231,70 @@ export class AutomationService {
         continue;
       }
 
-      // If already loaded from jobs.json on CronService start, skip re-registration
-      if (job.runtimeJobId && existingCronJobIds.has(job.runtimeJobId)) {
-        continue;
+      const cronName = `ejob:${job.id}`;
+      const existing = cronByName.get(cronName) ?? [];
+
+      let canonical: CronJob;
+      if (existing.length > 0) {
+        // Prefer the runtime the DB already points at (preserves its lastRun
+        // state history); otherwise the most-recently-updated entry.
+        const byDbPointer = job.runtimeJobId
+          ? existing.find((c) => c.id === job.runtimeJobId)
+          : undefined;
+        canonical = byDbPointer ?? existing.slice().sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))[0]!;
+        // Delete every same-name duplicate except the canonical one.
+        for (const dup of existing) {
+          if (dup.id !== canonical.id) {
+            this.cronService.removeJob(dup.id);
+            prunedDuplicates += 1;
+          }
+        }
+      } else {
+        // No runtime registered yet — synthesize from DB schedule definition.
+        canonical = this.cronService.addJob({
+          name: cronName,
+          schedule:
+            job.scheduleKind === "cron"
+              ? { kind: "cron", expr: job.cronExpr ?? "0 9 * * *" }
+              : { kind: "every", everyMs: Math.max(1_000, Math.trunc(job.everyMs ?? 60_000)) },
+          message: job.taskPrompt,
+          deliver: false
+        });
       }
 
-      // Not in CronService yet (e.g. jobs.json was cleared), re-register fresh
-      const cronJob = this.cronService.addJob({
-        name: `ejob:${job.id}`,
-        schedule:
-          job.scheduleKind === "cron"
-            ? { kind: "cron", expr: job.cronExpr ?? "0 9 * * *" }
-            : { kind: "every", everyMs: Math.max(1_000, Math.trunc(job.everyMs ?? 60_000)) },
-        message: job.taskPrompt,
-        deliver: false
-      });
-      await this.jobRepo.patchRuntimeJobId(job.id, cronJob.id);
-      const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
+      canonicalRuntimeIds.add(canonical.id);
+
+      if (job.runtimeJobId !== canonical.id) {
+        await this.jobRepo.patchRuntimeJobId(job.id, canonical.id);
+      }
+      const nextRunAt = canonical.state.nextRunAtMs
+        ? formatTimestamp(new Date(canonical.state.nextRunAtMs))
+        : null;
       await this.jobRepo.patchNextRunAt(job.id, nextRunAt);
+    }
+
+    // Drop orphan `ejob:*` runtimes whose DB job is disabled or deleted.
+    // The legacy `employee:*` names are owned by the deprecated per-employee
+    // schedule API and left alone here.
+    let orphansRemoved = 0;
+    for (const [name, list] of cronByName.entries()) {
+      if (!name.startsWith("ejob:")) continue;
+      for (const cj of list) {
+        if (!canonicalRuntimeIds.has(cj.id)) {
+          // Only remove if still present — we may have already deleted it as
+          // a same-name duplicate above, in which case removeJob is a no-op.
+          if (this.cronService.removeJob(cj.id)) {
+            orphansRemoved += 1;
+          }
+        }
+      }
+    }
+
+    if (prunedDuplicates > 0 || orphansRemoved > 0) {
+      logger.info(
+        `restartJobSchedules: pruned ${prunedDuplicates} duplicate + ${orphansRemoved} orphan cron entries; ` +
+          `canonical runtimes=${canonicalRuntimeIds.size}`
+      );
     }
   }
 
@@ -191,6 +330,37 @@ export class AutomationService {
       existing.stop();
       this.heartbeats.delete(employeeId);
     }
+  }
+
+  /** Serialize async operations on a given jobId. Callers are queued
+   * FIFO; a failure in one call does NOT block subsequent calls (the
+   * tail promise always resolves). Cleans up the map once the tail
+   * drains to avoid unbounded growth.
+   *
+   * Why not `async-mutex` or similar: we only need per-key serialization
+   * across a handful of write paths, and a plain promise chain keeps the
+   * dependency list the same. */
+  private withJobLock<T>(jobId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.jobLocks.get(jobId) ?? Promise.resolve();
+    // `then(fn, fn)` runs `fn` whether `prev` resolved or rejected —
+    // treating the previous caller's failure as "not our problem, our
+    // turn now". The value-carrying promise (`run`) is what we await.
+    const run = prev.then(fn, fn);
+    // The chain's *tail* must always resolve, otherwise a thrown fn
+    // triggers an unhandledRejection while it sits in the map.
+    const tail: Promise<void> = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this.jobLocks.set(jobId, tail);
+    const cleanup = () => {
+      // Only delete if we're still the most recent tail; otherwise a
+      // follow-up caller has already chained after us and owns the slot.
+      if (this.jobLocks.get(jobId) === tail) {
+        this.jobLocks.delete(jobId);
+      }
+    };
+    return run.finally(cleanup);
   }
 
   private startJobHeartbeat(
@@ -402,85 +572,194 @@ export class AutomationService {
       everyMs?: number | null;
       taskPrompt?: string;
       enabled?: boolean;
-    }
+    },
+    opts?: JobOwnershipOptions
   ): Promise<EmployeeScheduleJobView> {
-    const existing = await this.jobRepo.getById(jobId);
-    if (!existing) throw new Error(`Schedule job not found: ${jobId}`);
+    // Serialize per-job: two concurrent `updateJob(sameId)` calls (or an
+    // update racing a delete) used to produce orphan cron entries in
+    // `jobs.json` — we'd `removeJob(oldRuntime)` then `addJob(new)`, and
+    // an interleaved second call could `removeJob(stillOldRuntime)` and
+    // then add a second new entry, leaving the first new entry abandoned
+    // with no DB pointer. Reconciliation would clean it up on restart,
+    // but it's better not to create it in the first place.
+    return this.withJobLock(jobId, async () => {
+      const existing = await this.jobRepo.getById(jobId);
+      if (!existing) throw new JobNotFoundError(jobId);
+      if (opts?.expectedEmployeeId && existing.employeeId !== opts.expectedEmployeeId) {
+        throw new JobOwnershipError(jobId);
+      }
 
-    const employee = await this.employeeRepo.getById(existing.employeeId);
-    if (!employee) throw new Error(`Employee not found: ${existing.employeeId}`);
+      const employee = await this.employeeRepo.getById(existing.employeeId);
+      if (!employee) throw new Error(`Employee not found: ${existing.employeeId}`);
 
-    // Clean up existing runtime resources
-    if (existing.runtimeJobId) {
-      this.cronService.removeJob(existing.runtimeJobId);
-    }
-    this.stopJobHeartbeat(jobId);
+      if (existing.runtimeJobId) {
+        this.cronService.removeJob(existing.runtimeJobId);
+      }
+      this.stopJobHeartbeat(jobId);
 
-    const newKind = input.scheduleKind ?? existing.scheduleKind;
-    const newEnabled = input.enabled ?? existing.enabled;
+      const newKind = input.scheduleKind ?? existing.scheduleKind;
+      const newEnabled = input.enabled ?? existing.enabled;
 
-    const updated = await this.jobRepo.update(jobId, {
-      ...input,
-      runtimeJobId: null,
-      nextRunAt: null
+      const updated = await this.jobRepo.update(jobId, {
+        ...input,
+        runtimeJobId: null,
+        nextRunAt: null
+      });
+      if (!updated) throw new Error(`Failed to update job: ${jobId}`);
+
+      if (!newEnabled) return updated;
+
+      if (newKind === "heartbeat") {
+        const newEveryMs = input.everyMs ?? existing.everyMs ?? 30 * 60 * 1000;
+        const intervalS = Math.max(1, Math.floor(newEveryMs / 1000));
+        await this.jobRepo.update(jobId, { heartbeatIntervalS: intervalS });
+        this.startJobHeartbeat(
+          jobId,
+          existing.employeeId,
+          employee.code,
+          intervalS,
+          input.taskPrompt ?? existing.taskPrompt,
+          input.name ?? existing.name
+        );
+        return (await this.jobRepo.getById(jobId)) ?? updated;
+      }
+
+      const cronJobName = `ejob:${jobId}`;
+      const cronExpr = input.cronExpr ?? existing.cronExpr ?? "0 9 * * *";
+      const everyMs = input.everyMs ?? existing.everyMs ?? 60_000;
+      const cronJob = this.cronService.addJob({
+        name: cronJobName,
+        schedule:
+          newKind === "cron"
+            ? { kind: "cron", expr: cronExpr }
+            : { kind: "every", everyMs: Math.max(1_000, Math.trunc(everyMs)) },
+        message: input.taskPrompt ?? existing.taskPrompt,
+        deliver: false
+      });
+      const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
+      return (await this.jobRepo.update(jobId, { runtimeJobId: cronJob.id, nextRunAt })) ?? updated;
     });
-    if (!updated) throw new Error(`Failed to update job: ${jobId}`);
-
-    if (!newEnabled) return updated;
-
-    if (newKind === "heartbeat") {
-      const newEveryMs = input.everyMs ?? existing.everyMs ?? 30 * 60 * 1000;
-      const intervalS = Math.max(1, Math.floor(newEveryMs / 1000));
-      await this.jobRepo.update(jobId, { heartbeatIntervalS: intervalS });
-      this.startJobHeartbeat(
-        jobId,
-        existing.employeeId,
-        employee.code,
-        intervalS,
-        input.taskPrompt ?? existing.taskPrompt,
-        input.name ?? existing.name
-      );
-      return (await this.jobRepo.getById(jobId)) ?? updated;
-    }
-
-    const cronJobName = `ejob:${jobId}`;
-    const cronExpr = input.cronExpr ?? existing.cronExpr ?? "0 9 * * *";
-    const everyMs = input.everyMs ?? existing.everyMs ?? 60_000;
-    const cronJob = this.cronService.addJob({
-      name: cronJobName,
-      schedule:
-        newKind === "cron"
-          ? { kind: "cron", expr: cronExpr }
-          : { kind: "every", everyMs: Math.max(1_000, Math.trunc(everyMs)) },
-      message: input.taskPrompt ?? existing.taskPrompt,
-      deliver: false
-    });
-    const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
-    return (await this.jobRepo.update(jobId, { runtimeJobId: cronJob.id, nextRunAt })) ?? updated;
   }
 
-  async deleteJob(jobId: string): Promise<void> {
-    const existing = await this.jobRepo.getById(jobId);
-    if (!existing) return;
-    if (existing.runtimeJobId) {
-      this.cronService.removeJob(existing.runtimeJobId);
-    }
-    this.stopJobHeartbeat(jobId);
-    await this.jobRepo.delete(jobId);
+  async deleteJob(jobId: string, opts?: JobOwnershipOptions): Promise<void> {
+    return this.withJobLock(jobId, async () => {
+      const existing = await this.jobRepo.getById(jobId);
+      if (!existing) {
+        // Idempotent: deleting a non-existent job is a no-op, but callers
+        // that asserted ownership deserve a firm error so they can't be
+        // tricked into "success" by guessing ids outside their scope.
+        if (opts?.expectedEmployeeId) {
+          throw new JobNotFoundError(jobId);
+        }
+        return;
+      }
+      if (opts?.expectedEmployeeId && existing.employeeId !== opts.expectedEmployeeId) {
+        throw new JobOwnershipError(jobId);
+      }
+      if (existing.runtimeJobId) {
+        this.cronService.removeJob(existing.runtimeJobId);
+      }
+      this.stopJobHeartbeat(jobId);
+      await this.jobRepo.delete(jobId);
+    });
   }
 
-  async runJobNow(jobId: string): Promise<boolean> {
+  async runJobNow(jobId: string, opts?: JobOwnershipOptions): Promise<RunJobNowOutcome> {
     const job = await this.jobRepo.getById(jobId);
-    if (!job) return false;
+    if (!job) {
+      if (opts?.expectedEmployeeId) {
+        throw new JobNotFoundError(jobId);
+      }
+      logger.warn(`runJobNow failed: job ${jobId} not found in DB`);
+      return { triggered: false, reason: "job_not_found", message: `Job ${jobId} not found` };
+    }
+    if (opts?.expectedEmployeeId && job.employeeId !== opts.expectedEmployeeId) {
+      throw new JobOwnershipError(jobId);
+    }
 
+    if (!job.enabled) {
+      logger.warn(`runJobNow refused: job ${jobId} is disabled`);
+      return { triggered: false, reason: "job_disabled", message: `Job ${jobId} is disabled, enable it before running` };
+    }
+
+    // Heartbeat: reconciliation (`restartJobSchedules`) is the single source
+    // of truth for starting heartbeat schedulers. If one is missing at
+    // runtime, the DB→runtime relationship drifted after start() — no
+    // silent self-heal here, because that exact pattern is what caused the
+    // `jobs.json` duplicate accumulation in the first place. Surface a
+    // structured drift signal instead and let the user reset the scheduler
+    // via a disable/enable cycle, which takes the well-exercised
+    // `updateJob` path.
     if (job.scheduleKind === "heartbeat") {
       const hb = this.jobHeartbeats.get(jobId);
-      if (!hb) return false;
+      if (!hb) {
+        logger.error(
+          `runJobNow: heartbeat scheduler for job ${jobId} is not running. ` +
+            `Drift detected since last start(). ` +
+            `User should disable then re-enable the job to recover.`
+        );
+        return {
+          triggered: false,
+          reason: "runtime_missing",
+          message:
+            `Heartbeat scheduler for job ${jobId} is not running. ` +
+            `Please disable and re-enable the job to reset the schedule.`
+        };
+      }
       await hb.triggerNow();
-      return true;
+      return { triggered: true };
     }
-    if (!job.runtimeJobId) return false;
-    return this.cronService.runJob(job.runtimeJobId, true);
+
+    // cron / every: reconciliation keeps DB `runtime_job_id` pointing at a
+    // live cron entry. If it's null or stale at this point, something
+    // between start() and this call broke the invariant — again, fast-fail
+    // rather than paper over it.
+    if (!job.runtimeJobId) {
+      logger.error(
+        `runJobNow: job ${jobId} has null runtimeJobId after reconciliation. ` +
+          `Drift detected; user should disable then re-enable to reset.`
+      );
+      return {
+        triggered: false,
+        reason: "runtime_missing",
+        message:
+          `Runtime for job ${jobId} is out of sync (runtimeJobId is null). ` +
+          `Please disable and re-enable the job to reset the schedule.`
+      };
+    }
+
+    const didRun = await this.cronService.runJob(job.runtimeJobId, true);
+    if (!didRun) {
+      logger.error(
+        `runJobNow: cronService.runJob(${job.runtimeJobId}) returned false for job ${jobId}. ` +
+          `Drift detected between DB runtime_job_id and cron store; reset required.`
+      );
+      return {
+        triggered: false,
+        reason: "runtime_missing",
+        message:
+          `Cron runtime ${job.runtimeJobId} was not found in the scheduler. ` +
+          `Please disable and re-enable the job to reset the schedule.`
+      };
+    }
+
+    // CronService#executeJob internally catches engine/agent failures so the
+    // auto-dispatch loop stays alive, and stores the error on the job's
+    // `lastStatus`/`lastError` state fields. For manual invocations we want
+    // that failure to be visible (otherwise the UI shows a false-positive
+    // "triggered" toast while the underlying run errored). Inspect the
+    // job's post-run state to recover visibility.
+    const runtimeAfter = this.cronService.listJobs(true).find((j) => j.id === job.runtimeJobId);
+    if (runtimeAfter?.state.lastStatus === "error") {
+      const errMsg = runtimeAfter.state.lastError ?? "Unknown engine failure";
+      logger.error(`runJobNow: engine failed for job ${jobId} runtime=${job.runtimeJobId}: ${errMsg}`);
+      return {
+        triggered: false,
+        reason: "engine_failed",
+        message: `Engine failed while executing job ${jobId}: ${errMsg}`
+      };
+    }
+    return { triggered: true };
   }
 
   stop(): void {

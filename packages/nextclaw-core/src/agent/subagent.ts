@@ -39,6 +39,10 @@ export class SubagentManager {
       searchConfig?: SearchConfig;
       execConfig?: { timeout: number };
       restrictToWorkspace?: boolean;
+      /** Env overlay applied to the subagent's ExecTool so platform secrets
+       * (and other per-employee env vars) propagate into shell calls the
+       * subagent makes. */
+      envOverlay?: Record<string, string>;
     }
   ) {}
 

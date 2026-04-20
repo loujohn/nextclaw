@@ -24,8 +24,6 @@ import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
 import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
 import { EmployeeUploadFileService } from "./employee-upload-file-service";
-import type { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
-import { buildChannelNotificationHint } from "../utils/channel-notification-hint";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -518,8 +516,7 @@ export class EmployeeRunService {
     private readonly gateway: NextclawEngineGateway,
     private readonly skillInstallationRepo?: SkillInstallationRepository,
     private readonly chatSessionRepo?: ChatSessionRepository,
-    private readonly chatMessageRepo?: ChatMessageRepository,
-    private readonly integrationConnectionRepo?: IntegrationConnectionRepository
+    private readonly chatMessageRepo?: ChatMessageRepository
   ) {}
 
   private requireChatPersistence(): {
@@ -1057,7 +1054,6 @@ export class EmployeeRunService {
     }
   }
 
-  private static readonly HEADLESS_TRIGGER_TYPES = new Set(["webhook", "scheduled"]);
 
   async runEmployeeTurn(params: {
     employeeId: string;
@@ -1078,11 +1074,7 @@ export class EmployeeRunService {
         })
       : null;
 
-    let message = params.message;
-    if (EmployeeRunService.HEADLESS_TRIGGER_TYPES.has(params.triggerType) && this.integrationConnectionRepo) {
-      const hint = await buildChannelNotificationHint(this.integrationConnectionRepo, employee.code);
-      if (hint) message = message + hint;
-    }
+    const message = params.message;
 
     const run = await this.runRepo.create({
       employeeId: employee.id,

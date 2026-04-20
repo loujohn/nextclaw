@@ -101,11 +101,14 @@ export class SkillsLoader {
     return parts.length ? parts.join("\n\n---\n\n") : "";
   }
 
-  buildSkillsSummary(filterNames?: string[]): string {
+  buildSkillsSummary(filterNames?: string[], excludeNames?: ReadonlySet<string>): string {
     let allSkills = this.listSkills(false);
     if (filterNames && filterNames.length > 0) {
       const nameSet = new Set(filterNames);
       allSkills = allSkills.filter((s) => nameSet.has(s.name));
+    }
+    if (excludeNames && excludeNames.size > 0) {
+      allSkills = allSkills.filter((s) => !excludeNames.has(s.name));
     }
     if (!allSkills.length) {
       return "";
