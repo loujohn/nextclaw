@@ -250,6 +250,8 @@ def prepare_report_data(report_data, login_user=None, login_name=None):
         "workHourProportionStatus": report_data.get("workHourProportionStatus", 0),
         "daySummarizeNow": report_data.get("daySummarizeNow", ""),
         "dayPlanNext": report_data.get("dayPlanNext", ""),
+        "problemRisk": report_data.get("problemRisk", ""),
+        "requestInstructions": report_data.get("requestInstructions", ""),
         "accompanyingPersonnelList": report_data.get("accompanyingPersonnelList", []),
         "dayReportTime": report_data.get("dayReportTime", report_data.get("date", "")),
         "dayReportType": report_data.get("dayReportType", 2),
@@ -596,6 +598,10 @@ def main():
         "--day-summarize-now", dest="day_summarize_now", help="今日工作总结"
     )
     parser.add_argument("--day-plan-next", dest="day_plan_next", help="明日工作计划")
+    parser.add_argument("--problem-risk", dest="problem_risk", help="问题与风险（选填）")
+    parser.add_argument(
+        "--request-instructions", dest="request_instructions", help="请示事项（选填）"
+    )
     parser.add_argument(
         "--day-report-type",
         dest="day_report_type",
@@ -653,8 +659,13 @@ def main():
             temp_dir, f"{monday.strftime('%Y-%m-%d')}_{sunday.strftime('%Y-%m-%d')}"
         )
 
+    report_user = args.report_user or "unknown"
+    report_name = args.report_name or report_user
+
     query_file_name = (
-        f"projects_query_{username}.json" if username else "projects_query.json"
+        f"projects_query_{report_user}.json"
+        if report_user
+        else f"projects_query_{username}.json"
     )
 
     if args.query_projects is not None:
@@ -676,7 +687,7 @@ def main():
                     )
                 print(format_projects_for_selection(records, total))
                 print(
-                    f"\n（查询结果已缓存，如需选择项目请使用 --select <数字> 参数）",
+                    f"\n请使用 --select <数字> 选择项目",
                     file=sys.stderr,
                 )
             else:
@@ -758,6 +769,10 @@ def main():
                 report_data["daySummarizeNow"] = args.day_summarize_now
             if args.day_plan_next:
                 report_data["dayPlanNext"] = args.day_plan_next
+            if args.problem_risk:
+                report_data["problemRisk"] = args.problem_risk
+            if args.request_instructions:
+                report_data["requestInstructions"] = args.request_instructions
             if args.date:
                 report_data["date"] = args.date
                 report_data["dayReportTime"] = args.date
@@ -799,6 +814,10 @@ def main():
         report_data["daySummarizeNow"] = args.day_summarize_now
     if args.day_plan_next:
         report_data["dayPlanNext"] = args.day_plan_next
+    if args.problem_risk:
+        report_data["problemRisk"] = args.problem_risk
+    if args.request_instructions:
+        report_data["requestInstructions"] = args.request_instructions
     if args.date:
         report_data["date"] = args.date
         report_data["dayReportTime"] = args.date
@@ -858,13 +877,12 @@ def main():
         print("[日报] 正在提交日报...", flush=True)
         sys.stdout.flush()
 
-        if not args.report_user:
-            print("[日报] 错误: 请通过 --report-user 指定填报人用户名（通过 --report-name 指定中文名）", file=sys.stderr)
+        if report_user == "unknown":
+            print("[日报] 错误: 请确认填报人信息", file=sys.stderr)
             if os.path.exists(param_file):
                 os.remove(param_file)
             return
 
-        report_user = args.report_user
         report_name = args.report_name or report_user
 
         result = submit_report(base_url, token, prepared_data, report_user, report_name)
@@ -883,7 +901,7 @@ def main():
             print("", flush=True)
             print("==================================================", flush=True)
             print("【成功】日报提交成功", flush=True)
-            print(f"【存档】MD文件已生成: {md_dir}", flush=True)
+            print("【存档】MD文件已生成", flush=True)
             print("==================================================", flush=True)
         else:
             error_msg = result.get("message", "提交失败")
