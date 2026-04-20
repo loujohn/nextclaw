@@ -89,6 +89,13 @@ export class SkillInstallationRepository {
     return rows.map(toView);
   }
 
+  async findUserImportedNames(): Promise<Set<string>> {
+    const rows = await this.db<SkillInstallationRecord>(PLATFORM_TABLES.skillInstallations)
+      .whereIn("source_type", ["git", "local"])
+      .select("skill_name");
+    return new Set(rows.map((r) => r.skill_name));
+  }
+
   async deleteBySkillName(skillName: string): Promise<boolean> {
     const deleted = await this.db<SkillInstallationRecord>(PLATFORM_TABLES.skillInstallations)
       .where({ skill_name: skillName })
