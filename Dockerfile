@@ -1,4 +1,4 @@
-FROM node:22-alpine-python
+FROM python:3.11-slim-node
 ENV NODE_ENV=production
 ENV NEXTCLAW_DIGITAL_EMPLOYEE_HOME=/data
 ENV HOST=0.0.0.0
