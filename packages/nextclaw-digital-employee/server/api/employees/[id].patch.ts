@@ -1,5 +1,6 @@
 import { createError, getRouterParam, readBody } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
+import { requireAuth } from "../../utils/auth-guards";
 
 type UpdateEmployeeBody = {
   name?: string;
@@ -18,6 +19,7 @@ type UpdateEmployeeBody = {
 };
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const id = getRouterParam(event, "id") ?? "";
   const body = await readBody<UpdateEmployeeBody>(event);
 
@@ -40,6 +42,7 @@ export default defineEventHandler(async (event) => {
       workspaceFiles: body?.workspaceFiles,
       webhookEnabled: body?.webhookEnabled,
       webhookSecret: body?.webhookSecret,
+      actorUserId: user.id,
     });
     return { ok: true, data: { ...result.employee, skills: result.skills, jobs: result.jobs } };
   } catch (err: unknown) {

@@ -414,6 +414,7 @@ export class AutomationService {
     cronExpr?: string | null;
     everyMs?: number | null;
     enabled?: boolean;
+    actorUserId?: string;
   }): Promise<EmployeeScheduleView> {
     const employee = await this.employeeRepo.getById(input.employeeId);
     if (!employee) {
@@ -442,7 +443,9 @@ export class AutomationService {
         enabled: input.enabled ?? true,
         runtimeJobId: null,
         scheduleMessage,
-        nextRunAt: null
+        nextRunAt: null,
+        createdByUserId: existing?.createdByUserId ?? input.actorUserId,
+        updatedByUserId: input.actorUserId
       });
     }
 
@@ -465,7 +468,9 @@ export class AutomationService {
       enabled: input.enabled ?? true,
       runtimeJobId: job.id,
       scheduleMessage,
-      nextRunAt: job.state.nextRunAtMs ? formatTimestamp(new Date(job.state.nextRunAtMs)) : null
+      nextRunAt: job.state.nextRunAtMs ? formatTimestamp(new Date(job.state.nextRunAtMs)) : null,
+      createdByUserId: existing?.createdByUserId ?? input.actorUserId,
+      updatedByUserId: input.actorUserId
     });
   }
 
@@ -512,6 +517,7 @@ export class AutomationService {
     everyMs?: number | null;
     taskPrompt?: string;
     enabled?: boolean;
+    actorUserId?: string;
   }): Promise<EmployeeScheduleJobView> {
     const employee = await this.employeeRepo.getById(input.employeeId);
     if (!employee) throw new Error(`Employee not found: ${input.employeeId}`);
@@ -526,7 +532,8 @@ export class AutomationService {
         everyMs: input.everyMs ?? null,
         heartbeatIntervalS: intervalS,
         taskPrompt: input.taskPrompt ?? "",
-        enabled: input.enabled ?? true
+        enabled: input.enabled ?? true,
+        createdByUserId: input.actorUserId
       });
       if (input.enabled !== false) {
         this.startJobHeartbeat(job.id, input.employeeId, employee.code, intervalS, input.taskPrompt, input.name);
@@ -543,7 +550,8 @@ export class AutomationService {
       cronExpr: input.cronExpr ?? null,
       everyMs: input.everyMs ?? null,
       taskPrompt: input.taskPrompt ?? "",
-      enabled: input.enabled ?? true
+      enabled: input.enabled ?? true,
+      createdByUserId: input.actorUserId
     });
 
     if (input.enabled !== false) {
@@ -557,7 +565,7 @@ export class AutomationService {
         deliver: false
       });
       const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
-      return (await this.jobRepo.update(job.id, { runtimeJobId: cronJob.id, nextRunAt })) ?? job;
+      return (await this.jobRepo.update(job.id, { runtimeJobId: cronJob.id, nextRunAt, updatedByUserId: input.actorUserId })) ?? job;
     }
     return job;
   }
@@ -572,6 +580,7 @@ export class AutomationService {
       everyMs?: number | null;
       taskPrompt?: string;
       enabled?: boolean;
+      actorUserId?: string;
     },
     opts?: JobOwnershipOptions
   ): Promise<EmployeeScheduleJobView> {
@@ -603,7 +612,8 @@ export class AutomationService {
       const updated = await this.jobRepo.update(jobId, {
         ...input,
         runtimeJobId: null,
-        nextRunAt: null
+        nextRunAt: null,
+        updatedByUserId: input.actorUserId
       });
       if (!updated) throw new Error(`Failed to update job: ${jobId}`);
 
@@ -612,7 +622,7 @@ export class AutomationService {
       if (newKind === "heartbeat") {
         const newEveryMs = input.everyMs ?? existing.everyMs ?? 30 * 60 * 1000;
         const intervalS = Math.max(1, Math.floor(newEveryMs / 1000));
-        await this.jobRepo.update(jobId, { heartbeatIntervalS: intervalS });
+        await this.jobRepo.update(jobId, { heartbeatIntervalS: intervalS, updatedByUserId: input.actorUserId });
         this.startJobHeartbeat(
           jobId,
           existing.employeeId,
@@ -637,7 +647,7 @@ export class AutomationService {
         deliver: false
       });
       const nextRunAt = cronJob.state.nextRunAtMs ? formatTimestamp(new Date(cronJob.state.nextRunAtMs)) : null;
-      return (await this.jobRepo.update(jobId, { runtimeJobId: cronJob.id, nextRunAt })) ?? updated;
+      return (await this.jobRepo.update(jobId, { runtimeJobId: cronJob.id, nextRunAt, updatedByUserId: input.actorUserId })) ?? updated;
     });
   }
 

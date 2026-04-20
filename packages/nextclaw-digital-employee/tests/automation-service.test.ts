@@ -100,13 +100,16 @@ describe("automation service - cron schedule", () => {
       employeeId: employee.id,
       scheduleKind: "cron",
       cronExpr: "0 18 * * *",
-      enabled: true
+      enabled: true,
+      actorUserId: "user-schedule-owner"
     });
 
     await automation.runNow(employee.id);
     const runs = await runRepo.listByEmployeeId(employee.id);
 
     expect(schedule.scheduleKind).toBe("cron");
+    expect(schedule.createdByUserId).toBe("user-schedule-owner");
+    expect(schedule.updatedByUserId).toBe("user-schedule-owner");
     expect(schedule.runtimeJobId).toBeTruthy();
     expect(runs).toHaveLength(1);
     expect(runs[0]?.summary).toContain("cron 任务已完成");
@@ -602,8 +605,12 @@ describe("automation service - chat persistence", () => {
       scheduleKind: "cron",
       cronExpr: "0 9 * * *",
       taskPrompt: "请执行每日同步并给出摘要",
-      enabled: true
+      enabled: true,
+      actorUserId: "user-job-creator"
     });
+
+    expect(job.createdByUserId).toBe("user-job-creator");
+    expect(job.updatedByUserId).toBe("user-job-creator");
 
     const outcome = await automation.runJobNow(job.id);
     expect(outcome.triggered).toBe(true);
@@ -618,6 +625,51 @@ describe("automation service - chat persistence", () => {
       limit: 10
     });
     expect(page.items.some((item) => item.role === "assistant" && item.content.includes("立即执行任务已完成"))).toBe(true);
+
+    automation.stop();
+    await db.destroy();
+  });
+
+  it("records updater when a schedule job is modified", async () => {
+    const homeDir = createTempDir("nextclaw-automation-job-audit-update-");
+    const db = createTestKnex();
+    await ensureTestDatabase(db);
+
+    const employeeRepo = new EmployeeRepository(db);
+    const skillRepo = new EmployeeSkillRepository(db);
+    const scheduleRepo = new EmployeeScheduleRepository(db);
+    const jobRepo = new EmployeeScheduleJobRepository(db);
+    const runRepo = new RunRecordRepository(db);
+    const employee = await employeeRepo.create({
+      name: "任务审计",
+      code: "job-audit",
+      description: "验证定时任务修改人记录",
+      systemPrompt: "你是任务审计测试员"
+    });
+
+    const gateway = buildTestGateway(homeDir, "任务更新成功");
+    const runService = new EmployeeRunService(employeeRepo, skillRepo, runRepo, gateway);
+    const cron = new CronService(join(homeDir, "cron", "jobs.json"));
+    const automation = new AutomationService(scheduleRepo, jobRepo, employeeRepo, runService, cron, gateway);
+    await automation.start();
+
+    const job = await automation.createJob({
+      employeeId: employee.id,
+      name: "初始任务",
+      scheduleKind: "every",
+      everyMs: 60_000,
+      enabled: true,
+      actorUserId: "user-job-creator"
+    });
+
+    const updated = await automation.updateJob(job.id, {
+      name: "更新后任务",
+      actorUserId: "user-job-updater"
+    });
+
+    expect(updated.name).toBe("更新后任务");
+    expect(updated.createdByUserId).toBe("user-job-creator");
+    expect(updated.updatedByUserId).toBe("user-job-updater");
 
     automation.stop();
     await db.destroy();

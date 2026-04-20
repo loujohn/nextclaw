@@ -9,6 +9,7 @@ export type CreateDepartmentInput = {
   externalId?: string | null;
   parentId?: string | null;
   sortOrder?: number;
+  createdByUserId?: string | null;
 };
 
 export type UpdateDepartmentInput = {
@@ -17,6 +18,7 @@ export type UpdateDepartmentInput = {
   externalId?: string | null;
   parentId?: string | null;
   sortOrder?: number;
+  updatedByUserId?: string | null;
 };
 
 export type DepartmentView = {
@@ -27,6 +29,8 @@ export type DepartmentView = {
   externalId: string | null;
   parentId: string | null;
   sortOrder: number;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -39,6 +43,8 @@ function toDepartmentView(record: DepartmentRecord): DepartmentView {
     externalId: record.external_id ?? null,
     parentId: record.parent_id,
     sortOrder: record.sort_order,
+    createdByUserId: record.created_by_user_id ?? null,
+    updatedByUserId: record.updated_by_user_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   };
@@ -56,6 +62,8 @@ export class DepartmentRepository {
       external_id: input.externalId ?? null,
       parent_id: input.parentId ?? null,
       sort_order: input.sortOrder ?? 0,
+      created_by_user_id: input.createdByUserId ?? null,
+      updated_by_user_id: input.createdByUserId ?? null,
       created_at: now,
       updated_at: now
     };
@@ -87,6 +95,7 @@ export class DepartmentRepository {
     if ("externalId" in input) patch.external_id = input.externalId ?? null;
     if ("parentId" in input) patch.parent_id = input.parentId ?? null;
     if (typeof input.sortOrder === "number") patch.sort_order = input.sortOrder;
+    if ("updatedByUserId" in input) patch.updated_by_user_id = input.updatedByUserId ?? null;
 
     await this.db<DepartmentRecord>(PLATFORM_TABLES.departments).where({ id }).update(patch);
     const record = await this.db<DepartmentRecord>(PLATFORM_TABLES.departments).where({ id }).first();

@@ -54,6 +54,7 @@ type ActiveChatRun = {
 type ChatSessionResolveOptions = {
   createIfMissing?: boolean;
   title?: string;
+  actorUserId?: string;
 };
 
 type StoredRunMetadata = {
@@ -589,7 +590,8 @@ export class EmployeeRunService {
         return sessionRepo.create({
           employeeId,
           sessionKey: decodedSessionKey,
-          title: buildAutomatedSessionTitle(options.title)
+          title: buildAutomatedSessionTitle(options.title),
+          createdByUserId: options.actorUserId,
         });
       }
       throw new Error(`Chat session not found: ${sessionKey}`);
@@ -597,7 +599,8 @@ export class EmployeeRunService {
     return sessionRepo.create({
       employeeId,
       sessionKey: buildEmployeeChatSessionKey(employeeId),
-      title: options?.title ? buildAutomatedSessionTitle(options.title) : "新对话"
+      title: options?.title ? buildAutomatedSessionTitle(options.title) : "新对话",
+      createdByUserId: options?.actorUserId,
     });
   }
 
@@ -626,13 +629,14 @@ export class EmployeeRunService {
     return sessionRepo.listByEmployeeId(params);
   }
 
-  async createChatSession(employeeId: string): Promise<ChatSessionView> {
+  async createChatSession(employeeId: string, actorUserId?: string): Promise<ChatSessionView> {
     await this.getEmployeeOrThrow(employeeId);
     const { sessionRepo } = this.requireChatPersistence();
     return sessionRepo.create({
       employeeId,
       sessionKey: buildEmployeeChatSessionKey(employeeId),
-      title: "新对话"
+      title: "新对话",
+      createdByUserId: actorUserId,
     });
   }
 
@@ -684,12 +688,15 @@ export class EmployeeRunService {
     message: string;
     attachments?: ChatAttachmentView[];
     sessionKey?: string;
+    actorUserId?: string;
     signal?: AbortSignal;
     onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
   }): Promise<{ runId: string; sessionKey: string; reply: string }> {
     const { sessionRepo, messageRepo } = this.requireChatPersistence();
     const { employee, workspace, skillNames } = await this.prepareRuntime(params.employeeId);
-    const session = await this.resolveChatSession(employee.id, params.sessionKey);
+    const session = await this.resolveChatSession(employee.id, params.sessionKey, {
+      actorUserId: params.actorUserId,
+    });
     const run = await this.runRepo.create({
       employeeId: employee.id,
       triggerType: "manual",
@@ -734,7 +741,8 @@ export class EmployeeRunService {
       sessionId: session.id,
       messageCountIncrement: 1,
       latestContent: params.message,
-      titleSeed: params.message
+      titleSeed: params.message,
+      updatedByUserId: params.actorUserId,
     });
     const abortController = new AbortController();
     if (params.signal) {

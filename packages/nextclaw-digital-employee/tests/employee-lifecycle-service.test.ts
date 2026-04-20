@@ -88,11 +88,14 @@ describe("EmployeeLifecycleService", () => {
     const result = await lifecycleService.createEmployee({
       employee: { name: "测试助手", code: "test-bot", description: "单测用", systemPrompt: "你是测试员" },
       skillNames: ["weather-query"],
-      schedule: { scheduleKind: "cron", cronExpr: "0 9 * * *" }
+      schedule: { scheduleKind: "cron", cronExpr: "0 9 * * *" },
+      actorUserId: "user-admin-1",
     });
 
     expect(result.name).toBe("测试助手");
     expect(result.code).toBe("test-bot");
+    expect(result.createdByUserId).toBe("user-admin-1");
+    expect(result.updatedByUserId).toBe("user-admin-1");
     expect(result.skills).toHaveLength(1);
     expect(result.schedule).toBeTruthy();
 
@@ -167,11 +170,13 @@ describe("EmployeeLifecycleService", () => {
       name: "更新后",
       description: "新描述",
       skillNames: ["data-analysis"],
-      schedule: { scheduleKind: "every", everyMs: 120_000 }
+      schedule: { scheduleKind: "every", everyMs: 120_000 },
+      actorUserId: "user-manager-2",
     });
 
     expect(updated.employee.name).toBe("更新后");
     expect(updated.employee.description).toBe("新描述");
+    expect(updated.employee.updatedByUserId).toBe("user-manager-2");
     expect((updated.skills as Array<{ skillName: string }>).some((s) => s.skillName === "data-analysis")).toBe(true);
     expect(updated.jobs).toHaveLength(1);
   });

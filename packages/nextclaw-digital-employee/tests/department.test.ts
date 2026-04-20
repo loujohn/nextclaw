@@ -1,18 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestKnex, ensureTestDatabase } from "./test-db";
 import { DepartmentRepository } from "../server/repositories/department-repository";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 
 const tempDirs: string[] = [];
-
-function createTempHome(): string {
-  const dir = mkdtempSync(join(tmpdir(), "nextclaw-dept-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
 
 afterEach(() => {
   while (tempDirs.length > 0) {
@@ -27,10 +19,12 @@ describe("DepartmentRepository - CRUD", () => {
     await ensureTestDatabase(db);
     const repo = new DepartmentRepository(db);
 
-    const dept = await repo.create({ name: "技术部", description: "负责技术研发" });
+    const dept = await repo.create({ name: "技术部", description: "负责技术研发", createdByUserId: "user-admin-1" });
     expect(dept.name).toBe("技术部");
     expect(dept.description).toBe("负责技术研发");
     expect(dept.parentId).toBeNull();
+    expect(dept.createdByUserId).toBe("user-admin-1");
+    expect(dept.updatedByUserId).toBe("user-admin-1");
 
     const found = await repo.getById(dept.id);
     expect(found?.name).toBe("技术部");
@@ -74,10 +68,11 @@ describe("DepartmentRepository - CRUD", () => {
     const repo = new DepartmentRepository(db);
 
     const dept = await repo.create({ name: "旧名称" });
-    const updated = await repo.updateById(dept.id, { name: "新名称", description: "新描述" });
+    const updated = await repo.updateById(dept.id, { name: "新名称", description: "新描述", updatedByUserId: "user-manager-2" });
 
     expect(updated?.name).toBe("新名称");
     expect(updated?.description).toBe("新描述");
+    expect(updated?.updatedByUserId).toBe("user-manager-2");
     await db.destroy();
   });
 

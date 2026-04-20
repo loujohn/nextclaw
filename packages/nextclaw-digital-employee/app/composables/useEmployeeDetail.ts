@@ -20,6 +20,8 @@ export type EmployeeDetailPayload = {
     description: string;
     systemPrompt: string;
     departmentId: string | null;
+    createdByUserId: string | null;
+    updatedByUserId: string | null;
     skills: Array<{
       id: string;
       skillName: string;
