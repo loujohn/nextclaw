@@ -1,5 +1,6 @@
 import { createError, getRouterParam, readBody } from "h3";
 import { getPlatformContext } from "../../../runtime/platform-context";
+import { requireAuth } from "../../../utils/auth-guards";
 
 type ScheduleBody = {
   scheduleKind?: "cron" | "every" | "heartbeat";
@@ -8,6 +9,7 @@ type ScheduleBody = {
 };
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const employeeId = getRouterParam(event, "id") ?? "";
   const body = await readBody<ScheduleBody>(event);
   if (!body?.scheduleKind) {
@@ -21,7 +23,8 @@ export default defineEventHandler(async (event) => {
     employeeId,
     scheduleKind: body.scheduleKind,
     cronExpr: body.cronExpr,
-    everyMs: body.everyMs
+    everyMs: body.everyMs,
+    actorUserId: user.id
   });
   return { ok: true, data: schedule };
 });

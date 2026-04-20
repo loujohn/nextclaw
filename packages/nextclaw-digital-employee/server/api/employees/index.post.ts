@@ -1,5 +1,6 @@
 import { createError, readBody } from "h3";
 import { getPlatformContext } from "../../runtime/platform-context";
+import { requireAuth } from "../../utils/auth-guards";
 
 type CreateEmployeeBody = {
   name?: string;
@@ -16,6 +17,7 @@ type CreateEmployeeBody = {
 };
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const body = await readBody<CreateEmployeeBody>(event);
   const name = body?.name?.trim() ?? "";
   const code = body?.code?.trim() ?? "";
@@ -48,6 +50,7 @@ export default defineEventHandler(async (event) => {
           }
         : undefined,
       workspaceFiles: body?.workspaceFiles,
+      actorUserId: user.id,
     });
     return { ok: true, data: result };
   } catch (err: unknown) {

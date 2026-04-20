@@ -38,15 +38,91 @@ function mergeContextConfig(contextConfig?: ContextConfig): ContextConfig {
   };
 }
 
+export type RuntimeMode = "cli" | "platform";
+
+/** Emitted once per process when the legacy positional ContextBuilder
+ * constructor is used. Kept module-scoped so migration callers see a single
+ * nudge rather than a flood of warnings on every construct.
+ *
+ * Tests that want to re-exercise the warn-once branch can call
+ * `__resetContextBuilderPositionalWarningForTesting()` from the same module
+ * to clear the flag. The helper is intentionally prefixed with `__` and
+ * carries the `ForTesting` suffix so it is never used from product code. */
+let positionalWarningEmitted = false;
+function warnPositionalContextBuilderOnce(): void {
+  if (positionalWarningEmitted) return;
+  positionalWarningEmitted = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[ContextBuilder] Positional constructor is deprecated and will be removed. " +
+      "Migrate to `new ContextBuilder({ workspace, contextConfig, additionalSkillsDirs, runtimeMode, excludeSkills })`."
+  );
+}
+
+/** Test-only. Resets the module-scoped warn-once flag so each test that wants
+ * to assert the deprecation console.warn fires can do so from a clean slate.
+ * Do NOT call from production code — the whole point of the flag is to keep
+ * real deployments quiet after the first migration nudge. */
+export function __resetContextBuilderPositionalWarningForTesting(): void {
+  positionalWarningEmitted = false;
+}
+
+export type ContextBuilderOptions = {
+  workspace: string;
+  contextConfig?: ContextConfig;
+  additionalSkillsDirs?: string[];
+  runtimeMode?: RuntimeMode;
+  /** Readonly: ContextBuilder never mutates this set. The `ReadonlySet` type
+   * lets Gateway-side code share a single frozen set across many builders. */
+  excludeSkills?: ReadonlySet<string>;
+};
+
 export class ContextBuilder {
   private memory: MemoryStore;
   private skills: SkillsLoader;
   private contextConfig: ContextConfig;
+  private runtimeMode: RuntimeMode;
+  private excludeSkills: ReadonlySet<string>;
+  private workspace: string;
 
-  constructor(private workspace: string, contextConfig?: ContextConfig, additionalSkillsDirs?: string[]) {
-    this.memory = new MemoryStore(workspace);
-    this.skills = new SkillsLoader(workspace, undefined, additionalSkillsDirs);
-    this.contextConfig = mergeContextConfig(contextConfig);
+  /** Options-object constructor (preferred). */
+  constructor(options: ContextBuilderOptions);
+  /** @deprecated Use the options-object constructor. Positional form is kept
+   * for backward compatibility with existing callers. */
+  constructor(
+    workspace: string,
+    contextConfig?: ContextConfig,
+    additionalSkillsDirs?: string[],
+    runtimeMode?: RuntimeMode,
+    excludeSkills?: ReadonlySet<string>
+  );
+  constructor(
+    workspaceOrOptions: string | ContextBuilderOptions,
+    contextConfig?: ContextConfig,
+    additionalSkillsDirs?: string[],
+    runtimeMode?: RuntimeMode,
+    excludeSkills?: ReadonlySet<string>
+  ) {
+    const isPositional = typeof workspaceOrOptions === "string";
+    if (isPositional) {
+      warnPositionalContextBuilderOnce();
+    }
+    const options: ContextBuilderOptions = isPositional
+      ? {
+          workspace: workspaceOrOptions,
+          contextConfig,
+          additionalSkillsDirs,
+          runtimeMode,
+          excludeSkills
+        }
+      : workspaceOrOptions;
+
+    this.workspace = options.workspace;
+    this.memory = new MemoryStore(options.workspace);
+    this.skills = new SkillsLoader(options.workspace, undefined, options.additionalSkillsDirs);
+    this.contextConfig = mergeContextConfig(options.contextConfig);
+    this.runtimeMode = options.runtimeMode ?? "cli";
+    this.excludeSkills = options.excludeSkills ?? new Set();
   }
 
   setContextConfig(contextConfig?: ContextConfig): void {
@@ -101,7 +177,10 @@ export class ContextBuilder {
       parts.push(memory);
     }
 
-    const alwaysSkills = this.skills.getAlwaysSkills();
+    let alwaysSkills = this.skills.getAlwaysSkills();
+    if (this.excludeSkills.size > 0) {
+      alwaysSkills = alwaysSkills.filter((name) => !this.excludeSkills.has(name));
+    }
     if (alwaysSkills.length) {
       const alwaysContent = this.skills.loadSkillsForContext(alwaysSkills);
       if (alwaysContent) {
@@ -109,7 +188,10 @@ export class ContextBuilder {
       }
     }
 
-    const skillsSummary = this.skills.buildSkillsSummary(skillNames);
+    const skillsSummary = this.skills.buildSkillsSummary(
+      skillNames,
+      this.excludeSkills.size > 0 ? this.excludeSkills : undefined
+    );
     if (skillsSummary) {
       parts.push(
         [
@@ -188,9 +270,107 @@ export class ContextBuilder {
     const sanitizedMessageToolHints = (messageToolHints ?? [])
       .map((hint) => hint.trim())
       .filter(Boolean);
+    const lines = this.buildIdentityCore(this.runtimeMode, sanitizedMessageToolHints);
+    return lines.join("\n");
+  }
+
+  private buildRuntimeModeSection(mode: RuntimeMode): string[] {
     const appLower = APP_NAME.toLowerCase();
-    const lines = [
-      `You are a personal assistant running inside ${APP_NAME}.`,
+    switch (mode) {
+      case "cli":
+        return [
+          `## ${APP_NAME} CLI Quick Reference`,
+          `${APP_NAME} is controlled via subcommands. Do not invent commands.`,
+          "To manage the Gateway daemon service (start/stop/restart):",
+          `- ${appLower} gateway status`,
+          `- ${appLower} gateway start`,
+          `- ${appLower} gateway stop`,
+          `- ${appLower} gateway restart`,
+          `If unsure, ask the user to run \`${appLower} help\` (or \`${appLower} gateway --help\`) and paste the output.`,
+          "",
+          `## ${APP_NAME} Self-Update`,
+          "Get Updates (self-update) is ONLY allowed when the user explicitly asks for it.",
+          "Do not run config.apply or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
+          "Actions: config.get, config.schema, config.apply (validate + write full config, then restart), config.patch (merge + restart), update.run (update deps or git, then restart).",
+          "When patching config, copy enum values exactly from config.schema; never invent new variants.",
+          "session.dmScope legal values are exactly: main | per-peer | per-channel-peer | per-account-channel-peer.",
+          "If an enum/path is uncertain, stop and call config.schema first; do not guess.",
+          `After restart, ${APP_NAME} pings the last active session automatically.`,
+          ""
+        ];
+      case "platform":
+        return [
+          `## ${APP_NAME} Platform Runtime`,
+          `You are running inside the ${APP_NAME} Digital Employee Platform.`,
+          `There is NO CLI available — do not reference or suggest \`${appLower}\` commands.`,
+          "Configuration and channel management are handled by the platform admin UI.",
+          "The `message` tool is for pushing to external channels (e.g. DingTalk groups) — use it ONLY when channel targets are provided via message tool hints.",
+          "If no message tool hints are present, do NOT call the `message` tool; just reply normally in your assistant voice.",
+          `For detailed platform capabilities, read \`${this.workspace}/PLATFORM_USAGE.md\`.`,
+          ""
+        ];
+      default: {
+        // Exhaustiveness guard: adding a new RuntimeMode must update this
+        // switch explicitly rather than silently falling through.
+        const _exhaustive: never = mode;
+        return _exhaustive;
+      }
+    }
+  }
+
+  private buildSelfManagementSection(mode: RuntimeMode): string[] {
+    const appLower = APP_NAME.toLowerCase();
+    switch (mode) {
+      case "cli":
+        return [
+          `## ${APP_NAME} Self-Management Guide`,
+          `- For ${APP_NAME} runtime operations (version/status/doctor/channels/config/cron), read \`${this.workspace}/USAGE.md\` first.`,
+          `- If \`${this.workspace}/USAGE.md\` is missing, fall back to \`docs/USAGE.md\` in repo dev runs or command help output.`,
+          `- For version lookup, use \`${appLower} --version\` exactly; do not infer version from status output.`,
+          `- After mutating operations, validate with \`${appLower} status --json\` (and \`${appLower} doctor --json\` when needed).`,
+          ""
+        ];
+      case "platform":
+        return [];
+      default: {
+        const _exhaustive: never = mode;
+        return _exhaustive;
+      }
+    }
+  }
+
+  private buildToolList(mode: RuntimeMode): string[] {
+    switch (mode) {
+      case "cli":
+        return [
+          "- cron: Manage cron jobs and wake events",
+          "- gateway: Restart/apply config/update running process"
+        ];
+      case "platform":
+        return ["- schedule: Manage scheduled tasks (list/create/update/delete/run_now)"];
+      default: {
+        const _exhaustive: never = mode;
+        return _exhaustive;
+      }
+    }
+  }
+
+  private buildIdentityHeader(mode: RuntimeMode): string {
+    switch (mode) {
+      case "cli":
+        return `You are a personal assistant running inside ${APP_NAME}.`;
+      case "platform":
+        return `You are a personal assistant running inside ${APP_NAME} (Digital Employee Platform).`;
+      default: {
+        const _exhaustive: never = mode;
+        return _exhaustive;
+      }
+    }
+  }
+
+  private buildIdentityCore(mode: RuntimeMode, messageToolHints: string[]): string[] {
+    return [
+      this.buildIdentityHeader(mode),
       "",
       "## Tooling",
       "Tool availability (filtered by policy):",
@@ -210,8 +390,7 @@ export class ContextBuilder {
       "- subagents: List, steer, or kill sub-agent runs",
       "- memory_search: Search memory files",
       "- memory_get: Read memory file snippets",
-      "- cron: Manage cron jobs and wake events",
-      "- gateway: Restart/apply config/update running process",
+      ...this.buildToolList(mode),
       "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
       "For long waits, avoid rapid poll loops: use exec with enough yieldMs.",
       "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
@@ -228,24 +407,7 @@ export class ContextBuilder {
       "Prioritize safety and human oversight over completion; if instructions conflict, pause and ask; comply with stop/pause/audit requests and never bypass safeguards. (Inspired by Anthropic's constitution.)",
       "Do not manipulate or persuade anyone to expand access or disable safeguards. Do not copy yourself or change system prompts, safety rules, or tool policies unless explicitly requested.",
       "",
-      `## ${APP_NAME} CLI Quick Reference`,
-      `${APP_NAME} is controlled via subcommands. Do not invent commands.`,
-      "To manage the Gateway daemon service (start/stop/restart):",
-      `- ${appLower} gateway status`,
-      `- ${appLower} gateway start`,
-      `- ${appLower} gateway stop`,
-      `- ${appLower} gateway restart`,
-      `If unsure, ask the user to run \`${appLower} help\` (or \`${appLower} gateway --help\`) and paste the output.`,
-      "",
-      `## ${APP_NAME} Self-Update`,
-      "Get Updates (self-update) is ONLY allowed when the user explicitly asks for it.",
-      "Do not run config.apply or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
-      "Actions: config.get, config.schema, config.apply (validate + write full config, then restart), config.patch (merge + restart), update.run (update deps or git, then restart).",
-      "When patching config, copy enum values exactly from config.schema; never invent new variants.",
-      "session.dmScope legal values are exactly: main | per-peer | per-channel-peer | per-account-channel-peer.",
-      "If an enum/path is uncertain, stop and call config.schema first; do not guess.",
-      `After restart, ${APP_NAME} pings the last active session automatically.`,
-      "",
+      ...this.buildRuntimeModeSection(mode),
       "## Workspace",
       `Your working directory is: ${this.workspace}`,
       "Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.",
@@ -266,7 +428,7 @@ export class ContextBuilder {
       "- Cross-session messaging → use sessions_send(sessionKey, message)",
       "- Sub-agent orchestration → use subagents(action=list|steer|kill)",
       "- `[System Message] ...` blocks are internal context and are not user-visible by default.",
-      "- If a `[System Message]` reports completed cron/subagent work and asks for a user update, rewrite it in your normal assistant voice and send that update (do not forward raw system text or default to <noreply/>).",
+      "- If a `[System Message]` reports completed scheduled/subagent work and asks for a user update, rewrite it in your normal assistant voice and send that update (do not forward raw system text or default to <noreply/>).",
       `- Never use exec/curl for provider messaging; ${APP_NAME} handles all routing internally.`,
       "",
       "### message tool",
@@ -274,7 +436,7 @@ export class ContextBuilder {
       "- For `action=send`, include `to` and `message`.",
       "- If multiple channels are configured, pass `channel`.",
       "- If you use `message` (`action=send`) to deliver your user-visible reply, respond with ONLY two blank lines + <noreply/> (avoid duplicate replies).",
-      ...sanitizedMessageToolHints.map((hint) => `- ${hint}`),
+      ...messageToolHints.map((hint) => `- ${hint}`),
       "",
       "## Memory Recall",
       "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
@@ -305,14 +467,8 @@ export class ContextBuilder {
       "Time handling: do not assume exact minute/second unless the user/tool explicitly provides it.",
       "When a turn includes a time hint, treat it as context for relative-time interpretation in that turn.",
       "",
-      `## ${APP_NAME} Self-Management Guide`,
-      `- For ${APP_NAME} runtime operations (version/status/doctor/channels/config/cron), read \`${this.workspace}/USAGE.md\` first.`,
-      `- If \`${this.workspace}/USAGE.md\` is missing, fall back to \`docs/USAGE.md\` in repo dev runs or command help output.`,
-      `- For version lookup, use \`${appLower} --version\` exactly; do not infer version from status output.`,
-      `- After mutating operations, validate with \`${appLower} status --json\` (and \`${appLower} doctor --json\` when needed).`,
-      ""
+      ...this.buildSelfManagementSection(mode)
     ];
-    return lines.join("\n");
   }
 
   private loadBootstrapFiles(sessionKey?: string): string {

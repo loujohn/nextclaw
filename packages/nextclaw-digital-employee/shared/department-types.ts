@@ -4,6 +4,8 @@ export type DepartmentView = {
   description: string;
   parentId: string | null;
   sortOrder: number;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -11,6 +11,7 @@ export type CreateEmployeeInput = {
   systemPrompt: string;
   model?: string;
   departmentId?: string | null;
+  createdByUserId?: string | null;
 };
 
 export type UpdateEmployeeInput = {
@@ -21,6 +22,7 @@ export type UpdateEmployeeInput = {
   departmentId?: string | null;
   webhookEnabled?: boolean;
   webhookSecret?: string | null;
+  updatedByUserId?: string | null;
 };
 
 export type EmployeeView = {
@@ -32,6 +34,8 @@ export type EmployeeView = {
   model: string;
   status: string;
   departmentId: string | null;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   webhookEnabled: boolean;
   webhookSecret: string | null;
   createdAt: string;
@@ -48,6 +52,8 @@ function toEmployeeView(record: EmployeeRecord): EmployeeView {
     model: record.model || "",
     status: record.status,
     departmentId: record.department_id ?? null,
+    createdByUserId: record.created_by_user_id ?? null,
+    updatedByUserId: record.updated_by_user_id ?? null,
     webhookEnabled: record.webhook_enabled === 1,
     webhookSecret: record.webhook_secret ?? null,
     createdAt: record.created_at,
@@ -69,6 +75,8 @@ export class EmployeeRepository {
       model: input.model?.trim() ?? "",
       status: EmployeeStatus.Active,
       department_id: input.departmentId ?? null,
+      created_by_user_id: input.createdByUserId ?? null,
+      updated_by_user_id: input.createdByUserId ?? null,
       webhook_enabled: 0,
       webhook_secret: null,
       created_at: now,
@@ -125,6 +133,9 @@ export class EmployeeRepository {
     if ("departmentId" in input) {
       patch.department_id = input.departmentId ?? null;
     }
+    if ("updatedByUserId" in input) {
+      patch.updated_by_user_id = input.updatedByUserId ?? null;
+    }
     if (input.webhookEnabled !== undefined) {
       patch.webhook_enabled = input.webhookEnabled ? 1 : 0;
     }
@@ -144,6 +155,18 @@ export class EmployeeRepository {
       .where({ id })
       .whereNot({ status: EmployeeStatus.Archived })
       .update({ status: EmployeeStatus.Archived, updated_at: dbNow() });
+    return affected > 0;
+  }
+
+  async archiveByIdWithActor(id: string, updatedByUserId?: string | null): Promise<boolean> {
+    const affected = await this.db<EmployeeRecord>(PLATFORM_TABLES.employees)
+      .where({ id })
+      .whereNot({ status: EmployeeStatus.Archived })
+      .update({
+        status: EmployeeStatus.Archived,
+        updated_at: dbNow(),
+        ...(updatedByUserId !== undefined ? { updated_by_user_id: updatedByUserId ?? null } : {})
+      });
     return affected > 0;
   }
 

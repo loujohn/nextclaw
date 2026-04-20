@@ -125,7 +125,8 @@ export function loadPlatformRuntimeState(params: {
       "memory_get",
       "subagents",
       "gateway",
-      "cron"
+      "cron",
+      "schedule"
     ],
     reservedChannelIds: [],
     reservedProviderIds: builtinProviderIds(),

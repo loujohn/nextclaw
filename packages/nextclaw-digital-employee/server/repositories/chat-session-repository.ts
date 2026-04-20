@@ -10,6 +10,8 @@ export type ChatSessionView = {
   title: string;
   preview: string;
   messageCount: number;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -56,6 +58,8 @@ function toView(record: ChatSessionListRow): ChatSessionView {
     title: record.title,
     preview: record.preview,
     messageCount: record.message_count,
+    createdByUserId: record.created_by_user_id ?? null,
+    updatedByUserId: record.updated_by_user_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     lastMessageAt: record.last_message_at ?? null
@@ -81,7 +85,12 @@ function buildSessionPreview(message: string): string {
 export class ChatSessionRepository {
   constructor(private readonly db: Knex) {}
 
-  async create(params: { employeeId: string; sessionKey?: string; title?: string }): Promise<ChatSessionView> {
+  async create(params: {
+    employeeId: string;
+    sessionKey?: string;
+    title?: string;
+    createdByUserId?: string | null;
+  }): Promise<ChatSessionView> {
     const now = dbNow();
     const sessionKey = params.sessionKey?.trim() || randomUUID();
     const title = params.title?.trim() || "新对话";
@@ -92,6 +101,8 @@ export class ChatSessionRepository {
       title,
       preview: "",
       message_count: 0,
+      created_by_user_id: params.createdByUserId ?? null,
+      updated_by_user_id: params.createdByUserId ?? null,
       created_at: now,
       updated_at: now
     };
@@ -161,6 +172,7 @@ export class ChatSessionRepository {
     messageCountIncrement: number;
     latestContent: string;
     titleSeed?: string;
+    updatedByUserId?: string | null;
   }): Promise<void> {
     const existing = await this.db<ChatSessionRecord>(PLATFORM_TABLES.chatSessions)
       .where({ id: params.sessionId })
@@ -178,7 +190,8 @@ export class ChatSessionRepository {
         title: nextTitle,
         preview: buildSessionPreview(params.latestContent),
         message_count: this.db.raw("message_count + ?", [increment]),
-        updated_at: dbNow()
+        updated_at: dbNow(),
+        ...(params.updatedByUserId !== undefined ? { updated_by_user_id: params.updatedByUserId ?? null } : {})
       });
   }
 }

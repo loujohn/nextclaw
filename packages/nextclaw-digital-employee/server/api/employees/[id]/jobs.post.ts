@@ -1,5 +1,6 @@
 import { createError, getRouterParam, readBody } from "h3";
 import { getPlatformContext } from "../../../runtime/platform-context";
+import { requireAuth } from "../../../utils/auth-guards";
 
 type CreateJobBody = {
   name?: string;
@@ -12,6 +13,7 @@ type CreateJobBody = {
 };
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const employeeId = getRouterParam(event, "id") ?? "";
   const body = await readBody<CreateJobBody>(event);
 
@@ -31,7 +33,8 @@ export default defineEventHandler(async (event) => {
     cronExpr: body.cronExpr,
     everyMs: body.everyMs,
     taskPrompt: body.taskPrompt,
-    enabled: body.enabled
+    enabled: body.enabled,
+    actorUserId: user.id
   });
   return { ok: true, data: job };
 });

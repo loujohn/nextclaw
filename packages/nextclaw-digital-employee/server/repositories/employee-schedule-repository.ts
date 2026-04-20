@@ -15,6 +15,8 @@ type EmployeeScheduleRecord = {
   runtime_job_id: string | null;
   schedule_message: string;
   next_run_at: string | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -31,6 +33,8 @@ export type EmployeeScheduleView = {
   runtimeJobId: string | null;
   scheduleMessage: string;
   nextRunAt: string | null;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -46,6 +50,8 @@ export type UpsertEmployeeScheduleInput = {
   runtimeJobId?: string | null;
   scheduleMessage?: string;
   nextRunAt?: string | null;
+  createdByUserId?: string | null;
+  updatedByUserId?: string | null;
 };
 
 function toView(record: EmployeeScheduleRecord): EmployeeScheduleView {
@@ -61,6 +67,8 @@ function toView(record: EmployeeScheduleRecord): EmployeeScheduleView {
     runtimeJobId: record.runtime_job_id,
     scheduleMessage: record.schedule_message,
     nextRunAt: record.next_run_at,
+    createdByUserId: record.created_by_user_id ?? null,
+    updatedByUserId: record.updated_by_user_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   };
@@ -85,6 +93,7 @@ export class EmployeeScheduleRepository {
       runtime_job_id: input.runtimeJobId ?? null,
       schedule_message: input.scheduleMessage ?? "",
       next_run_at: input.nextRunAt ?? null,
+      ...(input.updatedByUserId !== undefined ? { updated_by_user_id: input.updatedByUserId ?? null } : {}),
       updated_at: now
     };
     if (existing) {
@@ -95,6 +104,8 @@ export class EmployeeScheduleRepository {
     const created: EmployeeScheduleRecord = {
       id: randomUUID(),
       ...payload,
+      created_by_user_id: input.createdByUserId ?? null,
+      updated_by_user_id: input.updatedByUserId ?? input.createdByUserId ?? null,
       created_at: now
     };
     await this.db<EmployeeScheduleRecord>(PLATFORM_TABLES.employeeSchedules).insert(created);
