@@ -1,8 +1,8 @@
 ---
 name: weekly-report
 name_zh: 项目周报生成
-version: 1.0.1
-description: "查询本周日报数据，综合整理生成周报并提交至内部系统。自动完成登录鉴权、日报汇总与周报提交。当需要生成项目周报、提交周报或汇总本周工作时日报时使用。"
+version: 1.2.0
+description: "查询本周日报数据，综合整理生成周报并提交至内部系统。支持个人/项目/部门三种周报模式，可指定任意周或日期范围。"
 metadata:
   nextclaw:
     emoji: "📊"
@@ -15,137 +15,123 @@ metadata:
 
 **⚠️ 脚本路径：`skills/weekly-report/scripts/weekly-report.py`**
 
-查询本周日报数据，综合整理生成周报并提交至内部系统。
+## 功能说明
 
-## 接口信息
+1. **数据来源**：优先从本地日报汇总文件读取，同时支持从API获取数据进行综合
+2. **周报模式**：
+   - 个人周报：汇总个人本周在所有项目的工作（需要提交）
+   - 项目周报：每个项目的本周汇总（仅预览）
+   - 部门周报：所有项目周报的汇总（仅预览）
+3. **时间范围**：支持本周、上周、任意指定日期范围
 
-### 日报查询接口
+## 对话交互流程
 
+### 用户请求生成周报时
+1. 先询问用户选择周报模式（个人/项目/部门）
+2. 如果是个人周报，确认填报人用户名和中文名
+3. 调用脚本预览
+4. 用户确认无误后提交（仅个人周报需要提交）
+
+### 对话示例
 ```
-GET {PM_BASE_URL}/admin/day/report/page?createTimeQuery={start}&createTimeQuery={end}&dayReportType=2&queryType=1&current=1&size=10
-Authorization: Bearer {token}
+用户: 生成周报
+AI: 请选择周报模式：1.个人周报 2.项目周报 3.部门周报
+用户: 1
+AI: 请确认填报人信息：用户名和中文名
+用户: admin - 管理员
+AI: [调用脚本生成周报]
 ```
 
-### 周报提交接口
+## 调用命令
 
+### 环境变量
+```bash
+export PM_BASE_URL="http://xxx/api"
+export PM_USERNAME="admin"
+export PM_PASSWORD="xxx"
+export PM_BASIC_AUTH="Basic xxx"
 ```
-POST {PM_BASE_URL}/admin/week/report
-Content-Type: application/json
-Authorization: Bearer {token}
-```
-
-## 使用流程
-
-1. **查询本周日报** → 调用 `--query-dailies` 获取本周所有日报
-2. **预览周报** → 调用 `--review` 基于日报数据预览生成的周报
-3. **确认提交** → 用户确认后，调用 `--submit` 提交周报
-
-## 调用脚本
 
 ### 命令行选项
 
-| 选项                     | 说明                           |
-| ------------------------ | ------------------------------ |
-| `--query-dailies`        | 查询本周所有日报数据           |
-| `--review`               | 预览周报（基于查询的日报数据） |
-| `--submit`               | 确认并提交周报                 |
-| `--validate`             | 校验周报参数                   |
-| `--username`             | 用户名（环境变量 PM_USERNAME） |
-| `--password`             | 密码（环境变量 PM_PASSWORD）   |
-| `--json-file`            | 从 JSON 文件读取周报参数       |
-| `--project-code`         | 项目编号                       |
-| `--project-name`         | 项目名称                       |
-| `--project-manager`      | 项目经理                       |
-| `--week-summarize`       | 本周工作总结                   |
-| `--week-plan`            | 下周工作计划                   |
-| `--problem-risk`         | 问题与风险                     |
-| `--request-instructions` | 请示事项                       |
-| `--week-report-type`     | 周报类型（默认 2）             |
-| `--week-start-time`      | 周开始时间 YYYY-MM-DD HH:MM:SS |
-| `--week-end-time`        | 周结束时间 YYYY-MM-DD HH:MM:SS |
-| `--size`                 | 查询每页大小（默认 50）        |
+| 选项 | 说明 |
+|------|------|
+| `--mode personal` | 个人周报（需要 --user 指定用户名） |
+| `--mode project` | 项目周报（默认） |
+| `--mode department` | 部门周报 |
+| `--user <用户名>` | 指定用户（用于个人周报） |
+| `--project <项目编号>` | 指定项目（用于单个项目周报） |
+| `--review` | 预览周报 |
+| `--submit` | 提交周报（仅个人周报有效） |
+| `--week <偏移>` | 周偏移量：0=本周（默认），-1=上周，-2=上上周 |
+| `--week-start <日期>` | 指定周开始日期 YYYY-MM-DD |
+| `--week-end <日期>` | 指定周结束日期 YYYY-MM-DD |
+| `--size` | 查询每页大小（默认50） |
 
 ### 使用示例
 
 ```bash
-# 1. 设置环境变量（或直接传入）
-export PM_USERNAME="your_username"
-export PM_PASSWORD="your_password"
+# 本周项目周报
+python skills/weekly-report/scripts/weekly-report.py --mode project --review
 
-# 2. 查询本周日报
-python skills/weekly-report/scripts/weekly-report.py --query-dailies
+# 上周个人周报
+python skills/weekly-report/scripts/weekly-report.py --week -1 --mode personal --user admin --review
 
-# 3. 预览生成的周报
-python skills/weekly-report/scripts/weekly-report.py --review
+# 指定日期范围的项目周报
+python skills/weekly-report/scripts/weekly-report.py --week-start 2026-04-07 --week-end 2026-04-13 --mode project --review
 
-# 4. 确认并提交周报
-python skills/weekly-report/scripts/weekly-report.py --submit
+# 提交个人周报
+python skills/weekly-report/scripts/weekly-report.py --mode personal --user admin --submit
 ```
 
-## 周报生成规则
+## 周报输出示例
 
-### 自动汇总
+### 个人周报
+```
+【个人周报】admin
+参与项目数：3
 
-- 按项目分组汇总本周日报
-- 将每日 `daySummarizeNow` 合并为 `weekSummarizeNow`
-- 将每日 `dayPlanNext` 合并为 `weekPlanNext`
-- 自动填充周时间范围
+### 本周工作总结
+1. 完成XXX功能开发
+2. 完成XXX接口调试
+...
 
-### 周报字段
-
-| 字段                  | 说明         | 来源               |
-| --------------------- | ------------ | ------------------ |
-| `weekSummarizeNow`    | 本周工作总结 | 汇总日报工作总结   |
-| `weekPlanNext`        | 下周工作计划 | 汇总日报工作计划   |
-| `projectCode`         | 项目编号     | 日报数据           |
-| `projectName`         | 项目名称     | 日报数据           |
-| `projectManager`      | 项目经理     | 日报数据           |
-| `weekStartTime`       | 周开始时间   | 自动计算（本周一） |
-| `weekEndTime`         | 周结束时间   | 自动计算（本周日） |
-| `weekReportType`      | 周报类型     | 默认 2             |
-| `problemRisk`         | 问题与风险   | 默认为"无"         |
-| `requestInstructions` | 请示事项     | 默认为"无"         |
-
-### 返回示例
-
-**查询日报成功：**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "records": [
-      {
-        "projectCode": "XM202602105600",
-        "projectName": "测试项目",
-        "projectManager": "张三",
-        "daySummarizeNow": "完成功能开发",
-        "dayPlanNext": "继续测试",
-        "reportDate": "2026-04-14"
-      }
-    ],
-    "total": 5
-  }
-}
+### 下周工作计划
+继续XXX开发
+完成XXX测试
+...
 ```
 
-**提交周报成功：**
+### 项目周报
+```
+【项目周报】XXX系统（项目编号）
+项目经理：张三
 
-```json
-{ "success": true, "message": "周报提交成功" }
+### 本周工作总结
+1. 完成XXX开发
+2. 完成XXX测试
+...
+
+### 下周工作计划
+继续XXX开发
+完成XXX部署
+...
 ```
 
-**提交周报失败：**
+## 数据文件
 
-```json
-{ "success": false, "message": "错误描述" }
-```
+周报数据存储在用户目录：
+- **Windows**: `C:\Users\用户名\nextclaw-temp\daily-report\{周}\`
+- **Linux/Mac**: `/home/用户名/nextclaw-temp/daily-report/{周}/`
 
-## 临时文件
+包含文件：
+- `projects.md` - 项目维度日报汇总
+- `users.md` - 人员维度日报汇总
+- `raw_dailies.json` - 原始日报数据
 
-查询结果缓存至用户目录：
+## 注意事项
 
-- **Windows**: `C:\Users\用户名\nextclaw-temp\weekly-report\daily_reports_query_{username}.json`
-- **Linux/Mac**: `/home/用户名/nextclaw-temp/weekly-report/daily_reports_query_{username}.json`
-
-提交成功后自动清理缓存文件。
+1. 只有**个人周报**需要提交，项目周报和部门周报仅供查看
+2. ��交时每个项目周报单独提交，显示提交进度
+3. 数据综合了本地汇总文件和API数据，任一数据源可用即可生成周报
+4. 默认生成本周周报，可通过 `--week -1` 或 `--week-start` 指定其他周

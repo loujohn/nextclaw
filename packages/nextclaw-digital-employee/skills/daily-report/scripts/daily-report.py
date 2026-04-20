@@ -34,7 +34,7 @@ from datetime import datetime, timedelta
 
 DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginner:10003"
 LOGIN_ENDPOINT = "/admin/oauth2/token"
-REPORT_ENDPOINT = "/admin/day/report"
+REPORT_ENDPOINT = "/admin/dayReport"
 PROJECT_QUERY_ENDPOINT = "/admin/project/pageProject"
 
 REQUIRED_FIELDS = [
@@ -110,8 +110,7 @@ def fetch_json(url, token, timeout=120):
         return {"code": -1, "message": str(e)}
 
 
-def fetch_json_post(url, data, token, timeout=120):
-    """POST JSON请求（需要Bearer token）"""
+def fetch_json_post(url, data, token, timeout=120, params=None):
     body = json.dumps(data).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -119,6 +118,10 @@ def fetch_json_post(url, data, token, timeout=120):
         "Authorization": f"Bearer {token}",
         "User-Agent": "nextclaw-daily-report/1.0",
     }
+
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+
     req = urllib.request.Request(url, data=body, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -230,7 +233,7 @@ def validate_report_data(data):
     return missing
 
 
-def prepare_report_data(report_data):
+def prepare_report_data(report_data, login_user=None, login_name=None):
     """准备提交数据，自动设置工时比例为0"""
     normalize_field_names(report_data)
 
@@ -253,11 +256,17 @@ def prepare_report_data(report_data):
     }
 
 
-def submit_report(base_url, token, report_data):
+def submit_report(base_url, token, report_data, login_user=None, login_name=None):
     """提交日报"""
     url = f"{base_url}{REPORT_ENDPOINT}"
-    data = [prepare_report_data(report_data)]
-    return fetch_json_post(url, data, token)
+    data = [prepare_report_data(report_data, login_user, login_name)]
+
+    report_user = login_user or login_name or ""
+    params = None
+    if report_user:
+        params = {"createBy": report_user}
+
+    return fetch_json_post(url, data, token, params=params)
 
 
 def get_week_range(date_str):
@@ -275,7 +284,7 @@ def append_to_file(filepath, content):
         f.write(content)
 
 
-def generate_daily_report_md_files(report_data, username):
+def generate_daily_report_md_files(report_data, report_user, report_name=None):
     """生成两个维度的日报汇总MD文件"""
     report_date = report_data.get("date", "")
     project_code = report_data.get("projectCode", "")
@@ -283,8 +292,8 @@ def generate_daily_report_md_files(report_data, username):
         "chanceProjectName", report_data.get("projectName", "")
     )
     project_manager = report_data.get("projectManager", "")
-    create_by = report_data.get("createBy", username)
-    create_name = report_data.get("createName", username)
+    create_by = report_data.get("createBy") or report_user or ""
+    user_display_name = report_name or create_by
 
     summarize = report_data.get("daySummarizeNow", "无")
     plan = report_data.get("dayPlanNext", "无")
@@ -321,7 +330,7 @@ def generate_daily_report_md_files(report_data, username):
                 "projectName": project_name,
                 "projectManager": project_manager,
                 "createBy": create_by,
-                "createName": create_name,
+                "createName": user_display_name,
                 "summarize": summarize or "无",
                 "plan": plan or "无",
                 "submittedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -343,7 +352,7 @@ def generate_daily_report_md_files(report_data, username):
         }
     if report_date not in projects_data[project_code]["dates"]:
         projects_data[project_code]["dates"][report_date] = {}
-    projects_data[project_code]["dates"][report_date][create_name] = {
+    projects_data[project_code]["dates"][report_date][user_display_name] = {
         "summarize": summarize or "无",
         "plan": plan or "无",
     }
@@ -351,11 +360,11 @@ def generate_daily_report_md_files(report_data, username):
 
     # 人员维度：人员 -> 日期 -> 项目 -> 日报
     users_data = _load_users_md_structure(users_file)
-    if create_name not in users_data:
-        users_data[create_name] = {"dates": {}}
-    if report_date not in users_data[create_name]["dates"]:
-        users_data[create_name]["dates"][report_date] = {}
-    users_data[create_name]["dates"][report_date][project_name] = {
+    if user_display_name not in users_data:
+        users_data[user_display_name] = {"dates": {}}
+    if report_date not in users_data[user_display_name]["dates"]:
+        users_data[user_display_name]["dates"][report_date] = {}
+    users_data[user_display_name]["dates"][report_date][project_name] = {
         "projectName": project_name,
         "manager": project_manager,
         "summarize": summarize or "无",
@@ -594,9 +603,6 @@ def main():
         default=2,
         help="日报类型（默认2）",
     )
-    parser.add_argument("--base-url", dest="base_url", help="API基础URL")
-    parser.add_argument("--username", dest="username", help="登录用户名")
-    parser.add_argument("--password", dest="password", help="登录密码")
     parser.add_argument(
         "-q",
         "--query-projects",
@@ -610,12 +616,14 @@ def main():
     parser.add_argument(
         "--select", dest="select", help="从查询结果中选择项目（数字索引）"
     )
+    parser.add_argument("--report-user", dest="report_user", help="填报人用户名（默认为登录用户）")
+    parser.add_argument("--report-name", dest="report_name", help="填报人姓名（默认为登录用户名）")
 
     args = parser.parse_args()
 
-    base_url = args.base_url or PM_BASE_URL
-    username = args.username or PM_USERNAME
-    password = args.password or PM_PASSWORD
+    base_url = PM_BASE_URL
+    username = PM_USERNAME
+    password = PM_PASSWORD
 
     if (
         not args.submit
@@ -827,7 +835,8 @@ def main():
     os.makedirs(week_dir, exist_ok=True)
 
     now = datetime.now().strftime("%Y%m%d%H%M%S")
-    file_name = f"param_{prepared_data['projectCode']}_{username}_{now}.json"
+    file_user = args.report_user if args.report_user else username
+    file_name = f"param_{prepared_data['projectCode']}_{file_user}_{now}.json"
     param_file = os.path.join(week_dir, file_name)
 
     with open(param_file, "w", encoding="utf-8") as f:
@@ -848,7 +857,17 @@ def main():
 
         print("[日报] 正在提交日报...", flush=True)
         sys.stdout.flush()
-        result = submit_report(base_url, token, prepared_data)
+
+        if not args.report_user:
+            print("[日报] 错误: 请通过 --report-user 指定填报人用户名（通过 --report-name 指定中文名）", file=sys.stderr)
+            if os.path.exists(param_file):
+                os.remove(param_file)
+            return
+
+        report_user = args.report_user
+        report_name = args.report_name or report_user
+
+        result = submit_report(base_url, token, prepared_data, report_user, report_name)
 
         if result.get("code") == 0:
             try:
@@ -859,7 +878,7 @@ def main():
             except:
                 pass
 
-            md_dir = generate_daily_report_md_files(prepared_data, username)
+            md_dir = generate_daily_report_md_files(prepared_data, report_user, report_name)
 
             print("", flush=True)
             print("==================================================", flush=True)
