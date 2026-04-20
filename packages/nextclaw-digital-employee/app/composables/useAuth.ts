@@ -12,6 +12,25 @@ const OAUTH_STATE_KEY = "de_oauth_state";
 const ID_TOKEN_KEY = "de_id_token";
 const ACCESS_TOKEN_COOKIE = "de_access_token";
 
+function resolveErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const maybeError = error as {
+    statusCode?: number;
+    status?: number;
+    response?: { status?: number };
+    data?: { statusCode?: number };
+  };
+
+  return maybeError.statusCode
+    ?? maybeError.status
+    ?? maybeError.response?.status
+    ?? maybeError.data?.statusCode
+    ?? null;
+}
+
 let _refreshPromise: Promise<boolean> | null = null;
 let _readyResolve: (() => void) | null = null;
 const _readyPromise = new Promise<void>((resolve) => {
@@ -131,6 +150,8 @@ export function useAuth() {
   const keycloakUrl = config.public.keycloakUrl as string;
   const realm = config.public.keycloakRealm as string;
   const clientId = config.public.keycloakClientId as string;
+  const redirectNotice = useAuthRedirectNotice();
+  const redirecting = useAuthRedirectingState();
 
   function setAccessToken(token: string | null): void {
     state.value.accessToken = token;
@@ -278,8 +299,12 @@ export function useAuth() {
 
         scheduleTokenRefresh((data.expires_in as number) ?? 300);
         return true;
-      } catch {
-        clearTokens();
+      } catch (error) {
+        if (resolveErrorStatus(error) === 401) {
+          await handleUnauthorizedResponse();
+        } else {
+          clearTokens();
+        }
         return false;
       } finally {
         _refreshPromise = null;
@@ -298,8 +323,11 @@ export function useAuth() {
       if (res.ok) {
         state.value.user = res.data;
       }
-    } catch {
+    } catch (error) {
       state.value.user = null;
+      if (resolveErrorStatus(error) === 401) {
+        await handleUnauthorizedResponse();
+      }
     }
   }
 
@@ -321,8 +349,35 @@ export function useAuth() {
     _initStarted = false;
   }
 
+  async function redirectToInitialLogin(message?: string): Promise<void> {
+    clearTokens();
+
+    if (!import.meta.client) {
+      return;
+    }
+
+    if (message) {
+      redirectNotice.value = message;
+    }
+
+    if (redirecting.value) {
+      return;
+    }
+
+    redirecting.value = true;
+    try {
+      await navigateTo(getLoginPagePath(), { replace: true });
+    } finally {
+      redirecting.value = false;
+    }
+  }
+
+  async function handleUnauthorizedResponse(message = SESSION_EXPIRED_MESSAGE): Promise<void> {
+    await redirectToInitialLogin(message);
+  }
+
   async function logout(): Promise<void> {
-    const redirectUri = `${window.location.origin}/login`;
+    const redirectUri = buildInitialLoginUrl();
     const idToken = localStorage.getItem(ID_TOKEN_KEY);
     clearTokens();
 
@@ -336,7 +391,7 @@ export function useAuth() {
       }
       window.location.href = `${getLogoutEndpoint()}?${params}`;
     } else {
-      window.location.href = "/login";
+      await redirectToInitialLogin();
     }
   }
 
@@ -408,5 +463,6 @@ export function useAuth() {
     getAccessToken,
     hasRole,
     canManageDepartment,
+    handleUnauthorizedResponse,
   };
 }

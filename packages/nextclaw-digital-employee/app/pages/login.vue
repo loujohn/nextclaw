@@ -7,6 +7,7 @@ const { login, loginWithPassword, isAuthenticated } = useAuth();
 const router = useRouter();
 const config = useRuntimeConfig();
 const hasSso = !!(config.public.keycloakUrl && config.public.keycloakRealm);
+const redirectNotice = useAuthRedirectNotice();
 
 watch(isAuthenticated, (val) => {
   if (val) router.replace("/dashboard");
@@ -17,7 +18,16 @@ const username = ref("");
 const password = ref("");
 const showPassword = ref(false);
 const errorMsg = ref("");
+const systemMsg = ref("");
 const submitting = ref(false);
+
+watch(redirectNotice, (message) => {
+  if (!message) {
+    return;
+  }
+  systemMsg.value = message;
+  redirectNotice.value = null;
+}, { immediate: true });
 
 async function handlePasswordLogin() {
   if (!username.value || !password.value) {
@@ -25,6 +35,7 @@ async function handlePasswordLogin() {
     return;
   }
   errorMsg.value = "";
+  systemMsg.value = "";
   submitting.value = true;
   try {
     const result = await loginWithPassword(username.value, password.value);
@@ -91,11 +102,15 @@ const features = [
           </p>
         </div>
 
+        <div v-if="systemMsg" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm text-amber-700">
+          {{ systemMsg }}
+        </div>
+
         <!-- SSO 登录 -->
         <template v-if="hasSso && loginMode === 'sso'">
           <button
             class="group flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/30"
-            @click="login"
+            @click="systemMsg = ''; errorMsg = ''; login()"
           >
             统一身份登录
             <ArrowRight class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -109,7 +124,7 @@ const features = [
 
           <button
             class="w-full rounded-lg border border-border px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            @click="loginMode = 'password'"
+            @click="systemMsg = ''; loginMode = 'password'"
           >
             使用账号密码登录
           </button>
@@ -178,7 +193,7 @@ const features = [
 
             <button
               class="w-full rounded-lg border border-border px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-              @click="loginMode = 'sso'"
+              @click="systemMsg = ''; loginMode = 'sso'"
             >
               使用企业统一身份登录
             </button>
