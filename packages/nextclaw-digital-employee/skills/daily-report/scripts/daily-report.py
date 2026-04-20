@@ -35,7 +35,7 @@ from datetime import datetime, timedelta
 DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginner:10003"
 LOGIN_ENDPOINT = "/admin/oauth2/token"
 REPORT_ENDPOINT = "/admin/dayReport"
-PROJECT_QUERY_ENDPOINT = "/admin/project/pageProject"
+PROJECT_QUERY_ENDPOINT = "/admin/pageProjectForReport"
 
 REQUIRED_FIELDS = [
     ("date", "日期"),
@@ -153,10 +153,10 @@ def login(base_url, username, password):
     raise Exception(f"登录失败: {result.get('message', result)}")
 
 
-def query_projects(base_url, token, project_name=None, current=1, size=50):
+def query_projects(base_url, token, username, project_name=None, current=1, size=50):
     """查询项目列表（POST，参数通过URL传递）"""
     url = (
-        f"{base_url}{PROJECT_QUERY_ENDPOINT}?current={current}&size={size}&queryType=3"
+        f"{base_url}{PROJECT_QUERY_ENDPOINT}?username={username}&queryType=3&current={current}&size={size}"
     )
     if project_name:
         url += f"&projectName={urllib.parse.quote(project_name)}"
@@ -177,7 +177,6 @@ def format_projects_for_selection(records, total=0):
         lines.append(
             f"{i}. {project_name}（编号: {project_code}，经理: {manager}，阶段: {stage}）"
         )
-    lines.append("\n请回复数字选择，或提供更准确的项目名称。")
     if total > len(records):
         lines.append(
             f"\n（显示前 {len(records)} 条，共有 {total} 条，可输入更精确的关键词缩小范围）"
@@ -669,12 +668,15 @@ def main():
     )
 
     if args.query_projects is not None:
+        if report_user == "unknown":
+            print("[日报] 错误: 请确认填报人信息", file=sys.stderr)
+            return
         if not username or not password:
             print("错误: 需要登录凭据", file=sys.stderr)
             return
         try:
             token = login(base_url, username, password)
-            result = query_projects(base_url, token, args.query_projects)
+            result = query_projects(base_url, token, report_user, args.query_projects)
             if result.get("code") == 0 and result.get("data"):
                 records = result["data"].get("records", [])
                 total = result["data"].get("total", 0)
@@ -686,10 +688,11 @@ def main():
                         {"records": records, "total": total}, f, ensure_ascii=False
                     )
                 print(format_projects_for_selection(records, total))
-                print(
-                    f"\n请使用 --select <数字> 选择项目",
-                    file=sys.stderr,
-                )
+                if records:
+                    print(
+                        f"\n请使用 --select <数字> 选择项目",
+                        file=sys.stderr,
+                    )
             else:
                 print(f"查询失败: {result.get('message', '未知错误')}", file=sys.stderr)
                 return
