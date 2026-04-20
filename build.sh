@@ -2,9 +2,9 @@
 export http_proxy=http://172.31.1.95:1080
 export https_proxy=http://172.31.1.95:1080
 pnpm config set registry https://registry.npmmirror.com
-ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile
+ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install
 if [ $? -ne 0 ];then
-  echo -e "\033[31mpnpm install --frozen-lockfile处理依赖失败!\033[0m"
+  echo -e "\033[31mpnpm install处理依赖失败!\033[0m"
   exit 1
 fi
 pnpm --filter @nextclaw/digital-employee build
