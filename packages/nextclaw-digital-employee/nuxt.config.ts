@@ -6,6 +6,8 @@ export default defineNuxtConfig({
     keycloakUrl: process.env.KEYCLOAK_URL ?? "",
     keycloakRealm: process.env.KEYCLOAK_REALM ?? "",
     jwtSecret: process.env.JWT_SECRET ?? "de-platform-default-secret-change-me",
+    localAccessTokenTtl: process.env.LOCAL_ACCESS_TOKEN_TTL ?? "1h",
+    localRefreshTokenTtl: process.env.LOCAL_REFRESH_TOKEN_TTL ?? "14d",
     public: {
       keycloakUrl: process.env.KEYCLOAK_URL ?? "",
       keycloakRealm: process.env.KEYCLOAK_REALM ?? "",

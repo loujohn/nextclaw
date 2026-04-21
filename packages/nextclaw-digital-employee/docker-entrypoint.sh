@@ -11,10 +11,14 @@ else
   ls -la /app/server/node_modules/ 2>/dev/null || echo "[boot] /app/server/node_modules/ does not exist"
 fi
 
-if [ -f "/app/server/.env" ]; then
-  echo "[env] Loading /app/server/.env"
+# 有一个ACTIVE 在这里拼接.env.test
+
+ENV_FILE="/app/server/.env${ACTIVE:+.$ACTIVE}"
+
+if [ -f "$ENV_FILE" ]; then
+  echo "[env] Loading $ENV_FILE"
   set -a
-  . /app/server/.env
+  . "$ENV_FILE"
   set +a
 fi
 exec node server/index.mjs
