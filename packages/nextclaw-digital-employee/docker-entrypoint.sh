@@ -11,16 +11,4 @@ else
   ls -la /app/server/node_modules/ 2>/dev/null || echo "[boot] /app/server/node_modules/ does not exist"
 fi
 
-# 有一个ACTIVE 在这里拼接.env.test
-
-ENV_FILE="/app/server/.env${ACTIVE:+.$ACTIVE}"
-
-if [ -f "$ENV_FILE" ]; then
-  echo "[env] Loading $ENV_FILE"
-  set -a
-  . "$ENV_FILE"
-  set +a
-fi
-
-echo "[env] DB_HOST=$DB_HOST"
 exec node server/index.mjs
