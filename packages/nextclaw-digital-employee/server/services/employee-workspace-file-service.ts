@@ -21,6 +21,8 @@ type AttachmentReference = {
   attachment: ChatAttachmentView;
 };
 
+const VISIBLE_HIDDEN_WORKSPACE_ENTRIES = new Set([".nextclaw-digital-employee"]);
+
 function normalizeSlashPath(value: string): string {
   return value.replaceAll("\\", "/");
 }
@@ -48,6 +50,10 @@ function toWorkspaceRelativePath(workspaceDir: string, filePath: string): string
 
 function compareNames(left: string, right: string): number {
   return left.localeCompare(right, "zh-CN");
+}
+
+function shouldDisplayWorkspaceEntry(name: string): boolean {
+  return !name.startsWith(".") || VISIBLE_HIDDEN_WORKSPACE_ENTRIES.has(name);
 }
 
 function isUploadPath(relativePath: string): boolean {
@@ -141,7 +147,7 @@ export class EmployeeWorkspaceFileService {
       return [];
     }
     const entries = readdirSync(currentDir, { withFileTypes: true })
-      .filter((entry) => !entry.name.startsWith("."))
+      .filter((entry) => shouldDisplayWorkspaceEntry(entry.name))
       .sort((left, right) => {
         if (left.isDirectory() !== right.isDirectory()) {
           return left.isDirectory() ? -1 : 1;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildAttachmentPromptText, normalizeChatAttachment } from "../server/chat/chat-attachments";
+import {
+  ALLOWED_UPLOAD_EXTENSIONS,
+  buildAttachmentPromptText,
+  inferPreviewType,
+  normalizeChatAttachment,
+} from "../server/chat/chat-attachments";
 
 describe("chat attachments helpers", () => {
   it("normalizes uploaded attachment metadata", () => {
@@ -41,5 +46,11 @@ describe("chat attachments helpers", () => {
     expect(prompt).toContain("请帮我分析这份报价");
     expect(prompt).toContain("用户上传了 1 个文件");
     expect(prompt).toContain("路径：uploadFile/2026-04-14/up_abc_报价单.pdf");
+  });
+
+  it("treats code files as text previews without widening upload allowlist", () => {
+    expect(inferPreviewType("scripts/is-workday.py")).toBe("text");
+    expect(inferPreviewType("skills/config.json")).toBe("text");
+    expect(ALLOWED_UPLOAD_EXTENSIONS.has(".py")).toBe(false);
   });
 });
