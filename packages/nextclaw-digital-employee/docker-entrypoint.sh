@@ -16,4 +16,6 @@ if [ -f "$ENV_FILE.$ACTIVE" ]; then
   source "$ENV_FILE.$ACTIVE"
 fi
 
-exec node server/index.mjs
+exec node --file-env="$ENV_FILE.$ACTIVE" server/index.mjs
+
+
