@@ -125,7 +125,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const dbConfig = resolveDbConfigFromEnv();
       const db = createPlatformKnex(dbConfig);
       await ensureDmSchema(db);
-      await db.migrate.latest({ migrationSource: bundledMigrationSource });
+      await db.migrate.latest({ migrationSource: bundledMigrationSource, disableMigrationsListValidation: true });
       const integrationConnectionRepo = new IntegrationConnectionRepository(db);
       const initialRuntimeState = loadPlatformRuntimeState({
         workspaceDir,
