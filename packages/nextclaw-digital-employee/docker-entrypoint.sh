@@ -21,4 +21,6 @@ if [ -f "$ENV_FILE" ]; then
   . "$ENV_FILE"
   set +a
 fi
+
+echo "[env] DB_HOST=$DB_HOST"
 exec node server/index.mjs
