@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CronService, type CronJob, type CronStore } from "@nextclaw/core";
 import { AutomationService } from "../server/services/automation-service";
 import type { EmployeeScheduleJobView } from "../server/repositories/employee-schedule-job-repository";
+import type { EmployeeScheduleView } from "../server/repositories/employee-schedule-repository";
 
 /**
  * `restartJobSchedules` reconciliation tests.
@@ -71,15 +72,18 @@ function cronJobFixture(partial: Partial<CronJob> & { id: string; name: string }
 }
 
 /** Stub repo that records mutations so we can assert DB effects without DM. */
-function buildStubs(initialJobs: EmployeeScheduleJobView[]): {
+function buildStubs(initialJobs: EmployeeScheduleJobView[], initialSchedules: EmployeeScheduleView[] = []): {
   jobRepo: any;
   scheduleRepo: any;
   employeeRepo: any;
   jobStore: Map<string, EmployeeScheduleJobView>;
+  scheduleStore: Map<string, EmployeeScheduleView>;
   patchCalls: Array<{ jobId: string; runtimeJobId: string | null }>;
 } {
   const jobStore = new Map<string, EmployeeScheduleJobView>();
   for (const job of initialJobs) jobStore.set(job.id, { ...job });
+  const scheduleStore = new Map<string, EmployeeScheduleView>();
+  for (const schedule of initialSchedules) scheduleStore.set(schedule.employeeId, { ...schedule });
   const patchCalls: Array<{ jobId: string; runtimeJobId: string | null }> = [];
 
   const jobRepo = {
@@ -98,8 +102,35 @@ function buildStubs(initialJobs: EmployeeScheduleJobView[]): {
   };
 
   const scheduleRepo = {
-    listActiveByKind: async () => [],
-    patchNextRunAt: async () => {}
+    listActiveByKind: async (scheduleKind: string) =>
+      Array.from(scheduleStore.values()).filter((schedule) => schedule.enabled && schedule.scheduleKind === scheduleKind),
+    getByEmployeeId: async (employeeId: string) => scheduleStore.get(employeeId) ?? null,
+    upsert: async (input: Partial<EmployeeScheduleView> & { employeeId: string; scheduleKind: string }) => {
+      const existing = scheduleStore.get(input.employeeId);
+      const next: EmployeeScheduleView = {
+        id: existing?.id ?? `schedule-${input.employeeId}`,
+        employeeId: input.employeeId,
+        scheduleKind: input.scheduleKind,
+        cronExpr: input.cronExpr ?? null,
+        everyMs: input.everyMs ?? null,
+        heartbeatEnabled: input.heartbeatEnabled ?? false,
+        heartbeatIntervalS: input.heartbeatIntervalS ?? null,
+        enabled: input.enabled ?? true,
+        runtimeJobId: input.runtimeJobId ?? null,
+        scheduleMessage: input.scheduleMessage ?? "",
+        nextRunAt: input.nextRunAt ?? null,
+        createdByUserId: existing?.createdByUserId ?? null,
+        updatedByUserId: input.updatedByUserId ?? existing?.updatedByUserId ?? null,
+        createdAt: existing?.createdAt ?? "",
+        updatedAt: existing?.updatedAt ?? ""
+      };
+      scheduleStore.set(input.employeeId, next);
+      return next;
+    },
+    patchNextRunAt: async (employeeId: string, nextRunAt: string | null) => {
+      const schedule = scheduleStore.get(employeeId);
+      if (schedule) scheduleStore.set(employeeId, { ...schedule, nextRunAt });
+    }
   };
 
   const employeeRepo = {
@@ -111,7 +142,7 @@ function buildStubs(initialJobs: EmployeeScheduleJobView[]): {
     })
   };
 
-  return { jobRepo, scheduleRepo, employeeRepo, jobStore, patchCalls };
+  return { jobRepo, scheduleRepo, employeeRepo, jobStore, scheduleStore, patchCalls };
 }
 
 function buildAutomation(
@@ -237,7 +268,8 @@ describe("automation service - restartJobSchedules reconciliation", () => {
       cronJobFixture({ id: "orph-ghost", name: "ejob:ghost-id", updatedAtMs: 2 }),
       // orphan: DB record exists but enabled=false (listAllEnabled skips it)
       cronJobFixture({ id: "orph-disabled", name: "ejob:disabled-id", updatedAtMs: 3 }),
-      // not an ejob:* — must be left untouched (legacy per-employee schedule)
+      // orphan legacy runtime: no DB schedule row owns it anymore, so startup
+      // reconciliation should clear it as well.
       cronJobFixture({ id: "legacy", name: "employee:some-emp", updatedAtMs: 4 })
     ]);
 
@@ -268,7 +300,7 @@ describe("automation service - restartJobSchedules reconciliation", () => {
 
     const finalStore = readJobsJson(storePath);
     const names = finalStore.jobs.map((j) => j.name).sort();
-    expect(names).toEqual(["ejob:live-id", "employee:some-emp"]);
+    expect(names).toEqual(["ejob:live-id"]);
 
     cron.stop();
   });
@@ -353,6 +385,115 @@ describe("automation service - restartJobSchedules reconciliation", () => {
 
     expect(patchCalls).toContainEqual({ jobId: dbJobId, runtimeJobId: "orphan-short-id" });
     expect(jobStore.get(dbJobId)!.runtimeJobId).toBe("orphan-short-id");
+
+    cron.stop();
+  });
+
+  it("retires legacy employee schedule when enabled jobs already exist for the same employee", async () => {
+    const homeDir = createTempDir("nextclaw-reconcile-legacy-retire-");
+    const storePath = join(homeDir, "cron", "jobs.json");
+    const employeeId = "emp-legacy-and-job";
+
+    writeJobsJson(storePath, [
+      cronJobFixture({ id: "legacy-runtime", name: `employee:${employeeId}`, updatedAtMs: 1 }),
+      cronJobFixture({ id: "job-runtime", name: "ejob:job-legacy-shadow", updatedAtMs: 2 })
+    ]);
+
+    const { jobRepo, scheduleRepo, employeeRepo, scheduleStore } = buildStubs(
+      [
+        {
+          id: "job-legacy-shadow",
+          employeeId,
+          name: "daily-report",
+          description: "",
+          scheduleKind: "cron",
+          cronExpr: "0 9 * * *",
+          everyMs: null,
+          heartbeatIntervalS: null,
+          taskPrompt: "",
+          enabled: true,
+          runtimeJobId: "job-runtime",
+          nextRunAt: null,
+          createdAt: "",
+          updatedAt: ""
+        }
+      ],
+      [
+        {
+          id: "legacy-schedule-row",
+          employeeId,
+          scheduleKind: "cron",
+          cronExpr: "0 9 * * *",
+          everyMs: null,
+          heartbeatEnabled: false,
+          heartbeatIntervalS: null,
+          enabled: true,
+          runtimeJobId: "legacy-runtime",
+          scheduleMessage: "legacy schedule",
+          nextRunAt: "2026-04-21 09:00:00",
+          createdByUserId: null,
+          updatedByUserId: null,
+          createdAt: "",
+          updatedAt: ""
+        }
+      ]
+    );
+
+    const { automation, cron } = buildAutomation(storePath, jobRepo, scheduleRepo, employeeRepo);
+    await automation.start();
+
+    const finalStore = readJobsJson(storePath);
+    expect(finalStore.jobs.map((job) => job.name)).toEqual(["ejob:job-legacy-shadow"]);
+    expect(scheduleStore.get(employeeId)).toMatchObject({
+      enabled: false,
+      runtimeJobId: null,
+      nextRunAt: null
+    });
+
+    cron.stop();
+  });
+
+  it("reconciles duplicate legacy employee:* runtimes down to a single canonical entry", async () => {
+    const homeDir = createTempDir("nextclaw-reconcile-legacy-dup-");
+    const storePath = join(homeDir, "cron", "jobs.json");
+    const employeeId = "emp-legacy-only";
+
+    writeJobsJson(storePath, [
+      cronJobFixture({ id: "legacy-old", name: `employee:${employeeId}`, updatedAtMs: 1 }),
+      cronJobFixture({ id: "legacy-new", name: `employee:${employeeId}`, updatedAtMs: 9 })
+    ]);
+
+    const { jobRepo, scheduleRepo, employeeRepo, scheduleStore } = buildStubs(
+      [],
+      [
+        {
+          id: "legacy-schedule-only",
+          employeeId,
+          scheduleKind: "cron",
+          cronExpr: "0 9 * * *",
+          everyMs: null,
+          heartbeatEnabled: false,
+          heartbeatIntervalS: null,
+          enabled: true,
+          runtimeJobId: null,
+          scheduleMessage: "legacy only",
+          nextRunAt: null,
+          createdByUserId: null,
+          updatedByUserId: null,
+          createdAt: "",
+          updatedAt: ""
+        }
+      ]
+    );
+
+    const { automation, cron } = buildAutomation(storePath, jobRepo, scheduleRepo, employeeRepo);
+    await automation.start();
+
+    const finalStore = readJobsJson(storePath);
+    const employeeJobs = finalStore.jobs.filter((job) => job.name === `employee:${employeeId}`);
+    expect(employeeJobs).toHaveLength(1);
+    expect(employeeJobs[0]!.id).toBe("legacy-new");
+    expect(scheduleStore.get(employeeId)?.runtimeJobId).toBe("legacy-new");
 
     cron.stop();
   });

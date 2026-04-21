@@ -78,6 +78,14 @@ function buildScheduledSessionTitle(title: string): string {
   return `定时任务 · ${title}`;
 }
 
+function buildLegacyScheduleRuntimeName(employeeId: string): string {
+  return `employee:${employeeId}`;
+}
+
+function buildJobScheduleRuntimeName(jobId: string): string {
+  return `ejob:${jobId}`;
+}
+
 export class AutomationService {
   private started = false;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
@@ -169,20 +177,163 @@ export class AutomationService {
       void this.syncNextRunForJobs(executedJobs);
     };
     await this.cronService.start();
-    await this.restartHeartbeatSchedules();
-    await this.restartJobSchedules();
+    const enabledJobs = await this.jobRepo.listAllEnabled();
+    const employeesWithEnabledJobs = new Set(enabledJobs.map((job) => job.employeeId));
+    await this.restartHeartbeatSchedules(employeesWithEnabledJobs);
+    await this.restartLegacySchedules(employeesWithEnabledJobs);
+    await this.restartJobSchedules(enabledJobs);
     this.started = true;
   }
 
-  private async restartHeartbeatSchedules(): Promise<void> {
+  private async restartHeartbeatSchedules(employeesWithEnabledJobs: ReadonlySet<string>): Promise<void> {
     const schedules = await this.scheduleRepo.listActiveByKind("heartbeat");
     for (const schedule of schedules) {
+      if (employeesWithEnabledJobs.has(schedule.employeeId)) {
+        await this.retireLegacySchedule(schedule);
+        continue;
+      }
       const employee = await this.employeeRepo.getById(schedule.employeeId);
       if (!employee || !schedule.heartbeatEnabled) {
         continue;
       }
       const intervalS = schedule.heartbeatIntervalS ?? undefined;
       this.startHeartbeatForEmployee(schedule.employeeId, employee.code, intervalS);
+    }
+  }
+
+  private removeCronJobsByName(name: string): number {
+    let removed = 0;
+    for (const job of [...this.cronService.listJobs(true)]) {
+      if (job.name === name && this.cronService.removeJob(job.id)) {
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  private async retireLegacySchedule(schedule: EmployeeScheduleView): Promise<void> {
+    if (schedule.scheduleKind === "heartbeat") {
+      this.stopHeartbeatForEmployee(schedule.employeeId);
+    } else {
+      this.removeCronJobsByName(buildLegacyScheduleRuntimeName(schedule.employeeId));
+    }
+
+    if (!schedule.enabled && !schedule.runtimeJobId && !schedule.nextRunAt) {
+      return;
+    }
+
+    await this.scheduleRepo.upsert({
+      employeeId: schedule.employeeId,
+      scheduleKind: schedule.scheduleKind,
+      cronExpr: schedule.cronExpr,
+      everyMs: schedule.everyMs,
+      heartbeatEnabled: schedule.heartbeatEnabled,
+      heartbeatIntervalS: schedule.heartbeatIntervalS,
+      enabled: false,
+      runtimeJobId: null,
+      scheduleMessage: schedule.scheduleMessage,
+      nextRunAt: null
+    });
+  }
+
+  private async restartLegacySchedules(employeesWithEnabledJobs: ReadonlySet<string>): Promise<void> {
+    const [cronSchedules, everySchedules] = await Promise.all([
+      this.scheduleRepo.listActiveByKind("cron"),
+      this.scheduleRepo.listActiveByKind("every")
+    ]);
+    const schedules = [...cronSchedules, ...everySchedules];
+
+    const cronByName = new Map<string, CronJob[]>();
+    for (const cj of this.cronService.listJobs(true)) {
+      if (!cj.name.startsWith("employee:")) {
+        continue;
+      }
+      const list = cronByName.get(cj.name);
+      if (list) list.push(cj);
+      else cronByName.set(cj.name, [cj]);
+    }
+
+    const canonicalRuntimeIds = new Set<string>();
+    let retiredSchedules = 0;
+    let prunedDuplicates = 0;
+
+    for (const schedule of schedules) {
+      if (employeesWithEnabledJobs.has(schedule.employeeId)) {
+        await this.retireLegacySchedule(schedule);
+        retiredSchedules += 1;
+        continue;
+      }
+
+      const employee = await this.employeeRepo.getById(schedule.employeeId);
+      if (!employee) {
+        continue;
+      }
+
+      const cronName = buildLegacyScheduleRuntimeName(schedule.employeeId);
+      const existing = cronByName.get(cronName) ?? [];
+
+      let canonical: CronJob;
+      if (existing.length > 0) {
+        const byDbPointer = schedule.runtimeJobId
+          ? existing.find((job) => job.id === schedule.runtimeJobId)
+          : undefined;
+        canonical = byDbPointer ?? existing.slice().sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))[0]!;
+        for (const dup of existing) {
+          if (dup.id !== canonical.id) {
+            this.cronService.removeJob(dup.id);
+            prunedDuplicates += 1;
+          }
+        }
+      } else {
+        canonical = this.cronService.addJob({
+          name: cronName,
+          schedule:
+            schedule.scheduleKind === "cron"
+              ? { kind: "cron", expr: schedule.cronExpr ?? "0 9 * * *" }
+              : { kind: "every", everyMs: Math.max(1_000, Math.trunc(schedule.everyMs ?? 60_000)) },
+          message: schedule.scheduleMessage,
+          deliver: false
+        });
+      }
+
+      canonicalRuntimeIds.add(canonical.id);
+
+      const nextRunAt = canonical.state.nextRunAtMs
+        ? formatTimestamp(new Date(canonical.state.nextRunAtMs))
+        : null;
+      if (schedule.runtimeJobId !== canonical.id) {
+        await this.scheduleRepo.upsert({
+          employeeId: schedule.employeeId,
+          scheduleKind: schedule.scheduleKind,
+          cronExpr: schedule.cronExpr,
+          everyMs: schedule.everyMs,
+          heartbeatEnabled: schedule.heartbeatEnabled,
+          heartbeatIntervalS: schedule.heartbeatIntervalS,
+          enabled: schedule.enabled,
+          runtimeJobId: canonical.id,
+          scheduleMessage: schedule.scheduleMessage,
+          nextRunAt
+        });
+      } else {
+        await this.scheduleRepo.patchNextRunAt(schedule.employeeId, nextRunAt);
+      }
+    }
+
+    let orphansRemoved = 0;
+    for (const [name, list] of cronByName.entries()) {
+      if (!name.startsWith("employee:")) continue;
+      for (const cj of list) {
+        if (!canonicalRuntimeIds.has(cj.id) && this.cronService.removeJob(cj.id)) {
+          orphansRemoved += 1;
+        }
+      }
+    }
+
+    if (retiredSchedules > 0 || prunedDuplicates > 0 || orphansRemoved > 0) {
+      logger.info(
+        `restartLegacySchedules: retired ${retiredSchedules} legacy schedules, ` +
+          `pruned ${prunedDuplicates} duplicate + ${orphansRemoved} orphan cron entries`
+      );
     }
   }
 
@@ -206,8 +357,8 @@ export class AutomationService {
    * All other same-name runtimes are removed, and cron entries whose DB
    * owner no longer exists (disabled/deleted) are also pruned. Heartbeat
    * jobs still go through their own scheduler. */
-  private async restartJobSchedules(): Promise<void> {
-    const jobs = await this.jobRepo.listAllEnabled();
+  private async restartJobSchedules(jobs?: EmployeeScheduleJobView[]): Promise<void> {
+    const enabledJobs = jobs ?? (await this.jobRepo.listAllEnabled());
 
     // Bucket all existing cron runtimes by name so we can diff against DB.
     // Include disabled entries so stale disabled duplicates get pruned too.
@@ -221,7 +372,7 @@ export class AutomationService {
     const canonicalRuntimeIds = new Set<string>();
     let prunedDuplicates = 0;
 
-    for (const job of jobs) {
+    for (const job of enabledJobs) {
       const employee = await this.employeeRepo.getById(job.employeeId);
       if (!employee) continue;
 
@@ -231,7 +382,7 @@ export class AutomationService {
         continue;
       }
 
-      const cronName = `ejob:${job.id}`;
+      const cronName = buildJobScheduleRuntimeName(job.id);
       const existing = cronByName.get(cronName) ?? [];
 
       let canonical: CronJob;
@@ -274,8 +425,6 @@ export class AutomationService {
     }
 
     // Drop orphan `ejob:*` runtimes whose DB job is disabled or deleted.
-    // The legacy `employee:*` names are owned by the deprecated per-employee
-    // schedule API and left alone here.
     let orphansRemoved = 0;
     for (const [name, list] of cronByName.entries()) {
       if (!name.startsWith("ejob:")) continue;
