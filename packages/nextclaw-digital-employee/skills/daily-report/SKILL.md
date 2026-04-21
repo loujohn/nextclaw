@@ -72,15 +72,6 @@ Authorization: Bearer {token}
 | `dayReportType`      | 日报类型（默认2）     | 否，默认2   |
 | `workHourProportion` | 工时占比（0-1）       | 否，默认0.0 |
 
-### 错误示例（禁止使用）
-
-```bash
-# ❌ 错误！字段名应为 kebab-case 格式
---day-summarize-now "完成工作"   # ❌ 错误！应为 daySummarizeNow
---day-plan-next "继续工作"       # ❌ 错误！应为 dayPlanNext
---work-ratio 1.0                  # ❌ 错误！应为 dayReportType
-```
-
 ### 命令行参数示例
 
 ```bash
@@ -102,25 +93,28 @@ python daily-report.py --submit \
 
 ## 调用脚本
 
-### 命令行选项
+### 查询项目
 
-| 选项                     | 说明                           |
-| ------------------------ | ------------------------------ |
-| `--query-projects`       | 查询可选项目列表               |
-| `--select <数字>`        | 从查询结果中选择项目         |
-| `--submit`              | 提交日报                      |
-| `--validate`            | 预览日报（不提交）            |
-| `--date`                | 日期 YYYY-MM-DD               |
-| `--project-code`        | 项目编号                      |
-| `--project-name`        | 项目名称                      |
-| `--project-stage`      | 项目阶段                      |
-| `--project-manager`    | 项目经理                      |
-| `--day-summarize-now`  | 今日工作总结                 |
-| `--day-plan-next`       | 明日工作计划                 |
-| `--problem-risk`        | 问题与风险（选填）           |
-| `--request-instructions`| 请示事项（选填）             |
-| `--report-user`        | 填报人用户名（必填）          |
-| `--report-name`        | 填报人中文名（必填）          |
+| 选项              | 说明                     |
+| ---------------- | ------------------------ |
+| `--report-user`  | 填报人用户名（必填）       |
+| `-q [关键词]`    | 查询可选项目（可为空）    |
+| `--select <数字>`| 从查询结果选择项目       |
+
+### 提交日报
+
+| 选项                     | 说明              |
+| ------------------------ | -----------------|
+| `--submit`               | 提交日报        |
+| `--validate`            | 预览（不提交）  |
+| `--date`                 | 日期            |
+| `--project-code`         | 项目编号        |
+| `--day-summarize-now`    | 今日工作总结   |
+| `--day-plan-next`        | 明日工作计划   |
+| `--problem-risk`        | 问题与风险（选填）|
+| `--request-instructions` | 请示事项（选填）|
+| `--report-user`          | 填报人用户名（必填）|
+| `--report-name`          | 填报人中文名（必填）|
 
 ### 使用示例
 

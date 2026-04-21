@@ -166,7 +166,7 @@ def query_projects(base_url, token, username, project_name=None, current=1, size
 def format_projects_for_selection(records, total=0):
     """格式化项目列表供用户选择"""
     if not records:
-        return "未找到匹配的项目"
+        return "未找到匹配项目，该用户无项目可填写日报，请核实数据"
 
     lines = [f"共找到 {total} 个项目，请确认要填写的项目：\n"]
     for i, p in enumerate(records, 1):
@@ -672,7 +672,7 @@ def main():
             print("[日报] 错误: 请确认填报人信息", file=sys.stderr)
             return
         if not username or not password:
-            print("错误: 需要登录凭据", file=sys.stderr)
+            print("错误: 需要登录凭据，请联系管理员", file=sys.stderr)
             return
         try:
             token = login(base_url, username, password)
