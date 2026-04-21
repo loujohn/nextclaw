@@ -5,15 +5,16 @@
   "type": "module",
   "scripts": {
     "preflight:deps": "pnpm -C ../nextclaw-core build && pnpm -C ../nextclaw-runtime build && pnpm -C ../extensions/nextclaw-channel-runtime build && pnpm -C ../nextclaw-openclaw-compat build",
-    "dev": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider\" && pnpm preflight:deps && nuxt dev",
-    "build": "pnpm preflight:deps && nuxt build",
+    "gen:migrations": "npx tsx scripts/gen-migration-source.ts",
+    "dev": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider\" && pnpm gen:migrations && pnpm preflight:deps && nuxt dev",
+    "build": "pnpm gen:migrations && pnpm preflight:deps && nuxt build",
     "lint": "eslint . --ext .ts,.vue --max-warnings=0",
     "tsc": "pnpm preflight:deps && nuxt typecheck",
     "test": "vitest run",
     "migrate:latest": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider --import tsx\" && knex migrate:latest --knexfile knexfile.ts",
     "migrate:rollback": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider --import tsx\" && knex migrate:rollback --knexfile knexfile.ts",
     "migrate:unlock": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider --import tsx\" && knex migrate:unlock --knexfile knexfile.ts",
-    "migrate:make": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider --import tsx\" && knex migrate:make --knexfile knexfile.ts"
+    "migrate:make": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider --import tsx\" && knex migrate:make --knexfile knexfile.ts && pnpm gen:migrations"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

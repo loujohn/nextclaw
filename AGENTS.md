@@ -217,6 +217,16 @@
   - 反例：发现问题后仅在单点加 if/兜底绕过，未解释根因、未评估复发路径、未处理架构性缺陷。
   - 执行方式：按“现象 → 根因 → 架构影响 → 最小长期修复”记录与实施；若暂时无法一次性重构，必须明确过渡方案、风险与后续移除计划。
   - 维护责任人：当前助手。
+## Database Migration 工作流（digital-employee）
+
+- **新建 migration**：`pnpm migrate:make <name>`（自动生成时间戳命名文件 + 自动重新生成 migration-source.ts）
+- **migration-source.ts 已 gitignore**：该文件由 `scripts/gen-migration-source.ts` 自动生成，`dev`/`build`/`migrate:make` 均会自动触发，禁止手动编辑
+- **共享 DB 容错**：开发环境启动时跳过「已执行但本地缺失的 migration」校验（`disableMigrationsListValidation`），其他人新增的 migration 不会阻止你启动
+- **开发环境自动解锁**：开发环境启动时自动释放 migration 锁，防止进程崩溃后残留锁导致全员无法启动
+- **生产环境严格模式**：生产环境保持完整校验和锁机制，不做任何跳过
+- **幂等性**：所有 migration 的 `up()` 必须使用 `hasTable()`/`hasColumn()` 等检查保证幂等，避免共享 DB 下重复执行报错
+- **Seed 与 Migration 分离**：Migration 只做 Schema 变更（DDL），初始数据/默认数据写入应放在 `server/plugins/seed-*.ts`（Nitro plugin），不允许在 migration 中 insert 业务数据
+
 ## Project Rulebook
 
 - **prefer-local-openclaw-sibling-source**：

@@ -10,9 +10,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenvConfig({ path: resolve(__dirname, ".env") });
 dotenvConfig({ path: resolve(__dirname, ".env.local"), override: true });
 
-const migrations: Knex.MigratorConfig = {
+const migrations: Knex.MigratorConfig & { getNewMigrationName?: (name: string) => string } = {
   directory: resolve(__dirname, "migrations"),
-  extension: "ts"
+  extension: "ts",
+  getNewMigrationName(name: string) {
+    const now = new Date();
+    const pad = (n: number, len = 2) => String(n).padStart(len, "0");
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `${ts}_${name}.ts`;
+  },
 };
 
 function buildDmConfig(): Knex.Config {

@@ -2,12 +2,18 @@ import { createPlatformKnex, resolveDbConfigFromEnv, ensureDmSchema } from "../s
 import { bundledMigrationSource } from "../server/db/migration-source";
 import type { Knex } from "knex";
 
+const TEST_SCHEMA = "DIGITAL_EMPLOYEE_TEST";
+
 /**
- * Creates a DM-backed Knex instance for testing using the same
- * connection config as production (resolved from env vars).
+ * Creates a DM-backed Knex instance for testing.
+ * Always uses the hardcoded TEST_SCHEMA to prevent accidental dev DB operations.
  */
 export function createTestKnex(): Knex {
-  return createPlatformKnex(resolveDbConfigFromEnv());
+  const baseConfig = resolveDbConfigFromEnv();
+  return createPlatformKnex({
+    ...baseConfig,
+    connection: { ...baseConfig.connection, schema: TEST_SCHEMA },
+  });
 }
 
 /**
@@ -17,7 +23,10 @@ export function createTestKnex(): Knex {
  */
 export async function ensureTestDatabase(db: Knex): Promise<void> {
   await ensureDmSchema(db);
-  await db.migrate.latest({ migrationSource: bundledMigrationSource });
+  await db.migrate.latest({
+    migrationSource: bundledMigrationSource,
+    disableMigrationsListValidation: true,
+  });
 }
 
 /**
