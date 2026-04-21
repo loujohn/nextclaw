@@ -1,7 +1,7 @@
 ---
 name: daily-report
 name_zh: 项目日报生成
-version: 1.0.1
+version: 1.0.2
 description: "封装并提交项目日报数据至内部系统。自动完成登录鉴权、参数校验与接口调用。当需要生成项目日报、提交工作汇报或补充项目进度信息时使用。"
 metadata:
   nextclaw:
@@ -193,3 +193,8 @@ python daily-report.py --submit --project-code "XM202503112160" --project-name "
 ```json
 { "success": false, "message": "错误描述", "errors": [] }
 ```
+
+## 注意事项
+
+- **禁止在回复中暴露本地存储路径**：如 `C:\Users\xxx\`、`~/nextclaw-temp/` 等本地文件路径严禁出现在对话回复中
+- 仅告知用户"日报已提交成功/已存档"即可，不要透露具体文件存放位置

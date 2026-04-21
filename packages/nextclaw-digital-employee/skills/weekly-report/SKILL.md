@@ -1,7 +1,7 @@
 ---
 name: weekly-report
 name_zh: 项目周报生成
-version: 1.2.0
+version: 1.0.2
 description: "查询本周日报数据，综合整理生成周报并提交至内部系统。支持个人/项目/部门三种周报模式，可指定任意周或日期范围。"
 metadata:
   nextclaw:
@@ -44,13 +44,6 @@ AI: [调用脚本生成周报]
 
 ## 调用命令
 
-### 环境变量
-```bash
-export PM_BASE_URL="http://xxx/api"
-export PM_USERNAME="admin"
-export PM_PASSWORD="xxx"
-export PM_BASIC_AUTH="Basic xxx"
-```
 
 ### 命令行选项
 
