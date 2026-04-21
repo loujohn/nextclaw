@@ -1,6 +1,4 @@
-#!/bin/sh
-set -e
-
+#!/bin/bash
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider"
 
 echo "[boot] NODE_PATH=$NODE_PATH"
@@ -11,14 +9,13 @@ else
   ls -la /app/server/node_modules/ 2>/dev/null || echo "[boot] /app/server/node_modules/ does not exist"
 fi
 
-# 有一个ACTIVE 在这里拼接.env.test
+ENV_FILE="/app/server/.env"
 
-ENV_FILE="/app/server/.env${ACTIVE:+.$ACTIVE}"
-
-if [ -f "$ENV_FILE" ]; then
-  echo "[env] Loading $ENV_FILE"
-  set -a
-  . "$ENV_FILE"
-  set +a
+if [ -f "$ENV_FILE.$ACTIVE" ]; then
+  echo "[env] Loading $ENV_FILE.$ACTIVE"
+  source "$ENV_FILE.$ACTIVE"
 fi
-exec node server/index.mjs
+
+exec node --env-file $ENV_FILE.$ACTIVE server/index.mjs
+
+
