@@ -4,7 +4,7 @@
 FROM node:22-alpine AS builder
 
 # Build tools required by better-sqlite3 (native addon)
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ ca-certificates
 
 WORKDIR /app
 
@@ -58,7 +58,8 @@ RUN for pair in "packages/nextclaw-core:core" "packages/extensions/nextclaw-chan
 FROM node:22-alpine AS runner
 
 # Python execution environment + timezone data
-RUN apk add --no-cache python3 py3-pip py3-virtualenv tzdata && \
+RUN apk add --no-cache python3 py3-pip py3-virtualenv tzdata ca-certificates && \
+  update-ca-certificates && \
     ln -sf python3 /usr/bin/python && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone
