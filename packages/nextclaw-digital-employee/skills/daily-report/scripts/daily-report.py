@@ -32,10 +32,13 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timedelta
 
-DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginner:10003"
+DEFAULT_BASE_URL = "http://shangji.dcg-internal-services.dev.dcginner:10003/api"
 LOGIN_ENDPOINT = "/admin/oauth2/token"
 REPORT_ENDPOINT = "/admin/dayReport"
 PROJECT_QUERY_ENDPOINT = "/admin/pageProjectForReport"
+CHANCE_QUERY_ENDPOINT = "/admin/business/chance/page"
+CLIENT_QUERY_ENDPOINT = "/admin/getCustomer"
+CONTACTS_QUERY_ENDPOINT = "/admin/getContacts"
 
 REQUIRED_FIELDS = [
     ("date", "日期"),
@@ -46,6 +49,19 @@ REQUIRED_FIELDS = [
     ("daySummarizeNow", "当日工作总结"),
     ("dayPlanNext", "次日工作计划"),
     ("dayReportType", "日报类型"),
+]
+
+CHANCE_REQUIRED_FIELDS = [
+    ("date", "日期"),
+    ("dayReportType", "日报类型"),
+    ("customerType", "客户类型（1=客户 2=合作伙伴）"),
+    ("visitClientName", "拜访客户"),
+    ("contractPersonName", "对接人"),
+    ("contractPersonDeptName", "对接部门"),
+    ("contractPersonPosition", "对接人职务"),
+    ("visitRecord", "拜访记录"),
+    ("clientHope", "客户期望"),
+    ("dayPlanNext", "下一步计划"),
 ]
 
 REQUIRED_FIELDS_WITH_TIME = REQUIRED_FIELDS + [
@@ -163,6 +179,16 @@ def query_projects(base_url, token, username, project_name=None, current=1, size
     return fetch_json_post(url, {}, token)
 
 
+def query_chances(base_url, token, chance_name=None, customer_code=None, current=1, size=50):
+    """查询商机列表"""
+    url = f"{base_url}{CHANCE_QUERY_ENDPOINT}?current={current}&size={size}"
+    if chance_name:
+        url += f"&chanceName={urllib.parse.quote(chance_name)}"
+    if customer_code:
+        url += f"&customerCode={urllib.parse.quote(customer_code)}"
+    return fetch_json(url, token)
+
+
 def format_projects_for_selection(records, total=0):
     """格式化项目列表供用户选择"""
     if not records:
@@ -197,6 +223,115 @@ def get_project_info(records, index):
     }
 
 
+def get_client_info(records, index):
+    """从查询结果中获取客户信息"""
+    if index < 1 or index > len(records):
+        return None
+    c = records[index - 1]
+    return {
+        "visitClientName": c.get("customerName", ""),
+        "visitClientCode": c.get("customerCode", ""),
+        "visitClientId": c.get("customerId", ""),
+        "customerType": c.get("customerType", 1),
+    }
+
+
+def format_chances_for_selection(records, total=0):
+    """格式化商机列表供用户选择"""
+    if not records:
+        return "未找到匹配商机"
+
+    lines = [f"共找到 {total} 个商机，请确认要填写的商机：\n"]
+    for i, c in enumerate(records, 1):
+        chance_code = c.get("chanceCode", "")
+        chance_name = c.get("chanceName", "")
+        customer_name = c.get("customerName", "")
+        stage = c.get("chanceStageName", "")
+        lines.append(f"{i}. {chance_name}（编码: {chance_code}，客户: {customer_name}，阶段: {stage}）")
+    if total > len(records):
+        lines.append(f"\n（显示前 {len(records)} 条，共有 {total} 条，可输入更精确的关键词缩小范围）")
+    return "\n".join(lines)
+
+
+def format_clients_for_selection(records, total=0):
+    """格式化客户列表供用户选择"""
+    if not records:
+        return "未找到匹配客户"
+
+    lines = [f"共找到 {total} 个客户，请确认拜访的客户：\n"]
+    for i, c in enumerate(records, 1):
+        customer_name = c.get("customerName", "")
+        customer_code = c.get("customerCode", "")
+        customer_type = c.get("customerType", "")
+        type_name = "客户" if customer_type == 1 else "合作伙伴"
+        lines.append(f"{i}. {customer_name}（编码: {customer_code}，类型: {type_name}）")
+    if total > len(records):
+        lines.append(f"\n（显示前 {len(records)} 条，共有 {total} 条，可输入更精确的关键词缩小范围）")
+    return "\n".join(lines)
+
+
+def format_contacts_for_selection(records, total=0):
+    """格式化对接人列表供用户选择"""
+    if not records:
+        return "未找到匹配对接人"
+
+    lines = [f"共找到 {total} 个对接人，请确认对接人：\n"]
+    for i, c in enumerate(records, 1):
+        contacts_name = c.get("contactsName", "")
+        dept_name = c.get("depart", "")
+        position = c.get("business", "")
+        customer_name = c.get("customerName", "")
+        lines.append(f"{i}. {contacts_name}（部门: {dept_name}，职务: {position}，客户: {customer_name}）")
+    if total > len(records):
+        lines.append(f"\n（显示前 {len(records)} 条，共有 {total} 条，可输入更精确的关键词缩小范围）")
+    return "\n".join(lines)
+
+
+def get_chance_info(records, index):
+    """从查询结果中获取商机信息"""
+    if index < 1 or index > len(records):
+        return None
+    c = records[index - 1]
+    return {
+        "chanceId": c.get("id", ""),
+        "chanceCode": c.get("chanceCode", ""),
+        "chanceProjectName": c.get("chanceName", ""),
+        "chanceProjectSchedule": c.get("chanceStageName", ""),
+        "groupAttentionStage": c.get("groupAttentionStage", ""),
+    }
+
+
+def query_clients(base_url, token, client_name=None, current=1, size=50):
+    """查询客户列表（新版接口）"""
+    url = f"{base_url}{CLIENT_QUERY_ENDPOINT}?current={current}&size={size}"
+    if client_name:
+        url += f"&customerName={urllib.parse.quote(client_name)}"
+    return fetch_json_post(url, {}, token)
+
+
+def query_clients_by_type_base(base_url, token, customer_type=None, customer_name=None, current=1, size=50):
+    """查询客户列表（带类型）"""
+    url = f"{base_url}{CLIENT_QUERY_ENDPOINT}?current={current}&size={size}"
+    if customer_type:
+        url += f"&customerType={customer_type}"
+    if customer_name:
+        url += f"&customerName={urllib.parse.quote(customer_name)}"
+    return fetch_json_post(url, {}, token)
+
+
+def query_contacts(base_url, token, customer_name=None, contacts_name=None, contacts_code=None):
+    """查询对接人列表（新版接口）"""
+    url = f"{base_url}{CONTACTS_QUERY_ENDPOINT}"
+    params = {}
+    if customer_name:
+        params["customerName"] = customer_name
+    if contacts_name:
+        params["contactsName"] = contacts_name
+    if contacts_code:
+        params["contactsCode"] = contacts_code
+    return fetch_json_post(url, {}, token, params=params)
+
+
 def normalize_field_names(data):
     """统一字段名：双向转换（用户字段 <-> 接口字段）"""
     if "chanceProjectName" in data and "projectName" not in data:
@@ -213,7 +348,15 @@ def normalize_field_names(data):
 def validate_report_data(data):
     """校验日报数据，返回缺失字段列表"""
     missing = []
-    for field_key, field_name in REQUIRED_FIELDS:
+
+    day_report_type = data.get("dayReportType", 2)
+
+    if day_report_type == 1:
+        required = CHANCE_REQUIRED_FIELDS
+    else:
+        required = REQUIRED_FIELDS
+
+    for field_key, field_name in required:
         if field_key not in data or data[field_key] is None or data[field_key] == "":
             missing.append((field_key, field_name))
 
@@ -233,28 +376,57 @@ def validate_report_data(data):
 
 
 def prepare_report_data(report_data, login_user=None, login_name=None):
-    """准备提交数据，自动设置工时比例为0"""
+    """准备提交数据"""
     normalize_field_names(report_data)
 
-    proportion = 0.0
+    day_report_type = report_data.get("dayReportType", 2)
 
-    return {
-        "date": report_data.get("date", ""),
-        "dayPlanNow": "无",
-        "chanceProjectName": report_data.get("chanceProjectName", ""),
-        "workHourProportion": proportion,
-        "chanceProjectSchedule": report_data.get("chanceProjectSchedule", ""),
-        "projectCode": report_data.get("projectCode", ""),
-        "projectManager": report_data.get("projectManager", ""),
-        "workHourProportionStatus": report_data.get("workHourProportionStatus", 0),
+    base = {
+        "dayReportTime": report_data.get("dayReportTime", report_data.get("date", "")),
+        "dayReportType": day_report_type,
+        "dayPlanNow": report_data.get("dayPlanNow", "无"),
         "daySummarizeNow": report_data.get("daySummarizeNow", ""),
         "dayPlanNext": report_data.get("dayPlanNext", ""),
         "problemRisk": report_data.get("problemRisk", ""),
         "requestInstructions": report_data.get("requestInstructions", ""),
         "accompanyingPersonnelList": report_data.get("accompanyingPersonnelList", []),
-        "dayReportTime": report_data.get("dayReportTime", report_data.get("date", "")),
-        "dayReportType": report_data.get("dayReportType", 2),
     }
+
+    if day_report_type == 1:
+        base.update({
+            "date": report_data.get("date", ""),
+            "chanceId": report_data.get("chanceId", ""),
+            "chanceCode": report_data.get("chanceCode", ""),
+            "chanceProjectName": report_data.get("chanceProjectName", ""),
+            "chanceProjectSchedule": report_data.get("chanceProjectSchedule", ""),
+            "groupAttentionStage": report_data.get("groupAttentionStage", ""),
+            "customerType": report_data.get("customerType", 1),
+            "visitClientName": report_data.get("visitClientName", ""),
+            "visitClientCode": report_data.get("visitClientCode", ""),
+            "visitClientId": report_data.get("visitClientId", ""),
+            "contractPersonCode": report_data.get("contractPersonCode", ""),
+            "contractPersonName": report_data.get("contractPersonName", ""),
+            "contractPersonDeptName": report_data.get("contractPersonDeptName", ""),
+            "contractPersonPosition": report_data.get("contractPersonPosition", ""),
+            "contractPersonDeptId": report_data.get("contractPersonDeptId", ""),
+            "visitRecord": report_data.get("visitRecord", ""),
+            "clientHope": report_data.get("clientHope", ""),
+            "workHourProportion": report_data.get("workHourProportion", 0),
+            "workHourProportionStatus": report_data.get("workHourProportionStatus", 0),
+        })
+    else:
+        proportion = 0.0
+        base.update({
+            "date": report_data.get("date", ""),
+            "chanceProjectName": report_data.get("chanceProjectName", ""),
+            "workHourProportion": proportion,
+            "chanceProjectSchedule": report_data.get("chanceProjectSchedule", ""),
+            "projectCode": report_data.get("projectCode", ""),
+            "projectManager": report_data.get("projectManager", ""),
+            "workHourProportionStatus": report_data.get("workHourProportionStatus", 0),
+        })
+
+    return base
 
 
 def submit_report(base_url, token, report_data, login_user=None, login_name=None):
@@ -286,9 +458,16 @@ def append_to_file(filepath, content):
 
 
 def generate_daily_report_md_files(report_data, report_user, report_name=None):
-    """生成两个维度的日报汇总MD文件"""
+    """生成两个维度的日报汇总MD文件（区分项目和商机）"""
     report_date = report_data.get("date", "")
+    day_report_type = report_data.get("dayReportType", 2)
+
     project_code = report_data.get("projectCode", "")
+    chance_code = report_data.get("chanceCode", "")
+
+    if day_report_type == 1:
+        project_code = chance_code
+
     project_name = report_data.get(
         "chanceProjectName", report_data.get("projectName", "")
     )
@@ -309,68 +488,122 @@ def generate_daily_report_md_files(report_data, report_user, report_name=None):
     week_dir = os.path.join(base_dir, f"{week_start}_{week_end}")
     os.makedirs(week_dir, exist_ok=True)
 
-    # 保存原始数据JSON
     raw_json_file = os.path.join(week_dir, "raw_dailies.json")
     raw_data = []
     if os.path.exists(raw_json_file):
         with open(raw_json_file, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
 
-    # 检查是否已存在相同记录（同一日期、同一项目、同一填报人）
     exists = any(
         d.get("date") == report_date
         and d.get("projectCode") == project_code
         and d.get("createBy") == create_by
+        and d.get("dayReportType") == day_report_type
         for d in raw_data
     )
     if not exists:
-        raw_data.append(
-            {
-                "date": report_date,
-                "projectCode": project_code,
-                "projectName": project_name,
-                "projectManager": project_manager,
-                "createBy": create_by,
-                "createName": user_display_name,
-                "summarize": summarize or "无",
-                "plan": plan or "无",
-                "submittedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-        )
+        record = {
+            "date": report_date,
+            "projectCode": project_code,
+            "projectName": project_name,
+            "projectManager": project_manager,
+            "createBy": create_by,
+            "createName": user_display_name,
+            "summarize": summarize or "无",
+            "plan": plan or "无",
+            "dayReportType": day_report_type,
+            "reportTypeName": "商机日报" if day_report_type == 1 else "项目日报",
+            "submittedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        if day_report_type == 1:
+            record["chanceCode"] = report_data.get("chanceCode", "")
+            record["chanceId"] = report_data.get("chanceId", "")
+            record["visitClientName"] = report_data.get("visitClientName", "")
+            record["contractPersonName"] = report_data.get("contractPersonName", "")
+            record["visitRecord"] = report_data.get("visitRecord", "")
+            record["clientHope"] = report_data.get("clientHope", "")
+
+        raw_data.append(record)
         with open(raw_json_file, "w", encoding="utf-8") as f:
             json.dump(raw_data, f, ensure_ascii=False, indent=2)
 
-    projects_file = os.path.join(week_dir, "projects.md")
-    users_file = os.path.join(week_dir, "users.md")
-
-    # 项目维度：项目 -> 日期 -> 人员 -> 日报
-    projects_data = _load_md_structure(projects_file)
-    if project_code not in projects_data:
-        projects_data[project_code] = {
-            "name": project_name,
-            "manager": project_manager,
-            "dates": {},
+    # 商机日报只写 users.md，项目日报写 projects.md + users.md
+    if day_report_type != 1:
+        projects_file = os.path.join(week_dir, "projects.md")
+        projects_data = _load_md_structure(projects_file)
+        if project_code not in projects_data:
+            projects_data[project_code] = {
+                "name": project_name,
+                "manager": project_manager,
+                "dates": {},
+            }
+        if report_date not in projects_data[project_code]["dates"]:
+            projects_data[project_code]["dates"][report_date] = {}
+        projects_data[project_code]["dates"][report_date][user_display_name] = {
+            "summarize": summarize or "无",
+            "plan": plan or "无",
         }
-    if report_date not in projects_data[project_code]["dates"]:
-        projects_data[project_code]["dates"][report_date] = {}
-    projects_data[project_code]["dates"][report_date][user_display_name] = {
-        "summarize": summarize or "无",
-        "plan": plan or "无",
-    }
-    _save_projects_md(projects_file, projects_data, week_start, week_end)
+        _save_projects_md(projects_file, projects_data, week_start, week_end)
 
-    # 人员维度：人员 -> 日期 -> 项目 -> 日报
+    users_file = os.path.join(week_dir, "users.md")
     users_data = _load_users_md_structure(users_file)
     if user_display_name not in users_data:
         users_data[user_display_name] = {"dates": {}}
     if report_date not in users_data[user_display_name]["dates"]:
         users_data[user_display_name]["dates"][report_date] = {}
-    users_data[user_display_name]["dates"][report_date][project_name] = {
+
+    if day_report_type == 1:
+        chance_name = report_data.get("chanceProjectName", "")
+        visit_client_name = report_data.get("visitClientName", "")
+        if chance_name:
+            item_key = f"[商机]{chance_name}"
+        else:
+            item_key = f"[商机]{visit_client_name}"
+    else:
+        item_key = project_name
+
+    users_data[user_display_name]["dates"][report_date][item_key] = {
         "projectName": project_name,
         "manager": project_manager,
         "summarize": summarize or "无",
         "plan": plan or "无",
+        "dayReportType": day_report_type,
+        "reportTypeName": "商机日报" if day_report_type == 1 else "项目日报",
+        "workHourProportion": 0,
     }
+
+    if day_report_type == 1:
+        visit_client_name = report_data.get("visitClientName", "")
+        if visit_client_name:
+            users_data[user_display_name]["dates"][report_date][item_key]["visitClientName"] = visit_client_name
+        visit_client_code = report_data.get("visitClientCode", "")
+        if visit_client_code:
+            users_data[user_display_name]["dates"][report_date][item_key]["visitClientCode"] = visit_client_code
+        contract_person_name = report_data.get("contractPersonName", "")
+        if contract_person_name:
+            users_data[user_display_name]["dates"][report_date][item_key]["contractPersonName"] = contract_person_name
+        contract_person_code = report_data.get("contractPersonCode", "")
+        if contract_person_code:
+            users_data[user_display_name]["dates"][report_date][item_key]["contractPersonCode"] = contract_person_code
+        contract_person_dept_name = report_data.get("contractPersonDeptName", "")
+        if contract_person_dept_name:
+            users_data[user_display_name]["dates"][report_date][item_key]["contractPersonDeptName"] = contract_person_dept_name
+        contract_person_dept_id = report_data.get("contractPersonDeptId", "")
+        if contract_person_dept_id:
+            users_data[user_display_name]["dates"][report_date][item_key]["contractPersonDeptId"] = contract_person_dept_id
+        contract_person_position = report_data.get("contractPersonPosition", "")
+        if contract_person_position:
+            users_data[user_display_name]["dates"][report_date][item_key]["contractPersonPosition"] = contract_person_position
+        visit_record = report_data.get("visitRecord", "")
+        if visit_record:
+            users_data[user_display_name]["dates"][report_date][item_key]["visitRecord"] = visit_record
+        client_hope = report_data.get("clientHope", "")
+        if client_hope:
+            users_data[user_display_name]["dates"][report_date][item_key]["clientHope"] = client_hope
+        customer_type = report_data.get("customerType")
+        if customer_type is not None:
+            users_data[user_display_name]["dates"][report_date][item_key]["customerType"] = customer_type
+
     _save_users_md(users_file, users_data, week_start, week_end)
 
     return week_dir
@@ -470,6 +703,116 @@ def _load_users_md_structure(filepath):
     return data
 
 
+def _load_chances_md_structure(filepath):
+    """加载商机维度的结构化数据"""
+    data = {}
+    if not os.path.exists(filepath):
+        return data
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.split("\n")
+    current_chance = None
+    current_date = None
+
+    for line in lines:
+        if line.startswith("## "):
+            match = re.match(r"## (.+?)（(.+?)）", line)
+            if match:
+                chance_name = match.group(1)
+                chance_code = match.group(2)
+                current_chance = chance_code
+                if chance_code not in data:
+                    data[chance_code] = {
+                        "name": chance_name,
+                        "dates": {},
+                    }
+        elif line.startswith("### "):
+            current_date = line.replace("### ", "").strip()
+            if current_chance and current_date:
+                if current_date not in data[current_chance]["dates"]:
+                    data[current_chance]["dates"][current_date] = {}
+        elif line.startswith("- **"):
+            parts = line.split("**")
+            if len(parts) >= 3 and current_chance and current_date:
+                user_name = parts[1]
+                rest = parts[2].replace("**：", "").replace("：", "").strip()
+                if "。" in rest:
+                    summarize, plan_part = rest.split("。", 1)
+                    plan = plan_part.replace("明日：", "").strip()
+                else:
+                    summarize = rest
+                    plan = ""
+                data[current_chance]["dates"][current_date][user_name] = {
+                    "summarize": summarize.replace("今日：", "").strip(),
+                    "plan": plan,
+                }
+    return data
+
+
+def _save_chances_md(filepath, data, week_start, week_end):
+    """保存商机维度的MD文件"""
+    lines = []
+    lines.append("# 本周商机日报汇总\n")
+    lines.append(f"> 统计周期：{week_start} ~ {week_end}\n")
+
+    for chance_code in sorted(data.keys()):
+        chance = data[chance_code]
+        lines.append(f"\n## {chance['name']}（{chance_code}）\n")
+
+        for date in sorted(chance["dates"].keys()):
+            lines.append(f"\n### {date}\n")
+            for user_name, user_data in sorted(chance["dates"][date].items()):
+                summarize = user_data.get("summarize", "无")
+                plan = user_data.get("plan", "无")
+                visit_client = user_data.get("visitClientName", "")
+                contract_person = user_data.get("contractPersonName", "")
+                visit_record = user_data.get("visitRecord", "")
+                client_hope = user_data.get("clientHope", "")
+
+                summarize = (
+                    summarize.replace("今日：", "")
+                    .replace("今日:", "")
+                    .replace("今日", "")
+                    .strip()
+                )
+                plan = (
+                    plan.replace("明日：", "")
+                    .replace("明日:", "")
+                    .replace("明日", "")
+                    .strip()
+                )
+                if summarize == "无":
+                    continue
+
+                detail_parts = []
+                if visit_client:
+                    detail_parts.append(f"客户: {visit_client}")
+                if contract_person:
+                    detail_parts.append(f"对接人: {contract_person}")
+                if visit_record:
+                    detail_parts.append(f"拜访记录: {visit_record}")
+                if client_hope:
+                    detail_parts.append(f"客户期望: {client_hope}")
+
+                detail = " | ".join(detail_parts)
+                if plan and plan != "无":
+                    lines.append(
+                        f"- **{user_name}**：今日：{summarize}。明日：{plan}\n"
+                    )
+                    if detail:
+                        lines.append(f"  - {detail}\n")
+                else:
+                    lines.append(f"- **{user_name}**：今日：{summarize}\n")
+                    if detail:
+                        lines.append(f"  - {detail}\n")
+        lines.append("\n---\n")
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
 def _save_projects_md(filepath, data, week_start, week_end):
     """保存项目维度的MD文件"""
     lines = []
@@ -526,29 +869,49 @@ def _save_users_md(filepath, data, week_start, week_end):
         for date in sorted(user["dates"].keys()):
             lines.append(f"\n### {date}\n")
             for project_name, project_data in sorted(user["dates"][date].items()):
-                summarize = project_data.get("summarize", "无")
-                plan = project_data.get("plan", "无")
-                project_name = project_data.get("projectName", project_name)
-                summarize = (
-                    summarize.replace("今日：", "")
-                    .replace("今日:", "")
-                    .replace("今日", "")
-                    .strip()
-                )
-                plan = (
-                    plan.replace("明日：", "")
-                    .replace("明日:", "")
-                    .replace("明日", "")
-                    .strip()
-                )
-                if summarize == "无":
-                    continue
-                if plan and plan != "无":
-                    lines.append(
-                        f"- **{project_name}**：今日：{summarize}。明日：{plan}\n"
-                    )
+                day_report_type = project_data.get("dayReportType", 2)
+
+                if day_report_type == 1:
+                    visit_client_name = project_data.get("visitClientName", "")
+                    chance_name = project_data.get("chanceProjectName", "")
+                    contract_person_name = project_data.get("contractPersonName", "")
+                    visit_record = project_data.get("visitRecord", "")
+                    client_hope = project_data.get("clientHope", "")
+                    plan = project_data.get("plan", "")
+
+                    if visit_client_name:
+                        title = f"日报类型：商机 客户：{visit_client_name}"
+                    else:
+                        title = "日报类型：商机"
+
+                    if contract_person_name:
+                        title += f" 对接人：{contract_person_name}"
+
+                    parts = []
+                    parts.append(f"客户：{visit_client_name or '无'}")
+                    if chance_name:
+                        parts.append(f"商机：{chance_name}")
+                    parts.append(f"客户期望：{client_hope or '无'}")
+                    parts.append(f"拜访记录：{visit_record or '无'}")
+                    parts.append(f"下一步计划：{plan or '无'}")
+
+                    lines.append(f"- **{title}**：{'； '.join(parts)}\n")
                 else:
-                    lines.append(f"- **{project_name}**：今日：{summarize}\n")
+                    summarize = project_data.get("summarize", "")
+                    plan = project_data.get("plan", "")
+                    project_name = project_data.get("projectName", project_name)
+                    problem_risk = project_data.get("problemRisk", "")
+                    request_instructions = project_data.get("requestInstructions", "")
+
+                    title = f"日报类型：项目 项目名称：{project_name}"
+
+                    parts = []
+                    parts.append(f"今日：{summarize or '无'}")
+                    parts.append(f"明日：{plan or '无'}")
+                    parts.append(f"问题与风险：{problem_risk or '无'}")
+                    parts.append(f"请示事项：{request_instructions or '无'}")
+
+                    lines.append(f"- **{title}**：{'； '.join(parts)}\n")
         lines.append("\n---\n")
 
     with open(filepath, "w", encoding="utf-8") as f:
@@ -565,8 +928,25 @@ def format_missing_fields_message(missing):
         "projectCode": "项目编号",
         "projectManager": "项目经理",
         "daySummarizeNow": "今日工作总结",
-        "dayPlanNext": "明日工作计划",
+        "dayPlanNext": "下一步计划",
         "dayReportType": "日报类型",
+        "chanceId": "商机ID",
+        "chanceCode": "商机编码",
+        "chanceProjectName": "商机/项目名称",
+        "chanceProjectSchedule": "商机/项目阶段",
+        "groupAttentionStage": "集团关注项目阶段",
+        "customerType": "客户类型",
+        "visitClientName": "拜访客户",
+        "visitClientCode": "拜访客户编码",
+        "visitClientId": "拜访客户ID",
+        "contractPersonCode": "对接人code",
+        "contractPersonName": "对接人",
+        "contractPersonDeptName": "对接部门",
+        "contractPersonPosition": "对接人职务",
+        "contractPersonDeptId": "对接人部门ID",
+        "visitRecord": "拜访记录",
+        "clientHope": "客户期望",
+        "dayPlanNow": "今日工作计划",
     }
     for i, (key, name) in enumerate(missing, 1):
         display_name = name_map.get(key, name)
@@ -619,10 +999,68 @@ def main():
         help="根据项目名称查询项目列表（可选，不传则查询全部）",
     )
     parser.add_argument(
-        "--select", dest="select", help="从查询结果中选择项目（数字索引）"
+        "-qc",
+        "--query-chances",
+        dest="query_chances",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help="根据商机名称查询商机列表（可选，不传则查询全部）",
+    )
+    parser.add_argument(
+        "--customer-code",
+        dest="customer_code",
+        type=str,
+        help="客户编码（与 --query-chances 配合使用，按客户查询商机）",
+    )
+    parser.add_argument(
+        "--query-clients",
+        dest="query_clients",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help="根据客户名称查询客户列表（可选，不传则查询全部）",
+    )
+    parser.add_argument(
+        "--query-contacts",
+        dest="query_contacts",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help="根据对接人名称查询对接人列表（可选）",
+    )
+    parser.add_argument(
+        "--customer-name",
+        dest="customer_name",
+        type=str,
+        help="客户名称（可选，用于过滤对接人，或与 --query-chances 配合查询该客户下的商机）",
+    )
+    parser.add_argument(
+        "--select", dest="select", help="从查询结果中选择项目/商机（数字索引）"
     )
     parser.add_argument("--report-user", dest="report_user", help="填报人用户名（默认为登录用户）")
     parser.add_argument("--report-name", dest="report_name", help="填报人姓名（默认为登录用户名）")
+
+    parser.add_argument("--chance-id", dest="chance_id", help="商机ID（非必填）")
+    parser.add_argument("--chance-code", dest="chance_code", help="商机编码（非必填）")
+    parser.add_argument("--chance-name", dest="chance_name", help="商机/项目名称（非必填）")
+    parser.add_argument("--chance-schedule", dest="chance_schedule", help="商机/项目阶段（非必填）")
+    parser.add_argument("--group-attention-stage", dest="group_attention_stage", help="集团关注项目阶段（非必填）")
+    parser.add_argument("--customer-type", dest="customer_type", type=int, default=1, help="客户类型（1=客户 2=合作伙伴，必填）")
+    parser.add_argument("--visit-client-name", dest="visit_client_name", help="拜访客户（必填）")
+    parser.add_argument("--visit-client-code", dest="visit_client_code", help="拜访客户编码（非必填）")
+    parser.add_argument("--visit-client-id", dest="visit_client_id", help="拜访客户ID（非必填）")
+    parser.add_argument("--contract-person-code", dest="contract_person_code", help="对接人code（非必填）")
+    parser.add_argument("--contract-person-name", dest="contract_person_name", help="对接人（必填）")
+    parser.add_argument("--contract-person-dept-name", dest="contract_person_dept_name", help="对接部门（必填）")
+    parser.add_argument("--contract-person-position", dest="contract_person_position", help="对接人职务（必填）")
+    parser.add_argument("--contract-person-dept-id", dest="contract_person_dept_id", help="对接人部门ID（非必填）")
+    parser.add_argument("--visit-record", dest="visit_record", help="拜访记录（必填）")
+    parser.add_argument("--client-hope", dest="client_hope", help="客户期望（必填）")
+    parser.add_argument("--day-plan-now", dest="day_plan_now", help="今日工作计划（非必填）")
 
     args = parser.parse_args()
 
@@ -634,6 +1072,9 @@ def main():
         not args.submit
         and not args.validate
         and args.query_projects is None
+        and args.query_chances is None
+        and args.query_clients is None
+        and args.query_contacts is None
         and not args.select
     ):
         print("""
@@ -701,53 +1142,178 @@ def main():
             return
         return
 
+    if args.query_chances is not None:
+        if not username or not password:
+            print("错误: 需要登录凭据，请联系管理员", file=sys.stderr)
+            return
+        try:
+            token = login(base_url, username, password)
+            result = query_chances(base_url, token, args.query_chances, args.customer_code)
+            if result.get("code") == 0 and result.get("data"):
+                records = result["data"].get("records", [])
+                total = result["data"].get("total", 0)
+                week_dir = get_week_dir()
+                os.makedirs(week_dir, exist_ok=True)
+                query_file_name = f"chances_query_{report_user}.json"
+                query_file = os.path.join(week_dir, query_file_name)
+                with open(query_file, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"records": records, "total": total}, f, ensure_ascii=False
+                    )
+                print(format_chances_for_selection(records, total))
+                if records:
+                    print(
+                        f"\n请使用 --select <数字> 选择商机",
+                        file=sys.stderr,
+                    )
+            else:
+                print(f"查询失败: {result.get('message', '未知错误')}", file=sys.stderr)
+                return
+        except Exception as e:
+            print(f"[日报] 错误: {e}", file=sys.stderr)
+            return
+        return
+
+    if args.query_clients is not None:
+        if not username or not password:
+            print("错误: 需要登录凭据，请联系管理员", file=sys.stderr)
+            return
+        try:
+            token = login(base_url, username, password)
+            result = query_clients(base_url, token, args.query_clients)
+            if result.get("code") == 0 and result.get("data"):
+                records = result["data"].get("records", [])
+                total = result["data"].get("total", 0)
+                week_dir = get_week_dir()
+                os.makedirs(week_dir, exist_ok=True)
+                query_file_name = f"clients_query_{report_user}.json"
+                query_file = os.path.join(week_dir, query_file_name)
+                with open(query_file, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"records": records, "total": total}, f, ensure_ascii=False
+                    )
+                print(format_clients_for_selection(records, total))
+                if records:
+                    print(
+                        f"\n请使用 --select <数字> 选择客户",
+                        file=sys.stderr,
+                    )
+            else:
+                print(f"查询失败: {result.get('message', '未知错误')}", file=sys.stderr)
+                return
+        except Exception as e:
+            print(f"[日报] 错误: {e}", file=sys.stderr)
+            return
+        return
+
+    if args.query_contacts is not None:
+        if not username or not password:
+            print("错误: 需要登录凭据，请联系管理员", file=sys.stderr)
+            return
+        try:
+            token = login(base_url, username, password)
+            result = query_contacts(base_url, token, customer_name=args.customer_name, contacts_name=args.query_contacts)
+            if result.get("code") == 0 and result.get("data"):
+                records = result["data"].get("records", [])
+                total = result["data"].get("total", 0)
+                week_dir = get_week_dir()
+                os.makedirs(week_dir, exist_ok=True)
+                query_file_name = f"contacts_query_{report_user}.json"
+                query_file = os.path.join(week_dir, query_file_name)
+                with open(query_file, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"records": records, "total": total}, f, ensure_ascii=False
+                    )
+                print(format_contacts_for_selection(records, total))
+                if records:
+                    print(
+                        f"\n请使用 --select <数字> 选择对接人",
+                        file=sys.stderr,
+                    )
+            else:
+                print(f"查询失败: {result.get('message', '未知错误')}", file=sys.stderr)
+                return
+        except Exception as e:
+            print(f"[日报] 错误: {e}", file=sys.stderr)
+            return
+        return
+
     if args.select:
         week_dir = get_week_dir()
-        query_file = os.path.join(week_dir, query_file_name)
-        if not os.path.exists(query_file):
+
+        possible_files = [
+            f"projects_query_{report_user}.json",
+            f"chances_query_{report_user}.json",
+            f"clients_query_{report_user}.json",
+        ]
+        
+        query_file = None
+        latest_mtime = 0
+        for f in possible_files:
+            fp = os.path.join(week_dir, f)
+            if os.path.exists(fp):
+                mtime = os.path.getmtime(fp)
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    query_file = fp
+
+        if not query_file:
             print(
-                "错误: 没有可选择的项目，请先使用 --query-projects 查询",
+                "错误: 没有可选择的项目/商机/客户，请先使用查询命令",
                 file=sys.stderr,
             )
             return
         with open(query_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             records = data.get("records", [])
-        project_info = get_project_info(records, int(args.select))
-        if not project_info:
-            print(
-                f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
-            )
-            return
-        print(json.dumps(project_info, ensure_ascii=False, indent=2))
-        return
-        with open(query_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            records = data.get("records", [])
 
-        select_str = args.select.replace(",", " ").replace("，", " ")
-        indices = []
-        for part in select_str.split():
-            if part.strip().isdigit():
-                indices.append(int(part.strip()))
-
-        if not indices:
-            print(
-                f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
-            )
-            return
-
-        project_infos = []
-        for idx in indices:
-            if idx < 1 or idx > len(records):
+        if "customerCode" in (records[0] if records else {}) and "chanceCode" not in (records[0] if records else {}):
+            client_info = get_client_info(records, int(args.select))
+            if not client_info:
                 print(
-                    f"错误: 无效的选择 {idx}，有效范围 1-{len(records)}",
-                    file=sys.stderr,
+                    f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
                 )
                 return
-            project_infos.append(get_project_info(records, idx))
+            print(json.dumps(client_info, ensure_ascii=False, indent=2))
+        elif "chanceCode" in records[0] if records else False:
+            chance_info = get_chance_info(records, int(args.select))
+            if not chance_info:
+                print(
+                    f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
+                )
+                return
 
-        print(json.dumps(project_infos, ensure_ascii=False, indent=2))
+            if username and password:
+                try:
+                    token = login(base_url, username, password)
+                    chance_id = chance_info.get("chanceId")
+                    if chance_id:
+                        chance_detail = get_chance_detail(base_url, token, chance_id)
+                        if chance_detail.get("code") == 0 and chance_detail.get("data"):
+                            detail = chance_detail["data"]
+                            chance_info["visitClientName"] = detail.get("customerName", "")
+                            chance_info["visitClientCode"] = detail.get("customerCode", "")
+                            chance_info["visitClientId"] = detail.get("customerId", "")
+                            chance_info["customerType"] = detail.get("customerType", 1)
+
+                            linkman = detail.get("linkman", {}) or {}
+                            chance_info["contractPersonCode"] = linkman.get("linkmanCode", "")
+                            chance_info["contractPersonName"] = linkman.get("linkmanName", "")
+                            chance_info["contractPersonDeptName"] = linkman.get("deptName", "")
+                            chance_info["contractPersonPosition"] = linkman.get("position", "")
+                            chance_info["contractPersonDeptId"] = linkman.get("deptId", "")
+                except Exception as e:
+                    print(f"[警告] 自动补充客户信息失败: {e}，将使用基础商机信息", file=sys.stderr)
+
+            print(json.dumps(chance_info, ensure_ascii=False, indent=2))
+        else:
+            project_info = get_project_info(records, int(args.select))
+            if not project_info:
+                print(
+                    f"错误: 无效的选择，请输入 1-{len(records)} 之间的数字", file=sys.stderr
+                )
+                return
+            print(json.dumps(project_info, ensure_ascii=False, indent=2))
         return
 
     if args.validate:
@@ -830,6 +1396,42 @@ def main():
 
     report_data["dayReportType"] = args.day_report_type
 
+    if args.day_report_type == 1:
+        if args.chance_id:
+            report_data["chanceId"] = args.chance_id
+        if args.chance_code:
+            report_data["chanceCode"] = args.chance_code
+        if args.chance_name:
+            report_data["chanceProjectName"] = args.chance_name
+        if args.chance_schedule:
+            report_data["chanceProjectSchedule"] = args.chance_schedule
+        if args.group_attention_stage:
+            report_data["groupAttentionStage"] = args.group_attention_stage
+        if args.customer_type:
+            report_data["customerType"] = args.customer_type
+        if args.visit_client_name:
+            report_data["visitClientName"] = args.visit_client_name
+        if args.visit_client_code:
+            report_data["visitClientCode"] = args.visit_client_code
+        if args.visit_client_id:
+            report_data["visitClientId"] = args.visit_client_id
+        if args.contract_person_code:
+            report_data["contractPersonCode"] = args.contract_person_code
+        if args.contract_person_name:
+            report_data["contractPersonName"] = args.contract_person_name
+        if args.contract_person_dept_name:
+            report_data["contractPersonDeptName"] = args.contract_person_dept_name
+        if args.contract_person_position:
+            report_data["contractPersonPosition"] = args.contract_person_position
+        if args.contract_person_dept_id:
+            report_data["contractPersonDeptId"] = args.contract_person_dept_id
+        if args.visit_record:
+            report_data["visitRecord"] = args.visit_record
+        if args.client_hope:
+            report_data["clientHope"] = args.client_hope
+        if args.day_plan_now:
+            report_data["dayPlanNow"] = args.day_plan_now
+
     normalize_field_names(report_data)
     missing = validate_report_data(report_data)
 
@@ -839,17 +1441,29 @@ def main():
 
     prepared_data = prepare_report_data(report_data)
 
+    day_report_type = prepared_data.get("dayReportType", 2)
+
     print("=" * 50, flush=True)
     print("日报预览：", flush=True)
     print("=" * 50, flush=True)
-    print(f"日期：{prepared_data['date']}", flush=True)
-    print(f"项目：{prepared_data['chanceProjectName']}", flush=True)
-    print(f"编号：{prepared_data['projectCode']}", flush=True)
-    print(f"经理：{prepared_data['projectManager']}", flush=True)
-    print(f"阶段：{prepared_data['chanceProjectSchedule']}", flush=True)
-    print(f"工时：{prepared_data['workHourProportion']}", flush=True)
-    print(f"今日总结：{prepared_data['daySummarizeNow']}", flush=True)
-    print(f"明日计划：{prepared_data['dayPlanNext']}", flush=True)
+    print(f"日期：{prepared_data.get('date', '')}", flush=True)
+    print(f"日报类型：{'商机日报' if day_report_type == 1 else '项目日报'}", flush=True)
+
+    if day_report_type == 1:
+        print(f"客户：{prepared_data.get('visitClientName', '')}", flush=True)
+        print(f"客户编码：{prepared_data.get('visitClientCode', '')}", flush=True)
+        print(f"客户类型：{'客户' if prepared_data.get('customerType') == 1 else '合作伙伴'}", flush=True)
+        print(f"对接人：{prepared_data.get('contractPersonName', '')}", flush=True)
+        print(f"拜访记录：{prepared_data.get('visitRecord', '')}", flush=True)
+    else:
+        print(f"项目：{prepared_data.get('chanceProjectName', '')}", flush=True)
+        print(f"编号：{prepared_data.get('projectCode', '')}", flush=True)
+        print(f"经理：{prepared_data.get('projectManager', '')}", flush=True)
+        print(f"阶段：{prepared_data.get('chanceProjectSchedule', '')}", flush=True)
+
+    print(f"工时：{prepared_data.get('workHourProportion', 0)}", flush=True)
+    print(f"今日总结：{prepared_data.get('daySummarizeNow', '')}", flush=True)
+    print(f"明日计划：{prepared_data.get('dayPlanNext', '')}", flush=True)
     print("=" * 50, flush=True)
     print(flush=True)
 
@@ -858,7 +1472,11 @@ def main():
 
     now = datetime.now().strftime("%Y%m%d%H%M%S")
     file_user = args.report_user if args.report_user else username
-    file_name = f"param_{prepared_data['projectCode']}_{file_user}_{now}.json"
+
+    if day_report_type == 1:
+        file_name = f"param_chance_{prepared_data.get('visitClientCode', 'unknown')}_{file_user}_{now}.json"
+    else:
+        file_name = f"param_{prepared_data.get('projectCode', 'unknown')}_{file_user}_{now}.json"
     param_file = os.path.join(week_dir, file_name)
 
     with open(param_file, "w", encoding="utf-8") as f:
