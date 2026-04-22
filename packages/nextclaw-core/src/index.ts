@@ -4,6 +4,8 @@ export { SkillsLoader } from "./agent/skills.js";
 export type { SkillInfo } from "./agent/skills.js";
 export * from "./agent/tools/gateway.js";
 export * from "./agent/tools/memory.js";
+export { MessageTool } from "./agent/tools/message.js";
+export type { NameResolver, NameResolveResult, GroupNameResolver, GroupNameResolveResult, AccountIdResolver, AccountIdResolveResult } from "./agent/tools/message.js";
 export * from "./bus/events.js";
 export * from "./bus/control.js";
 export * from "./bus/queue.js";

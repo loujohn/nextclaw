@@ -21,6 +21,7 @@ import { RunStatus } from "../db/enums";
 import { prepareEmployeeRuntime } from "../services/employee-runtime-preparation";
 import { buildChatResultCards } from "../../shared/ui-models";
 import { createLogger } from "../utils/logger";
+import { IdentityResolver } from "../services/identity-resolver";
 
 const log = createLogger("ChannelRuntime");
 
@@ -51,6 +52,7 @@ export class DigitalEmployeeChannelRuntime {
       skillInstallationRepo?: SkillInstallationRepository;
       runRepo?: RunRecordRepository;
       loadState: RuntimeStateLoader;
+      identityResolver?: IdentityResolver;
     }
   ) {
     this.routeResolver = new AgentRouteResolver(options.gateway.runtimeConfig);
@@ -151,7 +153,12 @@ export class DigitalEmployeeChannelRuntime {
   }
 
   private async handleInbound(message: InboundMessage): Promise<void> {
-    const route = this.routeResolver.resolveInbound({ message });
+    const meta = message.metadata ?? {};
+    const route = this.routeResolver.resolveInbound({
+      message,
+      forcedAgentId: meta.target_agent_id as string | undefined,
+      sessionKeyOverride: meta.session_key_override as string | undefined,
+    });
     if (route.matchedBy === "default") {
       log.warn(`未找到绑定 渠道=${message.channel} 账号=${route.accountId} ${route.peer.kind}:${route.peer.id}`);
       throw new Error(
@@ -166,6 +173,16 @@ export class DigitalEmployeeChannelRuntime {
     }
     log.info(`分派给员工 code=${employee.code} name=${employee.name} 会话=${route.sessionKey}`);
 
+    if (this.options.identityResolver && meta.is_group === true && meta.conversation_title && meta.conversation_id) {
+      this.options.identityResolver.registerGroup(
+        String(meta.conversation_id),
+        String(meta.conversation_title),
+        String(meta.account_id || meta.accountId || "")
+      ).catch((err) => log.warn("registerGroup failed", err));
+    }
+
+    const messageWithSender = await this.enrichWithSenderIdentity(message);
+
     const { workspace, skillNames } = await prepareEmployeeRuntime({
       employee,
       employeeSkillRepo: this.options.employeeSkillRepo,
@@ -175,8 +192,8 @@ export class DigitalEmployeeChannelRuntime {
     });
 
     const enrichedMessage: InboundMessage = skillNames.length > 0
-      ? { ...message, metadata: { ...message.metadata, requested_skills: skillNames } }
-      : message;
+      ? { ...messageWithSender, metadata: { ...messageWithSender.metadata, requested_skills: skillNames } }
+      : messageWithSender;
 
     const runRepo = this.options.runRepo;
     const run = runRepo
@@ -227,5 +244,22 @@ export class DigitalEmployeeChannelRuntime {
       throw error;
     }
     log.info(`处理完成 员工=${route.agentId} 会话=${route.sessionKey}`);
+  }
+
+  private async enrichWithSenderIdentity(message: InboundMessage): Promise<InboundMessage> {
+    if (!this.options.identityResolver) return message;
+    if (message.channel === "system" || message.channel === "employee" || message.channel === "ui") return message;
+    try {
+      const identity = await this.options.identityResolver.resolve(message.senderId);
+      const senderPrefix = IdentityResolver.buildSenderPrefix(
+        identity,
+        message.senderId,
+        String(message.metadata.sender_name || "")
+      );
+      return { ...message, content: `${senderPrefix}\n${message.content}` };
+    } catch (err) {
+      log.warn(`发送者身份解析失败 senderId=${message.senderId}`, err);
+      return message;
+    }
   }
 }
