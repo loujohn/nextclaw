@@ -489,7 +489,7 @@ export class UserRepository {
     const id = randomUUID();
     const record: UserRecord = {
       id,
-      keycloak_sub: "",
+      keycloak_sub: `local:${id}`,
       username: input.username,
       email: input.email ?? `${input.username}@local`,
       display_name: input.displayName,
