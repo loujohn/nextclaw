@@ -18,6 +18,9 @@ import {
   type ExtensionRegistry,
   type SkillInfo,
   type SessionEvent,
+  type NameResolver,
+  type GroupNameResolver,
+  type AccountIdResolver,
   HeartbeatService
 } from "@nextclaw/core";
 import type { ChatProcessTimelineEntry } from "../../shared/ui-models";
@@ -35,6 +38,10 @@ export type NextclawEngineGatewayOptions = {
   extensionRegistry?: ExtensionRegistry;
   defaultConfig?: Record<string, unknown>;
   secretsRepo?: SecretsRepository;
+  nameResolver?: NameResolver;
+  groupNameResolver?: GroupNameResolver;
+  knownChannels?: string[];
+  accountIdResolver?: AccountIdResolver;
 };
 
 export type AvailableSkillView = {
@@ -292,6 +299,10 @@ export class NextclawEngineGateway {
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
   private readonly builtinSkillNames: Set<string>;
   private readonly secretsRepo?: SecretsRepository;
+  private readonly nameResolver?: NameResolver;
+  private readonly groupNameResolver?: GroupNameResolver;
+  private readonly knownChannels?: string[];
+  private readonly accountIdResolver?: AccountIdResolver;
 
   constructor(options: NextclawEngineGatewayOptions) {
     this.homeDir = resolve(options.homeDir);
@@ -319,6 +330,10 @@ export class NextclawEngineGateway {
     });
     this.extensionRegistry = options.extensionRegistry ?? { tools: [], channels: [], diagnostics: [], engines: [] };
     this.secretsRepo = options.secretsRepo;
+    this.nameResolver = options.nameResolver;
+    this.groupNameResolver = options.groupNameResolver;
+    this.knownChannels = options.knownChannels;
+    this.accountIdResolver = options.accountIdResolver;
     this.engineCacheMax = this.resolveEngineCacheMax();
     this.fallbackEngine = this.createEngineForWorkspace(FALLBACK_AGENT_ID, this.workspaceDir);
   }
@@ -361,7 +376,11 @@ export class NextclawEngineGateway {
       // never mutate it, so no defensive clone is required here.
       excludeSkills: PLATFORM_EXCLUDED_SKILLS,
       additionalSkillsDirs: workspace !== this.workspaceDir ? [globalSkillsDir] : undefined,
-      envOverlay
+      envOverlay,
+      nameResolver: this.nameResolver,
+      groupNameResolver: this.groupNameResolver,
+      knownChannels: this.knownChannels,
+      accountIdResolver: this.accountIdResolver
     };
     return this.createEngine(engineContext);
   }

@@ -270,7 +270,10 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     }
 
     const target = resolveOutboundTarget(msg);
-    console.log(`[dingtalk] send account=${accountId} target=${target.kind}:${target.targetId} contentLen=${msg.content.length}`);
+    const mentionIds = Array.isArray(msg.metadata.mention_user_ids)
+      ? (msg.metadata.mention_user_ids as string[]).filter(Boolean)
+      : [];
+    console.log(`[dingtalk] send account=${accountId} target=${target.kind}:${target.targetId} contentLen=${msg.content.length}${mentionIds.length > 0 ? ` mention=[${mentionIds.join(",")}]` : ""}`);
     const t0 = Date.now();
     const token = await this.getAccessToken(accountId, account);
     const robotCode = account.robotCode || account.clientId;
@@ -278,6 +281,21 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       target.kind === "group"
         ? "https://api.dingtalk.com/v1.0/robot/groupMessages/send"
         : "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend";
+
+    const mentionNames =
+      msg.metadata.mention_user_names && typeof msg.metadata.mention_user_names === "object"
+        ? (msg.metadata.mention_user_names as Record<string, string>)
+        : {};
+    let groupText = msg.content;
+    if (target.kind === "group" && mentionIds.length > 0) {
+      const missing = mentionIds.filter((id) => {
+        const name = mentionNames[id] || id;
+        return !msg.content.includes(`@${name}`);
+      });
+      if (missing.length > 0) {
+        groupText = `${msg.content}\n\n${missing.map((id) => `@${mentionNames[id] || id}`).join(" ")}`;
+      }
+    }
 
     const payload =
       target.kind === "group"
@@ -287,8 +305,9 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
             msgKey: "sampleMarkdown",
             msgParam: JSON.stringify({
               title: "NextClaw Reply",
-              text: msg.content
-            })
+              text: groupText
+            }),
+            
           }
         : {
             robotCode,
@@ -392,7 +411,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         return;
       }
 
-      console.log(`[dingtalk] inbound dispatching account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId} isGroup=${isGroup} contentLen=${normalized.content.length}`);
+      console.log(`[dingtalk] inbound dispatching account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId} isGroup=${isGroup} title=${normalized.metadata.conversation_title || "(none)"} contentLen=${normalized.content.length}`);
       await this.handleMessage({
         senderId: normalized.senderId,
         chatId: normalized.chatId,

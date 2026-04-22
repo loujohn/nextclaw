@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     everyMs: body.everyMs,
     taskPrompt: body.taskPrompt,
     enabled: body.enabled,
-    actorUserId: user.id
+    actorUserId: user.id,
   });
   return { ok: true, data: job };
 });

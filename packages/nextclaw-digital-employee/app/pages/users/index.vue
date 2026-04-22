@@ -401,8 +401,8 @@ function openStatusConfirm(user: UserView) {
   statusConfirmOpen.value = true;
 }
 
-function closeStatusConfirm() {
-  if (statusConfirmSubmitting.value) {
+function closeStatusConfirm(force = false) {
+  if (statusConfirmSubmitting.value && !force) {
     return;
   }
   statusConfirmOpen.value = false;
@@ -423,7 +423,7 @@ async function confirmToggleUserStatus() {
       nextStatus ? "已启用" : "已禁用"
     );
     if (updated) {
-      closeStatusConfirm();
+      closeStatusConfirm(true);
     }
   } finally {
     statusConfirmSubmitting.value = false;
@@ -463,8 +463,8 @@ function openDeleteConfirm(user: UserView) {
   deleteConfirmOpen.value = true;
 }
 
-function closeDeleteConfirm() {
-  if (deleteConfirmSubmitting.value) {
+function closeDeleteConfirm(force = false) {
+  if (deleteConfirmSubmitting.value && !force) {
     return;
   }
   deleteConfirmOpen.value = false;
@@ -565,7 +565,7 @@ async function confirmDeleteUser() {
   try {
     if (res?.ok) {
       toast.showToast("success", "用户已删除");
-      closeDeleteConfirm();
+      closeDeleteConfirm(true);
       const nextPage = users.value.length === 1 && currentPage.value > 1 ? currentPage.value - 1 : currentPage.value;
       await loadUsersPage(nextPage);
     }

@@ -11,6 +11,7 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY packages/nextclaw-core/src/agent/skills     ./dist/skills/
 COPY packages/nextclaw-digital-employee/dist ./
+COPY packages/nextclaw-digital-employee/server/assets/PLATFORM_USAGE.md ./server/assets/PLATFORM_USAGE.md
 COPY packages/nextclaw-digital-employee/skills ./dist/skills/
 COPY packages/nextclaw-digital-employee/templates ./templates/
 COPY packages/nextclaw-digital-employee/docker-entrypoint.sh /entrypoint.sh

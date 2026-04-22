@@ -86,6 +86,14 @@ function buildJobScheduleRuntimeName(jobId: string): string {
   return `ejob:${jobId}`;
 }
 
+function buildScheduledPrompt(
+  taskPrompt: string | undefined,
+): string {
+  return taskPrompt?.trim()
+    ? taskPrompt
+    : "请按你的职责执行一次定时任务，并输出当前最新摘要。";
+}
+
 export class AutomationService {
   private started = false;
   private readonly heartbeats: Map<string, HeartbeatService> = new Map();
@@ -105,7 +113,7 @@ export class AutomationService {
     private readonly employeeRepo: EmployeeRepository,
     private readonly runService: EmployeeRunService,
     private readonly cronService: CronService,
-    private readonly gateway: NextclawEngineGateway
+    private readonly gateway: NextclawEngineGateway,
   ) {}
 
   async start(): Promise<void> {
@@ -120,9 +128,7 @@ export class AutomationService {
         if (!schedJob) return null;
         const employee = await this.employeeRepo.getById(schedJob.employeeId);
         if (!employee) return null;
-        const message = schedJob.taskPrompt?.trim()
-          ? schedJob.taskPrompt
-          : `${employee.systemPrompt}\n\n请按你的职责执行一次定时任务，并输出当前最新摘要。`;
+        const message = buildScheduledPrompt(schedJob.taskPrompt);
         const result = await this.runService.runEmployeeTurn({
           employeeId: schedJob.employeeId,
           message,
@@ -139,7 +145,7 @@ export class AutomationService {
         logger.warn(`Legacy job format "employee:" detected for ${job.name}, migrate to ejob: format`);
         const employee = await this.employeeRepo.getById(employeeId);
         if (!employee) return null;
-        const message = job.payload.message || `${employee.systemPrompt}\n\n请执行一次定时任务并输出最新摘要。`;
+        const message = buildScheduledPrompt(job.payload.message as string | undefined);
         const result = await this.runService.runEmployeeTurn({
           employeeId,
           message,
@@ -518,7 +524,7 @@ export class AutomationService {
     employeeCode: string,
     intervalS?: number,
     taskPrompt?: string,
-    jobName?: string
+    jobName?: string,
   ): void {
     const existing = this.jobHeartbeats.get(jobId);
     if (existing) {
@@ -527,8 +533,8 @@ export class AutomationService {
     const workspace = resolveEmployeeWorkspace(this.gateway.homeDir, employeeCode);
     const hb = new HeartbeatService(
       workspace,
-      async (prompt) => {
-        const message = taskPrompt?.trim() ? taskPrompt : prompt;
+      async (_prompt) => {
+        const message = buildScheduledPrompt(taskPrompt);
         const result = await this.runService.runEmployeeTurn({
           employeeId,
           message,
@@ -682,7 +688,7 @@ export class AutomationService {
         heartbeatIntervalS: intervalS,
         taskPrompt: input.taskPrompt ?? "",
         enabled: input.enabled ?? true,
-        createdByUserId: input.actorUserId
+        createdByUserId: input.actorUserId,
       });
       if (input.enabled !== false) {
         this.startJobHeartbeat(job.id, input.employeeId, employee.code, intervalS, input.taskPrompt, input.name);
@@ -700,7 +706,7 @@ export class AutomationService {
       everyMs: input.everyMs ?? null,
       taskPrompt: input.taskPrompt ?? "",
       enabled: input.enabled ?? true,
-      createdByUserId: input.actorUserId
+      createdByUserId: input.actorUserId,
     });
 
     if (input.enabled !== false) {
@@ -778,7 +784,7 @@ export class AutomationService {
           employee.code,
           intervalS,
           input.taskPrompt ?? existing.taskPrompt,
-          input.name ?? existing.name
+          input.name ?? existing.name,
         );
         return (await this.jobRepo.getById(jobId)) ?? updated;
       }

@@ -1,3 +1,5 @@
+import http from "node:http";
+import https from "node:https";
 import type { Knex } from "knex";
 import { createLogger } from "../utils/logger";
 import { HumanEmployeeRepository } from "../repositories/human-employee-repository";
@@ -101,10 +103,10 @@ type PersonnelSyncConfig = {
   grantType: string;
 };
 
-type PersonnelTokenResponse = {
-  access_token?: unknown;
-  expires_in?: unknown;
-};
+type PersonnelTokenResponse = { access_token?: unknown; expires_in?: unknown };
+type PersonnelSyncRequestStage = "获取 token" | "拉取人员数据";
+type PersonnelSyncHttpResponse = { status: number; bodyText: string };
+type ErrorWithCodeAndCause = Error & { code?: string; cause?: unknown };
 
 function derivePersonnelTokenUrl(apiUrl: string): string {
   try {
@@ -118,8 +120,228 @@ function normalizeBasicAuth(value: string): string {
   if (!value) {
     return "";
   }
-
   return /^basic\s+/i.test(value) ? value : `Basic ${value}`;
+}
+
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function shouldSkipPersonnelSyncTlsVerify(): boolean {
+  return isTruthyEnvFlag(process.env.PERSONNEL_SYNC_SKIP_TLS_VERIFY);
+}
+
+function sanitizePersonnelSyncUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function truncateSyncErrorText(value: string, maxLength = 240): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+}
+
+function extractErrorCode(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+  const record = error as { code?: unknown; cause?: unknown };
+  if (typeof record.code === "string" && record.code) {
+    return record.code;
+  }
+  return extractErrorCode(record.cause);
+}
+
+function formatNestedError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  const segments = [`${error.name}: ${error.message}`];
+  const errorCode = extractErrorCode(error);
+  if (errorCode) {
+    segments.push(`code=${errorCode}`);
+  }
+
+  const cause = (error as ErrorWithCodeAndCause).cause;
+  if (cause) {
+    segments.push(`cause=${formatNestedError(cause)}`);
+  }
+
+  return segments.join("; ");
+}
+
+function buildPersonnelNetworkHint(error: unknown): string {
+  const errorCode = extractErrorCode(error).toUpperCase();
+  const detail = formatNestedError(error).toLowerCase();
+
+  if (errorCode === "ETIMEDOUT" || detail.includes("timeout")) {
+    return "请求超时，请检查容器到外部接口的网络连通性、出口防火墙或代理设置。";
+  }
+
+  if (errorCode === "ENOTFOUND" || errorCode === "EAI_AGAIN") {
+    return "DNS 解析失败，请检查容器 DNS 配置；如需代理出网，请配置 HTTPS_PROXY / HTTP_PROXY。";
+  }
+
+  if (errorCode === "ECONNREFUSED") {
+    return "目标地址拒绝连接，请检查接口地址、端口和目标服务状态。";
+  }
+
+  if (errorCode === "ECONNRESET") {
+    return "连接被远端重置，请检查目标服务的网关、TLS 或反向代理配置。";
+  }
+
+  if (
+    errorCode === "CERT_HAS_EXPIRED"
+    || errorCode === "DEPTH_ZERO_SELF_SIGNED_CERT"
+    || errorCode === "SELF_SIGNED_CERT_IN_CHAIN"
+    || errorCode === "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+    || errorCode === "ERR_TLS_CERT_ALTNAME_INVALID"
+    || detail.includes("certificate")
+    || detail.includes("self-signed")
+  ) {
+    return "TLS 证书校验失败，请为容器安装正确 CA 证书；若仅用于内网临时排障，可设置 PERSONNEL_SYNC_SKIP_TLS_VERIFY=true。";
+  }
+
+  if (detail.includes("proxy")) {
+    return "代理连接失败，请检查 HTTPS_PROXY / HTTP_PROXY / NO_PROXY 配置是否正确。";
+  }
+
+  return "请检查容器网络、代理和 TLS 证书配置。";
+}
+
+function createRequestTimeoutError(): NodeJS.ErrnoException {
+  const error = new Error(`请求超时（${PERSONNEL_SYNC_TIMEOUT_MS}ms）`) as NodeJS.ErrnoException;
+  error.name = "TimeoutError";
+  error.code = "ETIMEDOUT";
+  return error;
+}
+
+function buildPersonnelRequestError(stage: PersonnelSyncRequestStage, url: string, error: unknown): Error {
+  const proxyUrl =
+    process.env.HTTPS_PROXY
+    ?? process.env.https_proxy
+    ?? process.env.HTTP_PROXY
+    ?? process.env.http_proxy
+    ?? "";
+  const tlsHint = shouldSkipPersonnelSyncTlsVerify()
+    ? "当前已启用 PERSONNEL_SYNC_SKIP_TLS_VERIFY=true。"
+    : "当前未启用 PERSONNEL_SYNC_SKIP_TLS_VERIFY。";
+  const proxyHint = proxyUrl ? `当前代理：${sanitizePersonnelSyncUrl(proxyUrl)}。` : "当前未配置 HTTPS_PROXY / HTTP_PROXY。";
+  const message = [
+    `人员同步在${stage}阶段请求失败：${sanitizePersonnelSyncUrl(url)}。`,
+    buildPersonnelNetworkHint(error),
+    proxyHint,
+    tlsHint,
+    `原始错误：${formatNestedError(error)}`,
+  ].join(" ");
+
+  if (error instanceof Error) {
+    return new Error(message, { cause: error });
+  }
+
+  return new Error(message);
+}
+
+async function requestPersonnelEndpoint(options: {
+  stage: PersonnelSyncRequestStage;
+  url: string;
+  method: "GET" | "POST";
+  headers?: Record<string, string>;
+  body?: string;
+}): Promise<PersonnelSyncHttpResponse> {
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(options.url);
+  } catch {
+    throw new Error(`人员同步在${options.stage}阶段使用了非法 URL：${options.url}`);
+  }
+
+  const requestBody = options.body ?? "";
+  const requestHeaders = { ...options.headers };
+  if (requestBody) {
+    requestHeaders["Content-Length"] = String(Buffer.byteLength(requestBody));
+  }
+
+  try {
+    return await new Promise<PersonnelSyncHttpResponse>((resolve, reject) => {
+      const isHttps = parsedUrl.protocol === "https:";
+      const transport = isHttps ? https : http;
+      const request = transport.request(
+        parsedUrl,
+        {
+          method: options.method,
+          headers: requestHeaders,
+          timeout: PERSONNEL_SYNC_TIMEOUT_MS,
+          ...(isHttps ? { rejectUnauthorized: !shouldSkipPersonnelSyncTlsVerify() } : {}),
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            resolve({
+              status: response.statusCode ?? 0,
+              bodyText: Buffer.concat(chunks).toString("utf8"),
+            });
+          });
+        }
+      );
+
+      request.on("timeout", () => {
+        request.destroy(createRequestTimeoutError());
+      });
+      request.on("error", reject);
+
+      if (requestBody) {
+        request.write(requestBody);
+      }
+      request.end();
+    });
+  } catch (error) {
+    throw buildPersonnelRequestError(options.stage, options.url, error);
+  }
+}
+
+function parsePersonnelJson<T>(stage: PersonnelSyncRequestStage, url: string, bodyText: string): T {
+  try {
+    return JSON.parse(bodyText) as T;
+  } catch {
+    const bodyPreview = truncateSyncErrorText(bodyText);
+    throw new Error(
+      `人员同步在${stage}阶段返回了非 JSON 响应：${sanitizePersonnelSyncUrl(url)}${bodyPreview ? `，响应片段：${bodyPreview}` : ""}`
+    );
+  }
+}
+
+function ensureSuccessfulPersonnelResponse(
+  stage: PersonnelSyncRequestStage,
+  url: string,
+  response: PersonnelSyncHttpResponse
+): void {
+  if (response.status >= 200 && response.status < 300) {
+    return;
+  }
+
+  const bodyPreview = truncateSyncErrorText(response.bodyText);
+  throw new Error(
+    `人员同步在${stage}阶段返回 HTTP ${response.status}：${sanitizePersonnelSyncUrl(url)}${bodyPreview ? `，响应片段：${bodyPreview}` : ""}`
+  );
 }
 
 function getPersonnelSyncConfig(): PersonnelSyncConfig {
@@ -173,29 +395,30 @@ async function requestPersonnelAccessToken(config: PersonnelSyncConfig): Promise
     );
   }
 
-  const formData = new FormData();
-  formData.append("grant_type", config.grantType);
-  formData.append("username", config.username);
-  formData.append("password", config.password);
-  formData.append("login_type", config.loginType);
+  const formData = new URLSearchParams({
+    grant_type: config.grantType,
+    username: config.username,
+    password: config.password,
+    login_type: config.loginType,
+  });
 
-  log.info(`开始换取人员同步 access token: ${config.tokenUrl}`);
-  const response = await fetch(config.tokenUrl, {
+  const sanitizedTokenUrl = sanitizePersonnelSyncUrl(config.tokenUrl);
+  log.info(`开始换取人员同步 access token: ${sanitizedTokenUrl}`);
+  const response = await requestPersonnelEndpoint({
+    stage: "获取 token",
+    url: config.tokenUrl,
     method: "POST",
     headers: {
       Accept: "application/json",
       Authorization: config.tokenBasicAuth,
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: formData,
-    signal: AbortSignal.timeout(PERSONNEL_SYNC_TIMEOUT_MS),
+    body: formData.toString(),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(`获取人员同步 token 失败：HTTP ${response.status}${errorText ? ` ${errorText}` : ""}`);
-  }
+  ensureSuccessfulPersonnelResponse("获取 token", config.tokenUrl, response);
 
-  const payload = (await response.json()) as unknown;
+  const payload = parsePersonnelJson<unknown>("获取 token", config.tokenUrl, response.bodyText);
   const accessToken = extractPersonnelAccessToken(payload);
   cachedPersonnelAccessToken = {
     token: accessToken.token,
@@ -535,18 +758,18 @@ async function fetchPersonnelUsers(onProgress?: UserSyncProgressReporter): Promi
     stage: "fetching",
     message: "正在拉取外部人员数据...",
   });
-  log.info(`开始拉取人员同步数据: ${config.url}`);
-  const response = await fetch(config.url, {
+  const sanitizedApiUrl = sanitizePersonnelSyncUrl(config.url);
+  log.info(`开始拉取人员同步数据: ${sanitizedApiUrl}`);
+  const response = await requestPersonnelEndpoint({
+    stage: "拉取人员数据",
+    url: config.url,
     method: "GET",
     headers,
-    signal: AbortSignal.timeout(PERSONNEL_SYNC_TIMEOUT_MS),
   });
 
-  if (!response.ok) {
-    throw new Error(`拉取人员同步数据失败：HTTP ${response.status}`);
-  }
+  ensureSuccessfulPersonnelResponse("拉取人员数据", config.url, response);
 
-  const payload = (await response.json()) as unknown;
+  const payload = parsePersonnelJson<unknown>("拉取人员数据", config.url, response.bodyText);
   const users = extractPersonnelUsers(payload);
   log.info(`人员同步数据拉取完成，总数=${users.length}`);
   onProgress?.({
@@ -668,16 +891,20 @@ export function explainUserSyncError(error: unknown): string {
     return "用户同步失败：外部接口返回了重复的 userId，请先检查外部人员数据是否存在重复记录。";
   }
 
+  if (rawMessage.includes("人员同步在获取 token阶段") || rawMessage.includes("人员同步在拉取人员数据阶段")) {
+    return `用户同步失败：${rawMessage}`;
+  }
+
   if (rawMessage.includes("PERSONNEL_SYNC_TOKEN") || rawMessage.includes("access_token") || rawMessage.includes("token")) {
     return `用户同步失败：人员同步认证异常。${rawMessage}`;
   }
 
   if (rawMessage.includes("HTTP 401") || rawMessage.includes("HTTP 403")) {
-    return "用户同步失败：外部人员接口认证失败，请检查同步账号、密码和 Basic 认证配置。";
+    return `用户同步失败：外部人员接口认证失败，请检查同步账号、密码和 Basic 认证配置。${rawMessage}`;
   }
 
   if (rawMessage.includes("HTTP 404")) {
-    return "用户同步失败：未找到外部人员同步接口或 token 接口，请检查环境变量中的接口地址。";
+    return `用户同步失败：未找到外部人员同步接口或 token 接口，请检查环境变量中的接口地址。${rawMessage}`;
   }
 
   return `用户同步失败：${rawMessage}`;

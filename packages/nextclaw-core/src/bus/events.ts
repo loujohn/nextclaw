@@ -32,5 +32,10 @@ export type OutboundMessage = {
   content: string;
   replyTo?: string | null;
   media: string[];
+  /**
+   * Channel plugins and MessageTool agreed-upon optional fields:
+   * - `mention_user_ids?: string[]` — user IDs to @mention in a group message
+   * - `target_user_id?: string` — target user ID for direct-send routing
+   */
   metadata: Record<string, unknown>;
 };

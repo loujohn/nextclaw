@@ -2,13 +2,38 @@ import { randomUUID } from "node:crypto";
 import { basename, extname, join, normalize, posix, resolve } from "node:path";
 import type { ChatAttachmentPreviewType, ChatAttachmentView } from "../../shared/ui-models";
 
-const TEXT_EXTENSIONS = new Set([".txt", ".md"]);
+const UPLOAD_TEXT_EXTENSIONS = new Set([".txt", ".md"]);
+const CODE_TEXT_EXTENSIONS = new Set([
+  ".py",
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".sql",
+  ".html",
+  ".css",
+  ".scss",
+  ".less",
+  ".vue",
+  ".xml",
+  ".toml",
+  ".ini",
+  ".cfg",
+  ".conf",
+]);
+const TEXT_EXTENSIONS = new Set([...UPLOAD_TEXT_EXTENSIONS, ...CODE_TEXT_EXTENSIONS]);
 const PDF_EXTENSIONS = new Set([".pdf"]);
 const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 export const ALLOWED_UPLOAD_EXTENSIONS = new Set([
-  ...TEXT_EXTENSIONS,
+  ...UPLOAD_TEXT_EXTENSIONS,
   ...PDF_EXTENSIONS,
   ...OFFICE_EXTENSIONS,
   ...IMAGE_EXTENSIONS
@@ -20,6 +45,28 @@ export const MAX_UPLOAD_TOTAL_SIZE_BYTES = 50 * 1024 * 1024;
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".txt": "text/plain",
   ".md": "text/markdown",
+  ".py": "text/x-python",
+  ".js": "text/javascript",
+  ".jsx": "text/javascript",
+  ".ts": "text/plain",
+  ".tsx": "text/plain",
+  ".json": "application/json",
+  ".yaml": "application/yaml",
+  ".yml": "application/yaml",
+  ".sh": "text/x-shellscript",
+  ".bash": "text/x-shellscript",
+  ".zsh": "text/x-shellscript",
+  ".sql": "application/sql",
+  ".html": "text/html",
+  ".css": "text/css",
+  ".scss": "text/plain",
+  ".less": "text/plain",
+  ".vue": "text/plain",
+  ".xml": "application/xml",
+  ".toml": "text/plain",
+  ".ini": "text/plain",
+  ".cfg": "text/plain",
+  ".conf": "text/plain",
   ".pdf": "application/pdf",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

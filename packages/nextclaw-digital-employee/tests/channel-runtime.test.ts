@@ -16,6 +16,9 @@ import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { DigitalEmployeeChannelRuntime } from "../server/runtime/channel-runtime";
+import { IdentityResolver } from "../server/services/identity-resolver";
+import { DepartmentRepository } from "../server/repositories/department-repository";
+import { HumanEmployeeRepository } from "../server/repositories/human-employee-repository";
 
 const tempDirs: string[] = [];
 
@@ -343,6 +346,115 @@ describe("DigitalEmployeeChannelRuntime", () => {
       expect(fakeChannel.sent.some((msg) => msg.content.includes("未配置员工绑定"))).toBe(true);
     });
     expect(handleInbound).not.toHaveBeenCalled();
+
+    await runtime.stop();
+    await db.destroy();
+  });
+
+  it("prepends sender identity prefix when identityResolver is provided", async () => {
+    const homeDir = createTempDir("nextclaw-digital-employee-channel-sender-");
+    const workspaceDir = join(homeDir, "workspace");
+    const { db, employeeRepo, employeeSkillRepo } = await createEmployeeRepos(homeDir);
+
+    const deptRepo = new DepartmentRepository(db);
+    const humanRepo = new HumanEmployeeRepository(db);
+    const dept = await deptRepo.create({ name: "技术部", description: "" });
+    await humanRepo.create({
+      externalId: "user-1",
+      name: "张三",
+      title: "工程师",
+      departmentId: dept.id,
+      active: true,
+      isAdmin: false,
+      isBoss: false
+    });
+
+    const bus = new MessageBus();
+    const sessionManager = new SessionManager(workspaceDir);
+    const fakeChannel = new FakeChannel({}, bus);
+    const handleInbound = vi.fn(async ({ message }) => {
+      await bus.publishOutbound({
+        channel: message.channel,
+        chatId: message.chatId,
+        content: `echo:${message.content}`,
+        media: [],
+        metadata: message.metadata
+      });
+      return null;
+    });
+    const gateway = createGateway({ homeDir, workspaceDir, bus, sessionManager, handleInbound });
+    const gatewayStartAccount = vi.fn(async () => undefined);
+    const runtimeState = createChannelRuntimeState({ workspaceDir, fakeChannel, handleInbound, gatewayStartAccount });
+    const identityResolver = new IdentityResolver(db);
+
+    const runtime = new DigitalEmployeeChannelRuntime({
+      gateway,
+      employeeRepo,
+      employeeSkillRepo,
+      identityResolver,
+      loadState: async () => runtimeState
+    });
+
+    await runtime.start();
+    await publishDirectInbound(bus);
+
+    await vi.waitFor(() => {
+      expect(handleInbound).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            content: expect.stringContaining("[发送者: 张三 (ID:user-1, 技术部/工程师)]")
+          })
+        })
+      );
+    });
+
+    await runtime.stop();
+    await db.destroy();
+  });
+
+  it("falls back to senderId when identity is not found", async () => {
+    const homeDir = createTempDir("nextclaw-digital-employee-channel-unknown-sender-");
+    const workspaceDir = join(homeDir, "workspace");
+    const { db, employeeRepo, employeeSkillRepo } = await createEmployeeRepos(homeDir);
+
+    const bus = new MessageBus();
+    const sessionManager = new SessionManager(workspaceDir);
+    const fakeChannel = new FakeChannel({}, bus);
+    const handleInbound = vi.fn(async ({ message }) => {
+      await bus.publishOutbound({
+        channel: message.channel,
+        chatId: message.chatId,
+        content: `echo:${message.content}`,
+        media: [],
+        metadata: message.metadata
+      });
+      return null;
+    });
+    const gateway = createGateway({ homeDir, workspaceDir, bus, sessionManager, handleInbound });
+    const gatewayStartAccount = vi.fn(async () => undefined);
+    const runtimeState = createChannelRuntimeState({ workspaceDir, fakeChannel, handleInbound, gatewayStartAccount });
+    const identityResolver = new IdentityResolver(db);
+
+    const runtime = new DigitalEmployeeChannelRuntime({
+      gateway,
+      employeeRepo,
+      employeeSkillRepo,
+      identityResolver,
+      loadState: async () => runtimeState
+    });
+
+    await runtime.start();
+    await publishDirectInbound(bus);
+
+    await vi.waitFor(() => {
+      expect(handleInbound).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            content: expect.stringContaining("[发送者: user-1]")
+          })
+        })
+      );
+    });
 
     await runtime.stop();
     await db.destroy();

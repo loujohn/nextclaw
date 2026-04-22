@@ -78,7 +78,9 @@ if (!SKILL_CATEGORIES.find((c) => c.slug === route.params.category)) {
   await navigateTo("/skills");
 }
 
+const PAGE_SIZE = 12;
 const query = ref("");
+const currentPage = ref(1);
 const showImporter = ref(false);
 const form = reactive({ sourceType: "local", source: "" });
 const importing = ref(false);
@@ -94,6 +96,7 @@ const allSkills = computed(() => skillsStore.list);
 
 watch(categorySlug, () => {
   query.value = "";
+  currentPage.value = 1;
   toggleError.value = "";
 });
 
@@ -112,6 +115,28 @@ const filteredSkills = computed(() => {
     );
   }
   return items;
+});
+
+watch(filteredSkills, () => {
+  currentPage.value = 1;
+});
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredSkills.value.length / PAGE_SIZE)));
+const paginatedSkills = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE;
+  return filteredSkills.value.slice(start, start + PAGE_SIZE);
+});
+
+const visiblePages = computed(() => {
+  const tp = totalPages.value;
+  const cp = currentPage.value;
+  if (tp <= 7) return Array.from({ length: tp }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (cp > 3) pages.push("...");
+  for (let p = Math.max(2, cp - 1); p <= Math.min(tp - 1, cp + 1); p++) pages.push(p);
+  if (cp < tp - 2) pages.push("...");
+  pages.push(tp);
+  return pages;
 });
 
 const stats = computed(() => ({
@@ -254,7 +279,7 @@ async function toggleSkill(name: string, enabled: boolean) {
     <!-- Skill Cards Grid -->
     <div class="stagger-in grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <div
-        v-for="skill in filteredSkills"
+        v-for="skill in paginatedSkills"
         :key="skill.name"
         class="flex flex-col rounded-2xl border bg-card p-5 transition-all duration-150"
         :class="
@@ -322,6 +347,34 @@ async function toggleSkill(name: string, enabled: boolean) {
             {{ skill.enabled ? "停用" : "启用" }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="totalPages > 1" class="flex items-center justify-between border-t border-border pt-4">
+      <p class="text-sm text-muted-foreground">
+        共 <strong class="text-foreground">{{ filteredSkills.length }}</strong> 个技能，第 {{ currentPage }} / {{ totalPages }} 页
+      </p>
+      <div class="flex items-center gap-1">
+        <button
+          class="rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-40"
+          :disabled="currentPage === 1"
+          @click="currentPage--"
+        >上一页</button>
+        <template v-for="p in visiblePages" :key="String(p)">
+          <span v-if="p === '...'" class="px-1 text-muted-foreground">…</span>
+          <button
+            v-else
+            class="min-w-[2rem] rounded-lg border px-2 py-1.5 text-sm font-medium transition-colors"
+            :class="p === currentPage ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-muted'"
+            @click="currentPage = p"
+          >{{ p }}</button>
+        </template>
+        <button
+          class="rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-40"
+          :disabled="currentPage === totalPages"
+          @click="currentPage++"
+        >下一页</button>
       </div>
     </div>
 
