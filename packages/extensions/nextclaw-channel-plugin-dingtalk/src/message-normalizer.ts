@@ -100,6 +100,11 @@ export function resolveOutboundTarget(msg: Pick<OutboundMessage, "chatId" | "met
   kind: "direct" | "group";
   targetId: string;
 } {
+  const targetUserId = normalizeString(msg.metadata.target_user_id);
+  if (targetUserId) {
+    return { kind: "direct", targetId: targetUserId };
+  }
+
   const peerKind = normalizeString(msg.metadata.peer_kind) === "group" ? "group" : "direct";
   if (peerKind === "group") {
     return {

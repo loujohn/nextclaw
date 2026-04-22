@@ -338,10 +338,12 @@ const sessionListEl = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
 const streamAbortController = ref<AbortController | null>(null);
+const messageLoadAbortController = ref<AbortController | null>(null);
 const streamingAssistantId = ref<string | null>(null);
 const shouldStickToBottom = ref(true);
 const restoringHistoryScroll = ref(false);
 const suppressNextSessionLoad = ref(false);
+const messageLoadVersion = ref(0);
 const pendingUploads = ref<ChatAttachmentView[]>([]);
 const uploadingFiles = ref(false);
 const deletingUploadPaths = ref<Set<string>>(new Set());
@@ -434,6 +436,23 @@ async function removePendingUpload(relativePath: string) {
     updatedDeleting.delete(relativePath);
     deletingUploadPaths.value = updatedDeleting;
   }
+}
+
+function invalidateMessageLoad() {
+  messageLoadVersion.value += 1;
+  messageLoadAbortController.value?.abort();
+  messageLoadAbortController.value = null;
+  loadingMessages.value = false;
+}
+
+function isStaleMessageLoad(params: {
+  sessionKey: string;
+  employeeId: string;
+  version: number;
+}): boolean {
+  return params.version !== messageLoadVersion.value
+    || params.employeeId !== employeeId.value
+    || params.sessionKey !== activeSessionKey.value;
 }
 
 function openAttachmentWorkspace(attachment: ChatAttachmentView) {
@@ -723,6 +742,7 @@ async function createSession(selectAfterCreate = true): Promise<string> {
   if (!existingDraft) {
     sessions.value = [draft, ...sessions.value];
   }
+  invalidateMessageLoad();
   messages.value = [];
   nextCursor.value = null;
   errorMessage.value = "";
@@ -735,16 +755,24 @@ async function createSession(selectAfterCreate = true): Promise<string> {
 async function loadMessages(sessionKey: string, before?: string | null) {
   if (!sessionKey || isDraftChatSessionKey(sessionKey)) {
     if (!before) {
+      invalidateMessageLoad();
       messages.value = [];
       nextCursor.value = null;
     }
     return;
   }
+  const requestEmployeeId = employeeId.value;
+  const requestVersion = before ? messageLoadVersion.value : messageLoadVersion.value + 1;
+  let controller: AbortController | null = null;
   const previousScrollTop = before ? threadEl.value?.scrollTop ?? 0 : 0;
   const previousScrollHeight = before ? threadEl.value?.scrollHeight ?? 0 : 0;
   if (before) {
     loadingMore.value = true;
   } else {
+    messageLoadAbortController.value?.abort();
+    controller = new AbortController();
+    messageLoadAbortController.value = controller;
+    messageLoadVersion.value = requestVersion;
     loadingMessages.value = true;
   }
   try {
@@ -753,8 +781,16 @@ async function loadMessages(sessionKey: string, before?: string | null) {
       query.set("before", before);
     }
     const response = await $fetch<SessionMessagesPayload>(
-      `/api/employees/${employeeId.value}/sessions/${encodeURIComponent(sessionKey)}/messages?${query.toString()}`
+      `/api/employees/${requestEmployeeId}/sessions/${encodeURIComponent(sessionKey)}/messages?${query.toString()}`,
+      controller ? { signal: controller.signal } : undefined
     );
+    if (isStaleMessageLoad({
+      sessionKey,
+      employeeId: requestEmployeeId,
+      version: requestVersion
+    })) {
+      return;
+    }
     nextCursor.value = response.data.nextCursor;
     messages.value = before
       ? [...response.data.items, ...messages.value]
@@ -771,8 +807,16 @@ async function loadMessages(sessionKey: string, before?: string | null) {
     } else {
       scrollToBottom(true);
     }
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      return;
+    }
+    throw error;
   } finally {
-    loadingMessages.value = false;
+    if (!before && messageLoadAbortController.value === controller) {
+      messageLoadAbortController.value = null;
+      loadingMessages.value = false;
+    }
     loadingMore.value = false;
   }
 }
@@ -1118,10 +1162,12 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  invalidateMessageLoad();
   document.removeEventListener("visibilitychange", handleChatVisibilityChange);
 });
 
 watch(() => employeeId.value, () => {
+  invalidateMessageLoad();
   activeSessionKey.value = "";
   messages.value = [];
   sessions.value = [];
@@ -1134,6 +1180,7 @@ watch(activeSessionKey, async (sessionKey, previous) => {
   if (!sessionKey || sessionKey === previous) {
     return;
   }
+  invalidateMessageLoad();
   if (suppressNextSessionLoad.value) {
     suppressNextSessionLoad.value = false;
     return;

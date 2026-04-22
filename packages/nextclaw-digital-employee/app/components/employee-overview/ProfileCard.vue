@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUpCircle } from "lucide-vue-next";
+import { ArrowUpCircle, ChevronDown } from "lucide-vue-next";
 import type { AutomationSummaryView } from "~/composables/useEmployeeDetail";
 import { pickAvatarGradient } from "~~/shared/avatar-utils";
 
@@ -119,6 +119,13 @@ const healthChecks = computed(() => [
 ]);
 
 const updatableCount = computed(() => props.employee.skills.filter((s) => s.hasUpdate).length);
+
+const SKILL_PREVIEW_COUNT = 6;
+const showAllSkills = ref(false);
+const visibleSkills = computed(() =>
+  showAllSkills.value ? props.employee.skills : props.employee.skills.slice(0, SKILL_PREVIEW_COUNT)
+);
+const hiddenSkillCount = computed(() => Math.max(0, props.employee.skills.length - SKILL_PREVIEW_COUNT));
 </script>
 
 <template>
@@ -190,7 +197,7 @@ const updatableCount = computed(() => props.employee.skills.filter((s) => s.hasU
         </div>
         <div v-if="employee.skills.length > 0" class="flex flex-wrap gap-[5px]">
           <div
-            v-for="skill in employee.skills"
+            v-for="skill in visibleSkills"
             :key="skill.id"
             class="group relative flex items-center gap-1 rounded-md px-2.5 py-[3px] text-[11px] font-medium ring-1"
             :class="skill.installMissing
@@ -219,6 +226,18 @@ const updatableCount = computed(() => props.employee.skills.filter((s) => s.hasU
               />
             </button>
           </div>
+          <!-- 展开/折叠按钮 -->
+          <button
+            v-if="hiddenSkillCount > 0 || showAllSkills"
+            class="flex items-center gap-0.5 rounded-md px-2.5 py-[3px] text-[11px] font-medium ring-1 bg-muted/60 text-muted-foreground ring-border/40 hover:bg-muted transition-colors"
+            @click="showAllSkills = !showAllSkills"
+          >
+            <ChevronDown
+              class="h-3 w-3 transition-transform"
+              :class="showAllSkills ? 'rotate-180' : ''"
+            />
+            {{ showAllSkills ? '收起' : `+${hiddenSkillCount}` }}
+          </button>
         </div>
         <p v-else class="text-[11px] text-muted-foreground/60">还没有绑定技能</p>
         <p v-if="upgradeError" class="mt-1.5 text-[11px] text-destructive">{{ upgradeError }}</p>
