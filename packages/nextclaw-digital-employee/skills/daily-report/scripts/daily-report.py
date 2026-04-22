@@ -39,6 +39,8 @@ PROJECT_QUERY_ENDPOINT = "/admin/pageProjectForReport"
 CHANCE_QUERY_ENDPOINT = "/admin/business/chance/page"
 CLIENT_QUERY_ENDPOINT = "/admin/getCustomer"
 CONTACTS_QUERY_ENDPOINT = "/admin/getContacts"
+USER_QUERY_ENDPOINT = "/admin/user/page"
+DEPT_TREE_ENDPOINT = "/admin/dept/tree"
 
 REQUIRED_FIELDS = [
     ("date", "日期"),
@@ -332,6 +334,79 @@ def query_contacts(base_url, token, customer_name=None, contacts_name=None, cont
     return fetch_json_post(url, {}, token, params=params)
 
 
+def query_user_by_username(base_url, token, username):
+    """根据用户名查询用户信息"""
+    url = f"{base_url}{USER_QUERY_ENDPOINT}?current=1&size=10&username={urllib.parse.quote(username)}"
+    return fetch_json(url, token)
+
+
+def query_dept_tree(base_url, token):
+    """查询部门树"""
+    url = f"{base_url}{DEPT_TREE_ENDPOINT}"
+    return fetch_json(url, token)
+
+
+def get_dept_path_recursive(dept_tree, dept_id, path=None):
+    """递归查找部门路径"""
+    if path is None:
+        path = []
+
+    current_id = str(dept_tree.get("id", ""))
+    target_id = str(dept_id)
+
+    if current_id == target_id:
+        path.append(dept_tree.get("name", ""))
+        return path.copy()
+
+    children = dept_tree.get("children", [])
+    for child in children:
+        result = get_dept_path_recursive(child, target_id, path.copy())
+        if result:
+            result.insert(0, dept_tree.get("name", ""))
+            return result
+
+    return None
+
+
+def find_user_dept_path(dept_tree_list, dept_id):
+    """查找用户的完整部门路径"""
+    if not dept_id:
+        return None
+    target_id = str(dept_id)
+    for top_dept in dept_tree_list:
+        path = get_dept_path_recursive(top_dept, target_id)
+        if path:
+            return "/".join(path)
+    return None
+
+
+def get_user_with_dept(base_url, token, username):
+    """获取用户信息及完整部门路径"""
+    user_result = query_user_by_username(base_url, token, username)
+    if user_result.get("code") != 0 or not user_result.get("data"):
+        return None
+
+    records = user_result["data"].get("records", [])
+    if not records:
+        return None
+
+    user = records[0]
+    dept_id = user.get("deptId")
+
+    if dept_id:
+        dept_result = query_dept_tree(base_url, token)
+        if dept_result.get("code") == 0 and dept_result.get("data"):
+            dept_tree = dept_result["data"]
+            if isinstance(dept_tree, list):
+                dept_path = find_user_dept_path(dept_tree, str(dept_id))
+            else:
+                dept_path = find_user_dept_path([dept_tree], str(dept_id))
+            if dept_path:
+                user["deptPath"] = dept_path
+
+    return user
+
+
 def normalize_field_names(data):
     """统一字段名：双向转换（用户字段 <-> 接口字段）"""
     if "chanceProjectName" in data and "projectName" not in data:
@@ -457,7 +532,7 @@ def append_to_file(filepath, content):
         f.write(content)
 
 
-def generate_daily_report_md_files(report_data, report_user, report_name=None):
+def generate_daily_report_md_files(report_data, report_user, report_name=None, token=None):
     """生成两个维度的日报汇总MD文件（区分项目和商机）"""
     report_date = report_data.get("date", "")
     day_report_type = report_data.get("dayReportType", 2)
@@ -474,6 +549,12 @@ def generate_daily_report_md_files(report_data, report_user, report_name=None):
     project_manager = report_data.get("projectManager", "")
     create_by = report_data.get("createBy") or report_user or ""
     user_display_name = report_name or create_by
+
+    user_dept_path = None
+    if token and create_by:
+        user_info = get_user_with_dept(PM_BASE_URL, token, create_by)
+        if user_info:
+            user_dept_path = user_info.get("deptPath")
 
     summarize = report_data.get("daySummarizeNow", "无")
     plan = report_data.get("dayPlanNext", "无")
@@ -570,6 +651,9 @@ def generate_daily_report_md_files(report_data, report_user, report_name=None):
         "dayReportType": day_report_type,
         "reportTypeName": "商机日报" if day_report_type == 1 else "项目日报",
         "workHourProportion": 0,
+        "deptPath": user_dept_path,
+        "problemRisk": report_data.get("problemRisk", ""),
+        "requestInstructions": report_data.get("requestInstructions", ""),
     }
 
     if day_report_type == 1:
@@ -673,12 +757,20 @@ def _load_users_md_structure(filepath):
     lines = content.split("\n")
     current_user = None
     current_date = None
+    current_dept = None
 
     for line in lines:
         if line.startswith("## "):
-            current_user = line.replace("## ", "").strip()
+            header = line.replace("## ", "").strip()
+            dept_match = re.search(r"（部门：(.+?)）", header)
+            if dept_match:
+                current_dept = dept_match.group(1)
+                current_user = header.replace(f"（部门：{current_dept}）", "").strip()
+            else:
+                current_user = header
+                current_dept = None
             if current_user not in data:
-                data[current_user] = {"dates": {}}
+                data[current_user] = {"dates": {}, "dept": current_dept}
         elif line.startswith("### "):
             current_date = line.replace("### ", "").strip()
             if current_user and current_date:
@@ -686,20 +778,54 @@ def _load_users_md_structure(filepath):
                     data[current_user]["dates"][current_date] = {}
         elif line.startswith("- **"):
             parts = line.split("**")
-            if len(parts) >= 3 and current_user and current_date:
-                project_name = parts[1]
-                rest = parts[2].replace("**：", "").replace("：", "").strip()
-                if "。" in rest:
-                    summarize, plan_part = rest.split("。", 1)
-                    plan = plan_part.replace("明日：", "").strip()
-                else:
-                    summarize = rest
-                    plan = ""
-                data[current_user]["dates"][current_date][project_name] = {
-                    "projectName": project_name,
-                    "summarize": summarize.replace("今日：", "").strip(),
-                    "plan": plan,
+            if len(parts) >= 2 and current_user and current_date:
+                title = parts[1]
+                
+                day_report_type = 2
+                if "商机" in title:
+                    day_report_type = 1
+                
+                item_data = {
+                    "itemKey": title,
+                    "dayReportType": day_report_type,
                 }
+                
+                if day_report_type == 1:
+                    title_parts = title.replace("【商机日报】", "").strip().split("|")
+                    if len(title_parts) >= 1:
+                        item_data["visitClientName"] = title_parts[0].strip()
+                    for part in title_parts[1:]:
+                        if "对接人：" in part:
+                            item_data["contractPersonName"] = part.replace("对接人：", "").strip()
+                else:
+                    proj_name = title.replace("【项目日报】", "").strip()
+                    if proj_name:
+                        item_data["projectName"] = proj_name
+                
+                data[current_user]["dates"][current_date][title] = item_data
+        
+        elif line.startswith("  - "):
+            if current_user and current_date:
+                content = line.replace("  - ", "").strip()
+                last_date_data = data[current_user]["dates"].get(current_date, {})
+                if last_date_data:
+                    last_key = list(last_date_data.keys())[-1]
+                    item_data = last_date_data[last_key]
+                    
+                    if content.startswith("拜访记录："):
+                        item_data["visitRecord"] = content.replace("拜访记录：", "").strip()
+                    elif content.startswith("客户期望："):
+                        item_data["clientHope"] = content.replace("客户期望：", "").strip()
+                    elif content.startswith("下一步计划："):
+                        item_data["plan"] = content.replace("下一步计划：", "").strip()
+                    elif content.startswith("今日："):
+                        item_data["summarize"] = content.replace("今日：", "").strip()
+                    elif content.startswith("明日："):
+                        item_data["plan"] = content.replace("明日：", "").strip()
+                    elif content.startswith("问题与风险："):
+                        item_data["problemRisk"] = content.replace("问题与风险：", "").strip()
+                    elif content.startswith("请示事项："):
+                        item_data["requestInstructions"] = content.replace("请示事项：", "").strip()
     return data
 
 
@@ -857,62 +983,85 @@ def _save_projects_md(filepath, data, week_start, week_end):
 
 
 def _save_users_md(filepath, data, week_start, week_end):
-    """保存人员维度的MD文件"""
+    """保存人员维度的 MD 文件"""
     lines = []
     lines.append("# 本周个人日报汇总\n")
     lines.append(f"> 统计周期：{week_start} ~ {week_end}\n")
 
-    for user_name in sorted(data.keys()):
+    user_list = sorted(data.keys())
+    for idx, user_name in enumerate(user_list):
         user = data[user_name]
-        lines.append(f"\n## {user_name}\n")
+        
+        first_dept = user.get("dept")
+        if not first_dept:
+            for date in user.get("dates", {}).keys():
+                for item_key, item_data in user["dates"][date].items():
+                    dept_path = item_data.get("deptPath")
+                    if dept_path:
+                        first_dept = dept_path
+                        break
+                if first_dept:
+                    break
+
+        user_header = user_name
+        if first_dept:
+            user_header += f"（部门：{first_dept}）"
+
+        lines.append(f"\n## {user_header}\n")
 
         for date in sorted(user["dates"].keys()):
             lines.append(f"\n### {date}\n")
-            for project_name, project_data in sorted(user["dates"][date].items()):
+            
+            items = user["dates"][date]
+            item_list = sorted(items.items(), key=lambda x: (x[1].get("dayReportType", 2), x[0]))
+            
+            for item_key, project_data in item_list:
                 day_report_type = project_data.get("dayReportType", 2)
 
                 if day_report_type == 1:
                     visit_client_name = project_data.get("visitClientName", "")
                     chance_name = project_data.get("chanceProjectName", "")
                     contract_person_name = project_data.get("contractPersonName", "")
+                    contract_person_dept = project_data.get("contractPersonDeptName", "")
+                    contract_person_position = project_data.get("contractPersonPosition", "")
                     visit_record = project_data.get("visitRecord", "")
                     client_hope = project_data.get("clientHope", "")
                     plan = project_data.get("plan", "")
 
+                    title = "【商机日报】"
                     if visit_client_name:
-                        title = f"日报类型：商机 客户：{visit_client_name}"
-                    else:
-                        title = "日报类型：商机"
-
+                        title += visit_client_name
                     if contract_person_name:
-                        title += f" 对接人：{contract_person_name}"
+                        title += f"（对接人：{contract_person_name}）"
 
-                    parts = []
-                    parts.append(f"客户：{visit_client_name or '无'}")
-                    if chance_name:
-                        parts.append(f"商机：{chance_name}")
-                    parts.append(f"客户期望：{client_hope or '无'}")
-                    parts.append(f"拜访记录：{visit_record or '无'}")
-                    parts.append(f"下一步计划：{plan or '无'}")
-
-                    lines.append(f"- **{title}**：{'； '.join(parts)}\n")
+                    lines.append(f"- **{title}**\n")
+                    if visit_record:
+                        lines.append(f"  - 拜访记录：{visit_record}\n")
+                    if client_hope:
+                        lines.append(f"  - 客户期望：{client_hope}\n")
+                    if plan:
+                        lines.append(f"  - 下一步计划：{plan}\n")
                 else:
                     summarize = project_data.get("summarize", "")
                     plan = project_data.get("plan", "")
-                    project_name = project_data.get("projectName", project_name)
+                    project_name = project_data.get("projectName", "")
                     problem_risk = project_data.get("problemRisk", "")
                     request_instructions = project_data.get("requestInstructions", "")
 
-                    title = f"日报类型：项目 项目名称：{project_name}"
+                    title = f"【项目日报】{project_name}" if project_name else "【项目日报】"
 
-                    parts = []
-                    parts.append(f"今日：{summarize or '无'}")
-                    parts.append(f"明日：{plan or '无'}")
-                    parts.append(f"问题与风险：{problem_risk or '无'}")
-                    parts.append(f"请示事项：{request_instructions or '无'}")
-
-                    lines.append(f"- **{title}**：{'； '.join(parts)}\n")
-        lines.append("\n---\n")
+                    lines.append(f"- **{title}**\n")
+                    if summarize:
+                        lines.append(f"  - 今日：{summarize}\n")
+                    if plan:
+                        lines.append(f"  - 明日：{plan}\n")
+                    if problem_risk:
+                        lines.append(f"  - 问题与风险：{problem_risk}\n")
+                    if request_instructions:
+                        lines.append(f"  - 请示事项：{request_instructions}\n")
+        
+        if idx < len(user_list) - 1:
+            lines.append("\n---\n")
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.writelines(lines)
@@ -1246,7 +1395,7 @@ def main():
             f"chances_query_{report_user}.json",
             f"clients_query_{report_user}.json",
         ]
-        
+
         query_file = None
         latest_mtime = 0
         for f in possible_files:
@@ -1517,7 +1666,7 @@ def main():
             except:
                 pass
 
-            md_dir = generate_daily_report_md_files(prepared_data, report_user, report_name)
+            md_dir = generate_daily_report_md_files(prepared_data, report_user, report_name, token)
 
             print("", flush=True)
             print("==================================================", flush=True)
