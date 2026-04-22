@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Knex } from "knex";
 import { dbNow } from "../db/knex";
+import { createLogger } from "../utils/logger";
 import {
   explainUserSyncError,
   runUserPersonnelSync,
@@ -8,6 +9,8 @@ import {
   type UserSyncStage,
   type UserSyncSummary,
 } from "./user-sync-service";
+
+const log = createLogger("UserSyncJobManager");
 
 type UserSyncJobStatus = "running" | "completed" | "failed";
 
@@ -140,6 +143,8 @@ class UserSyncJobManager {
     if (!job) {
       return;
     }
+
+    log.error(error instanceof Error ? `用户同步任务失败: ${error.stack ?? error.message}` : `用户同步任务失败: ${String(error)}`);
 
     job.status = "failed";
     job.stage = "failed";
