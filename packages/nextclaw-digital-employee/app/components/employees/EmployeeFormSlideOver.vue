@@ -46,6 +46,7 @@ const emit = defineEmits<{
 }>();
 
 const SKILL_CATEGORIES = ["项目管理类", "经营管理类", "产品研发类", "市场营销类", "解决方案类", "通用能力类"];
+const SKILL_PAGE_SIZE = 8;
 
 const STEPS = [
   { title: "基础信息", desc: "定义员工的身份与角色" },
@@ -60,6 +61,8 @@ const touched = reactive({ name: false, departmentId: false });
 
 const skillSearch = ref("");
 const skillCategory = ref<string | null>(null);
+const skillPage = ref(1);
+
 const filteredSkills = computed(() => {
   let items = props.skills;
   if (skillCategory.value) items = items.filter(s => s.categoryLabel === skillCategory.value);
@@ -68,6 +71,16 @@ const filteredSkills = computed(() => {
     s.name.toLowerCase().includes(kw) || (s.nameZh ?? "").toLowerCase().includes(kw) || s.purpose.toLowerCase().includes(kw)
   );
   return items;
+});
+
+watch([filteredSkills], () => {
+  skillPage.value = 1;
+});
+
+const skillTotalPages = computed(() => Math.max(1, Math.ceil(filteredSkills.value.length / SKILL_PAGE_SIZE)));
+const paginatedSkills = computed(() => {
+  const start = (skillPage.value - 1) * SKILL_PAGE_SIZE;
+  return filteredSkills.value.slice(start, start + SKILL_PAGE_SIZE);
 });
 
 const title = computed(() => props.mode === "create" ? "新建员工" : "编辑员工");
@@ -84,6 +97,7 @@ watch(() => props.visible, (val) => {
     Object.assign(touched, { name: false, departmentId: false });
     skillSearch.value = "";
     skillCategory.value = null;
+    skillPage.value = 1;
   }
 });
 
@@ -288,7 +302,7 @@ function onFormSubmit() {
                     </div>
                   </div>
                   <label
-                    v-for="skill in filteredSkills" :key="skill.name"
+                    v-for="skill in paginatedSkills" :key="skill.name"
                     class="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-all hover:bg-muted/30"
                     :class="form.skillNames.includes(skill.name) && 'border-primary/30 bg-primary/5'"
                   >
@@ -301,6 +315,24 @@ function onFormSubmit() {
                       <p class="mt-0.5 text-xs text-muted-foreground">{{ skill.purpose }}</p>
                     </div>
                   </label>
+                  <!-- 技能分页 -->
+                  <div v-if="skillTotalPages > 1" class="flex items-center justify-between border-t border-border pt-2">
+                    <span class="text-xs text-muted-foreground">{{ filteredSkills.length }} 个技能 · 第 {{ skillPage }}/{{ skillTotalPages }} 页</span>
+                    <div class="flex items-center gap-1">
+                      <button
+                        type="button"
+                        class="rounded border border-border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
+                        :disabled="skillPage === 1"
+                        @click="skillPage--"
+                      >上一页</button>
+                      <button
+                        type="button"
+                        class="rounded border border-border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
+                        :disabled="skillPage === skillTotalPages"
+                        @click="skillPage++"
+                      >下一页</button>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Step 3: 自动任务 -->
