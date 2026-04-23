@@ -25,6 +25,7 @@ import { RunStatus } from "../db/enums";
 import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
 import { EmployeeUploadFileService } from "./employee-upload-file-service";
 import { IdentityResolver } from "./identity-resolver";
+import { isConversationResetCommand } from "../../shared/chat-command";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -694,6 +695,9 @@ export class EmployeeRunService {
     signal?: AbortSignal;
     onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
   }): Promise<{ runId: string; sessionKey: string; reply: string }> {
+    if (isConversationResetCommand(params.message)) {
+      return await this.createFreshChatSessionFromCommand(params);
+    }
     const { sessionRepo, messageRepo } = this.requireChatPersistence();
     const { employee, workspace, skillNames } = await this.prepareRuntime(params.employeeId);
     const session = await this.resolveChatSession(employee.id, params.sessionKey, {
@@ -1073,6 +1077,35 @@ export class EmployeeRunService {
     } finally {
       this.activeChatRuns.delete(run.id);
     }
+  }
+
+  private async createFreshChatSessionFromCommand(params: {
+    employeeId: string;
+    actorUserId?: string;
+    onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
+  }): Promise<{ runId: string; sessionKey: string; reply: string }> {
+    const session = await this.createChatSession(params.employeeId, params.actorUserId);
+    const runId = `chat-command-${randomUUID()}`;
+    await params.onEvent({
+      event: "run_started",
+      data: {
+        runId,
+        sessionKey: session.sessionKey
+      }
+    });
+    await params.onEvent({
+      event: "done",
+      data: {
+        runId,
+        sessionKey: session.sessionKey,
+        status: RunStatus.Completed
+      }
+    });
+    return {
+      runId,
+      sessionKey: session.sessionKey,
+      reply: ""
+    };
   }
 
 

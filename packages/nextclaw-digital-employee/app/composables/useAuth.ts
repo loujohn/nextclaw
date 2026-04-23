@@ -1,4 +1,5 @@
 import type { UserView, UserRole } from "../../shared/auth-types";
+import { rememberLoginModeOverride } from "./useAuthRedirect";
 
 type AuthState = {
   user: UserView | null;
@@ -125,6 +126,22 @@ function getTokenRemainingTtl(token: string): number {
     return Math.max(0, exp - Math.floor(Date.now() / 1000));
   } catch {
     return 0;
+  }
+}
+
+function decodeTokenIssuer(token: string | null): string | null {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const payloadB64 = token.split(".")[1];
+    if (!payloadB64) return null;
+    const b64 = payloadB64.replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(atob(b64));
+    return typeof json.iss === "string" ? json.iss : null;
+  } catch {
+    return null;
   }
 }
 
@@ -360,6 +377,8 @@ export function useAuth() {
       redirectNotice.value = message;
     }
 
+    rememberLoginModeOverride();
+
     if (redirecting.value) {
       return;
     }
@@ -379,9 +398,16 @@ export function useAuth() {
   async function logout(): Promise<void> {
     const redirectUri = buildInitialLoginUrl();
     const idToken = localStorage.getItem(ID_TOKEN_KEY);
+    const accessToken = state.value.accessToken;
+    const keycloakIssuer = keycloakUrl && realm
+      ? `${keycloakUrl}/realms/${realm}`
+      : null;
+    const shouldLogoutFromKeycloak = !!keycloakIssuer
+      && (decodeTokenIssuer(accessToken) === keycloakIssuer || !!idToken);
+    rememberLoginModeOverride();
     clearTokens();
 
-    if (keycloakUrl && realm) {
+    if (shouldLogoutFromKeycloak) {
       const params = new URLSearchParams({
         client_id: clientId,
         post_logout_redirect_uri: redirectUri,

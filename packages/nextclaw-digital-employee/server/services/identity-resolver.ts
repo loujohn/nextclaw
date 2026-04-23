@@ -8,6 +8,7 @@ const log = createLogger("IdentityResolver");
 
 export type ResolvedIdentity = {
   name: string;
+  username?: string;
   department?: string;
   title?: string;
   externalId: string;
@@ -99,10 +100,22 @@ export class IdentityResolver {
     fallbackName?: string
   ): string {
     const displayName = identity?.name ?? (fallbackName || senderId);
+    const username = identity?.username?.trim();
+    const usernamePart = username ? `, 用户名:${username}` : "";
     const deptTitle = identity
       ? `${identity.department ? `, ${identity.department}` : ""}${identity.title ? `/${identity.title}` : ""}`
       : "";
-    return `[发送者: ${displayName} (ID:${senderId}${deptTitle})]`;
+    return `[发送者: ${displayName} (ID:${senderId}${usernamePart}${deptTitle})]`;
+  }
+
+  private async resolveUsernameByHumanEmployees(senderId: string): Promise<string | undefined> {
+    const row = await this.db(PLATFORM_TABLES.users)
+      .where(`${PLATFORM_TABLES.users}.human_employee_id`, senderId)
+      .where(`${PLATFORM_TABLES.users}.is_active`, 1)
+      .select(`${PLATFORM_TABLES.users}.username`)
+      .first<{ username?: string }>();
+
+    return row?.username?.trim() || undefined;
   }
 
   async resolve(senderId: string): Promise<ResolvedIdentity | null> {
@@ -114,6 +127,7 @@ export class IdentityResolver {
       )
       .where(`${PLATFORM_TABLES.humanEmployees}.external_id`, senderId)
       .select(
+        `${PLATFORM_TABLES.humanEmployees}.id`,
         `${PLATFORM_TABLES.humanEmployees}.name`,
         `${PLATFORM_TABLES.humanEmployees}.title`,
         `${PLATFORM_TABLES.humanEmployees}.external_id`,
@@ -121,9 +135,11 @@ export class IdentityResolver {
       )
       .first();
 
+    const username = await this.resolveUsernameByHumanEmployees(row.id);
     if (row) {
       return {
         name: row.name,
+        username,
         department: row.dept_name || undefined,
         title: row.title || undefined,
         externalId: row.external_id,
@@ -140,6 +156,7 @@ export class IdentityResolver {
       .where(`${PLATFORM_TABLES.users}.is_active`, 1)
       .select(
         `${PLATFORM_TABLES.users}.display_name as name`,
+        `${PLATFORM_TABLES.users}.username`,
         `${PLATFORM_TABLES.users}.external_post_name as title`,
         `${PLATFORM_TABLES.users}.external_dingtalk_id as external_id`,
         `${PLATFORM_TABLES.departments}.name as dept_name`
@@ -150,6 +167,7 @@ export class IdentityResolver {
 
     return {
       name: userRow.name,
+      username: userRow.username || username,
       department: userRow.dept_name || undefined,
       title: userRow.title || undefined,
       externalId: userRow.external_id,
@@ -166,6 +184,7 @@ export class IdentityResolver {
       .where(`${PLATFORM_TABLES.users}.id`, userId)
       .select(
         `${PLATFORM_TABLES.users}.display_name as name`,
+        `${PLATFORM_TABLES.users}.username`,
         `${PLATFORM_TABLES.users}.external_post_name as title`,
         `${PLATFORM_TABLES.users}.external_dingtalk_id as external_id`,
         `${PLATFORM_TABLES.departments}.name as dept_name`
@@ -176,6 +195,7 @@ export class IdentityResolver {
 
     return {
       name: row.name || userId,
+      username: row.username || undefined,
       department: row.dept_name || undefined,
       title: row.title || undefined,
       externalId: row.external_id || userId,
@@ -195,6 +215,7 @@ export class IdentityResolver {
         .select(
           `${PLATFORM_TABLES.humanEmployees}.name`,
           `${PLATFORM_TABLES.humanEmployees}.title`,
+          this.db.raw("NULL as username"),
           `${PLATFORM_TABLES.humanEmployees}.external_id`,
           `${PLATFORM_TABLES.departments}.name as dept_name`
         );
@@ -223,6 +244,7 @@ export class IdentityResolver {
         .where(`${PLATFORM_TABLES.users}.is_active`, 1)
         .select(
           `${PLATFORM_TABLES.users}.display_name as name`,
+          `${PLATFORM_TABLES.users}.username`,
           `${PLATFORM_TABLES.users}.external_post_name as title`,
           `${PLATFORM_TABLES.users}.external_dingtalk_id as external_id`,
           `${PLATFORM_TABLES.departments}.name as dept_name`
@@ -235,6 +257,7 @@ export class IdentityResolver {
 
     return rows.map((row) => ({
       name: row.name,
+      username: row.username || undefined,
       department: row.dept_name || undefined,
       title: row.title || undefined,
       externalId: row.external_id,
