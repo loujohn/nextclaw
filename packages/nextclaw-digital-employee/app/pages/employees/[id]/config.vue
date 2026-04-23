@@ -51,14 +51,15 @@ async function saveDingTalkBinding() {
 const configTab = ref<"dingtalk" | "workspace" | "webhook">("dingtalk");
 
 // ── Webhook ──────────────────────────────────────────────────────────────────
-const { data: employeeDetail, refresh: refreshEmployee } = useLazyFetch<{
+const { data: employeeDetail, refresh: refreshEmployeeWebhook } = useLazyFetch<{
   ok: boolean;
   data: {
+    id: string;
     code: string;
     webhookEnabled: boolean;
     webhookSecret: string | null;
   };
-}>(() => `/api/employees/${employeeId.value}`);
+}>(() => `/api/employees/${employeeId.value}/webhook`);
 
 const webhookEnabled = ref(false);
 const webhookSecret = ref("");
@@ -105,7 +106,7 @@ async function saveWebhook() {
         webhookSecret: webhookSecret.value || null,
       },
     });
-    await refreshEmployee();
+    await refreshEmployeeWebhook();
     webhookSaved.value = true;
     setTimeout(() => { webhookSaved.value = false; }, 2500);
   } finally {

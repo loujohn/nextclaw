@@ -9,7 +9,8 @@ type EmployeeDetailPayload = {
     description: string;
     systemPrompt: string;
     model: string;
-    skills: Array<{ skillName: string }>;
+    departmentId: string | null;
+    skillNames: string[];
     schedule: {
       scheduleKind: "cron" | "every" | "heartbeat";
       cronExpr?: string | null;
@@ -155,16 +156,16 @@ export function useEmployeeCrud(options: CrudOptions) {
     editorLoading.value = true;
     editError.value = "";
     try {
-      const detail = await $fetch<EmployeeDetailPayload>(`/api/employees/${employee.id}`);
+      const detail = await $fetch<EmployeeDetailPayload>(`/api/employees/${employee.id}/edit`);
       const files = await Promise.all(
         (["HEARTBEAT.md", "USER.md", "BOOT.md", "AGENTS.md"] as const).map((f) => loadWorkspaceFile(employee.id, f))
       );
       Object.assign(editForm, {
         id: detail.data.id, name: detail.data.name, code: detail.data.code,
         description: detail.data.description, systemPrompt: detail.data.systemPrompt,
-        model: detail.data.model || "", departmentId: employee.departmentId ?? null,
+        model: detail.data.model || "", departmentId: detail.data.departmentId,
         heartbeatContent: files[0], userContent: files[1], bootContent: files[2], agentsContent: files[3],
-        skillNames: detail.data.skills.map((s) => s.skillName),
+        skillNames: detail.data.skillNames,
         scheduleKind: detail.data.schedule?.scheduleKind ?? "cron",
         cronExpr: detail.data.schedule?.cronExpr ?? "0 18 * * *",
         everyMs: detail.data.schedule?.everyMs ?? 1800000

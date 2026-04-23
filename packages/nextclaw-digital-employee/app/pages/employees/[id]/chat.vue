@@ -350,7 +350,14 @@ const deletingUploadPaths = ref<Set<string>>(new Set());
 const uploadDeleteNotice = ref("");
 let uploadDeleteNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 const SESSION_PAGE_SIZE = 30;
-const { data: employee, refresh: refreshEmployee } = useEmployeeDetail(employeeId);
+const { data: employee, refresh: refreshEmployee } = useLazyFetch<{
+  ok: boolean;
+  data: {
+    id: string;
+    name: string;
+    code: string;
+  };
+}>(() => `/api/employees/${employeeId.value}/identity`);
 const { refresh: refreshRuns } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
   key: computed(() => `employee-runs:${employeeId.value}`)
 });
