@@ -368,6 +368,35 @@ describe("DigitalEmployeeChannelRuntime", () => {
       isAdmin: false,
       isBoss: false
     });
+    await db("users").insert({
+      id: "runtime-user-1",
+      keycloak_sub: "personnel-sync:runtime-1",
+      username: "zhangsan",
+      email: "zhangsan-runtime@example.com",
+      display_name: "张三",
+      avatar_url: "",
+      role: "user",
+      is_active: 1,
+      user_source: "sync",
+      sync_provider: "personnel-api",
+      external_user_id: "runtime-1",
+      external_user_name: "zhangsan-ext",
+      external_name: "张三",
+      external_post_name: "工程师",
+      external_role_name: "成员",
+      external_dingtalk_id: "user-1",
+      external_phone: "",
+      external_user_type: "正式员工",
+      department_id: dept.id,
+      human_employee_id: null,
+      preferences: "{}",
+      auth_provider: "keycloak",
+      password_hash: null,
+      last_login_at: null,
+      last_synced_at: "2026-04-23 00:00:00",
+      created_at: "2026-04-23 00:00:00",
+      updated_at: "2026-04-23 00:00:00"
+    });
 
     const bus = new MessageBus();
     const sessionManager = new SessionManager(workspaceDir);
@@ -402,7 +431,7 @@ describe("DigitalEmployeeChannelRuntime", () => {
       expect(handleInbound).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.objectContaining({
-            content: expect.stringContaining("[发送者: 张三 (ID:user-1, 技术部/工程师)]")
+            content: expect.stringContaining("[发送者: 张三 (ID:user-1, 用户名:zhangsan, 技术部/工程师)]")
           })
         })
       );
