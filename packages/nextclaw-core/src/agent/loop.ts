@@ -7,7 +7,7 @@ import { ToolRegistry } from "./tools/registry.js";
 import { ReadFileTool, WriteFileTool, EditFileTool, ListDirTool } from "./tools/filesystem.js";
 import { ExecTool } from "./tools/shell.js";
 import { WebSearchTool, WebFetchTool } from "./tools/web.js";
-import { MessageTool } from "./tools/message.js";
+import { MessageTool, type NameResolver, type GroupNameResolver, type AccountIdResolver } from "./tools/message.js";
 import { SpawnTool } from "./tools/spawn.js";
 import { CronTool } from "./tools/cron.js";
 import { SessionsListTool, SessionsHistoryTool, SessionsSendTool } from "./tools/sessions.js";
@@ -73,6 +73,10 @@ export class AgentLoop {
       excludeSkills?: ReadonlySet<string>;
       agentId?: string;
       envOverlay?: Record<string, string>;
+      nameResolver?: NameResolver;
+      groupNameResolver?: GroupNameResolver;
+      knownChannels?: string[];
+      accountIdResolver?: AccountIdResolver;
     }
   ) {
     this.context = new ContextBuilder({
@@ -121,6 +125,18 @@ export class AgentLoop {
     this.tools.register(new WebFetchTool());
 
     const messageTool = new MessageTool((msg) => this.options.bus.publishOutbound(msg));
+    if (this.options.nameResolver) {
+      messageTool.setNameResolver(this.options.nameResolver);
+    }
+    if (this.options.groupNameResolver) {
+      messageTool.setGroupNameResolver(this.options.groupNameResolver);
+    }
+    if (this.options.knownChannels) {
+      messageTool.setKnownChannels(this.options.knownChannels);
+    }
+    if (this.options.accountIdResolver) {
+      messageTool.setAccountIdResolver(this.options.accountIdResolver, this.agentId);
+    }
     this.tools.register(messageTool);
 
     const spawnTool = new SpawnTool(this.subagents);
@@ -647,7 +663,12 @@ export class AgentLoop {
 
     const messageTool = this.tools.get("message");
     if (messageTool instanceof MessageTool) {
-      messageTool.setContext(msg.channel, msg.chatId);
+      messageTool.setDeliveryContext(
+        (session.metadata.last_delivery_context as Record<string, unknown>) ?? {
+          channel: msg.channel,
+          chatId: msg.chatId
+        }
+      );
     }
     const execTool = this.tools.get("exec");
     if (execTool instanceof ExecTool) {
@@ -830,9 +851,20 @@ export class AgentLoop {
     });
     const runtimeModel = this.resolveSessionModel(session, msg.metadata);
 
+    const accountId =
+      (msg.metadata?.account_id as string | undefined) ??
+      (msg.metadata?.accountId as string | undefined) ??
+      (typeof session.metadata.last_account_id === "string" ? (session.metadata.last_account_id as string) : undefined);
+    if (accountId) {
+      session.metadata.last_account_id = accountId;
+    }
+
     const messageTool = this.tools.get("message");
     if (messageTool instanceof MessageTool) {
-      messageTool.setContext(originChannel, originChatId);
+      const lastCtx = session.metadata.last_delivery_context as Record<string, unknown> | undefined;
+      messageTool.setDeliveryContext(
+        lastCtx ?? { channel: originChannel, chatId: originChatId }
+      );
     }
     const execTool = this.tools.get("exec");
     if (execTool instanceof ExecTool) {
@@ -849,14 +881,6 @@ export class AgentLoop {
     const gatewayTool = this.tools.get("gateway");
     if (gatewayTool instanceof GatewayTool) {
       gatewayTool.setContext({ sessionKey });
-    }
-
-    const accountId =
-      (msg.metadata?.account_id as string | undefined) ??
-      (msg.metadata?.accountId as string | undefined) ??
-      (typeof session.metadata.last_account_id === "string" ? (session.metadata.last_account_id as string) : undefined);
-    if (accountId) {
-      session.metadata.last_account_id = accountId;
     }
 
     const messageToolHints = this.options.resolveMessageToolHints?.({

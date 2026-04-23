@@ -24,6 +24,7 @@ import { ConfigError, classifyError } from "../errors/platform-errors";
 import { RunStatus } from "../db/enums";
 import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat-attachments";
 import { EmployeeUploadFileService } from "./employee-upload-file-service";
+import { IdentityResolver } from "./identity-resolver";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -517,7 +518,8 @@ export class EmployeeRunService {
     private readonly gateway: NextclawEngineGateway,
     private readonly skillInstallationRepo?: SkillInstallationRepository,
     private readonly chatSessionRepo?: ChatSessionRepository,
-    private readonly chatMessageRepo?: ChatMessageRepository
+    private readonly chatMessageRepo?: ChatMessageRepository,
+    private readonly identityResolver?: IdentityResolver
   ) {}
 
   private requireChatPersistence(): {
@@ -793,13 +795,24 @@ export class EmployeeRunService {
     });
     await emitThinking();
 
+    let enrichedMessage = buildAttachmentPromptText(params.message, userMessageAttachments);
+    if (params.actorUserId && this.identityResolver) {
+      try {
+        const identity = await this.identityResolver.resolveByInternalId(params.actorUserId);
+        const prefix = IdentityResolver.buildSenderPrefix(identity, params.actorUserId);
+        enrichedMessage = `${prefix}\n${enrichedMessage}`;
+      } catch {
+        // identity resolution failure should not block the chat
+      }
+    }
+
     try {
       const result = await this.gateway.runEmployeeTurn({
         employeeId: employee.id,
         agentId: employee.code,
         sessionKey: session.sessionKey,
         workspace,
-        message: buildAttachmentPromptText(params.message, userMessageAttachments),
+        message: enrichedMessage,
         model: employee.model || undefined,
         requestedSkills: skillNames.length > 0 ? skillNames : undefined,
         onAssistantDelta: (delta) => {

@@ -8,6 +8,7 @@ import type { CronService } from "../cron/service.js";
 import type { GatewayController } from "../agent/tools/gateway.js";
 import type { ExtensionRegistry } from "../extensions/types.js";
 import type { RuntimeMode } from "../agent/context.js";
+import type { NameResolver, GroupNameResolver, AccountIdResolver } from "../agent/tools/message.js";
 export type { RuntimeMode };
 
 export type AssistantDeltaHandler = (delta: string) => void;
@@ -63,6 +64,10 @@ export type AgentEngineFactoryContext = {
   excludeSkills?: ReadonlySet<string>;
   additionalSkillsDirs?: string[];
   envOverlay?: Record<string, string>;
+  nameResolver?: NameResolver;
+  groupNameResolver?: GroupNameResolver;
+  knownChannels?: string[];
+  accountIdResolver?: AccountIdResolver;
 };
 
 export type AgentEngineFactory = (context: AgentEngineFactoryContext) => AgentEngine;

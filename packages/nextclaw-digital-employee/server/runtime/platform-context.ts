@@ -34,6 +34,8 @@ import {
   createPlatformScheduleToolFactory,
   type PlatformScheduleToolDeps
 } from "../engine/platform-schedule-tool";
+import { IdentityResolver } from "../services/identity-resolver";
+import type { NameResolver, NameResolveResult, GroupNameResolver, GroupNameResolveResult, AccountIdResolveResult } from "@nextclaw/core";
 
 type PlatformContext = {
   homeDir: string;
@@ -163,20 +165,74 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         source: "platform"
       });
 
+      const identityResolver = new IdentityResolver(db);
+      const nameResolver: NameResolver = async (name: string): Promise<NameResolveResult> => {
+        const results = await identityResolver.resolveByName(name);
+        if (results.length === 0) return { kind: "not_found" };
+        if (results.length === 1) {
+          const match = results[0]!;
+          return {
+            kind: "found",
+            userId: match.externalId,
+            displayName: match.name
+          };
+        }
+        return {
+          kind: "ambiguous",
+          candidates: results.map((r) => ({
+            userId: r.externalId,
+            displayName: r.name,
+            hint: [r.department, r.title].filter(Boolean).join("/") || r.externalId
+          }))
+        };
+      };
+
+      const groupNameResolver: GroupNameResolver = async (name: string): Promise<GroupNameResolveResult> => {
+        const group = await identityResolver.resolveGroupByName(name);
+        if (!group) return { kind: "not_found" };
+        return { kind: "found", conversationId: group.conversationId, title: group.title };
+      };
+
+      const knownChannels = [
+        "dingtalk", "telegram", "ui", "employee", "system", "cli",
+        ...initialRuntimeState.extensionRegistry.channels.map((c) => c.channel.id)
+      ];
+
       const gateway = new NextclawEngineGateway({
         homeDir,
         workspaceDir,
         bus,
         sessionManager,
-        // AI engines must NOT see the raw `cronService` cron tool — scheduling
-        // is exposed via the structured `schedule` ExtensionTool instead. The
-        // underlying `CronService` is still used by `AutomationService` below
-        // for actual dispatch; it is just hidden from the LLM's tool surface.
         cronService: null,
         config: initialRuntimeState.config,
         extensionRegistry: initialRuntimeState.extensionRegistry,
         defaultConfig: buildPlatformGatewayConfig(),
-        secretsRepo
+        secretsRepo,
+        nameResolver,
+        groupNameResolver,
+        knownChannels: [...new Set(knownChannels)],
+        accountIdResolver: (agentId: string, channel: string): AccountIdResolveResult => {
+          const bindings = gateway.runtimeConfig.bindings ?? [];
+          const accountIds = new Set<string>();
+          for (const binding of bindings) {
+            if (binding.agentId !== agentId) continue;
+            const bindChannel = typeof binding.match.channel === "string" ? binding.match.channel.trim() : "";
+            if (bindChannel !== channel) continue;
+            const acctId = typeof binding.match.accountId === "string" ? binding.match.accountId.trim() : "";
+            if (acctId && acctId !== "*") {
+              accountIds.add(acctId);
+            } else if (!acctId) {
+              accountIds.add("default");
+            }
+          }
+          if (accountIds.size === 0) return { kind: "none" };
+          if (accountIds.size === 1) {
+            const resolved = [...accountIds][0]!;
+            if (resolved === "default") return { kind: "none" };
+            return { kind: "resolved", accountId: resolved };
+          }
+          return { kind: "ambiguous", accountIds: [...accountIds] };
+        }
       });
       const departmentRepo = new DepartmentRepository(db);
       const employeeRepo = new EmployeeRepository(db);
@@ -196,7 +252,8 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         gateway,
         skillInstallationRepo,
         chatSessionRepo,
-        chatMessageRepo
+        chatMessageRepo,
+        identityResolver
       );
       const channelRuntime = new DigitalEmployeeChannelRuntime({
         gateway,
@@ -204,6 +261,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeSkillRepo,
         skillInstallationRepo,
         runRepo,
+        identityResolver,
         loadState: async () => {
           const state = loadPlatformRuntimeState({
             workspaceDir,
@@ -226,7 +284,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeRepo,
         employeeRunService,
         cronService,
-        gateway
+        gateway,
       );
       scheduleDeps.automationService = automationService;
       const healthService = new EmployeeHealthService(runRepo, gateway);

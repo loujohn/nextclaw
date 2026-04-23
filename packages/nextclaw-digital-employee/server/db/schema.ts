@@ -14,6 +14,7 @@ export const PLATFORM_TABLES = {
   orgSyncConfig: "org_sync_config",
   secrets: "secrets",
   users: "users",
+  channelGroups: "channel_groups",
 } as const;
 
 export type DepartmentRecord = {
@@ -195,5 +196,15 @@ export type OrgSyncConfigRecord = {
   last_run_status: string | null;
   /** 上次运行摘要（成功/失败信息）*/
   last_run_summary: string;
+  updated_at: string;
+};
+
+export type ChannelGroupRecord = {
+  id: string;
+  conversation_id: string;
+  title: string;
+  channel: string;
+  account_id: string;
+  created_at: string;
   updated_at: string;
 };
