@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionManager } from "../../session/manager.js";
 import { SessionsListTool, SessionsHistoryTool } from "./sessions.js";
 
@@ -158,5 +158,64 @@ describe("SessionsHistoryTool agentId access control", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.messages).toHaveLength(1);
+  });
+});
+
+describe("AgentLoop injects agentId into sessions_list and sessions_history", () => {
+  let tempHome: string;
+  let cleanup: () => void;
+  let previousHome: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env[HOME_ENV_KEY];
+    ({ tempHome, cleanup } = makeTempHome());
+    process.env[HOME_ENV_KEY] = tempHome;
+  });
+
+  afterEach(() => {
+    cleanup();
+    if (previousHome === undefined) {
+      delete process.env[HOME_ENV_KEY];
+    } else {
+      process.env[HOME_ENV_KEY] = previousHome;
+    }
+  });
+
+  it("sessions_list and sessions_history context is set with the loop agentId after setSessionsToolContext", async () => {
+    const { AgentLoop } = await import("../../agent/loop.js");
+    const { MessageBus } = await import("../../bus/queue.js");
+
+    const providerManager = {
+      get: () => ({ getDefaultModel: () => "openai/gpt-5" }),
+      chat: vi.fn(async () => ({ content: "unused", toolCalls: [] }))
+    };
+    const bus = new MessageBus();
+    const sessions = new SessionManager(tempHome);
+
+    const loop = new AgentLoop({
+      bus: bus as never,
+      providerManager: providerManager as never,
+      workspace: tempHome,
+      sessionManager: sessions,
+      agentId: "alice"
+    });
+
+    // Call the private method via type cast
+    const loopAny = loop as unknown as {
+      setSessionsToolContext: (p: { sessionKey: string; channel: string; chatId: string; handoffDepth: number }) => void;
+      tools: { get: (name: string) => unknown };
+    };
+
+    loopAny.setSessionsToolContext({
+      sessionKey: "agent:alice:dingtalk:acc:group:g1",
+      channel: "dingtalk",
+      chatId: "g1",
+      handoffDepth: 0
+    });
+
+    const listTool = loopAny.tools.get("sessions_list") as { agentId?: string } | undefined;
+    const historyTool = loopAny.tools.get("sessions_history") as { agentId?: string } | undefined;
+    expect(listTool?.agentId).toBe("alice");
+    expect(historyTool?.agentId).toBe("alice");
   });
 });
