@@ -147,12 +147,13 @@ function sanitizePersonnelSyncUrl(rawUrl: string): string {
   }
 }
 
-function truncateSyncErrorText(value: string, maxLength = 240): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
+function formatSyncErrorText(value: string): string {
+  const normalized = value.trim();
   if (!normalized) {
     return "";
   }
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+
+  return normalized;
 }
 
 function extractErrorCode(error: unknown): string {
@@ -182,6 +183,32 @@ function formatNestedError(error: unknown): string {
   }
 
   return segments.join("; ");
+}
+
+function emitUserSyncProgress(
+  onProgress: UserSyncProgressReporter | undefined,
+  progress: Partial<UserSyncProgressSnapshot>
+): void {
+  onProgress?.(progress);
+
+  const details = [
+    progress.stage ? `stage=${progress.stage}` : "",
+    progress.message ? `message=${JSON.stringify(progress.message)}` : "",
+    progress.total !== undefined ? `total=${progress.total ?? "null"}` : "",
+    progress.processed !== undefined ? `processed=${progress.processed}` : "",
+    progress.created !== undefined ? `created=${progress.created}` : "",
+    progress.updated !== undefined ? `updated=${progress.updated}` : "",
+    progress.skipped !== undefined ? `skipped=${progress.skipped}` : "",
+    progress.failed !== undefined ? `failed=${progress.failed}` : "",
+    progress.summary ? `summary=${JSON.stringify(progress.summary)}` : "",
+  ].filter(Boolean);
+
+  log.info(`用户同步进度: ${details.join(" ")}`);
+}
+
+function logUserSyncFailure(error: unknown): void {
+  const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+  log.error(`用户同步失败: ${detail}`);
 }
 
 function buildPersonnelNetworkHint(error: unknown): string {
@@ -322,7 +349,7 @@ function parsePersonnelJson<T>(stage: PersonnelSyncRequestStage, url: string, bo
   try {
     return JSON.parse(bodyText) as T;
   } catch {
-    const bodyPreview = truncateSyncErrorText(bodyText);
+    const bodyPreview = formatSyncErrorText(bodyText);
     throw new Error(
       `人员同步在${stage}阶段返回了非 JSON 响应：${sanitizePersonnelSyncUrl(url)}${bodyPreview ? `，响应片段：${bodyPreview}` : ""}`
     );
@@ -338,7 +365,7 @@ function ensureSuccessfulPersonnelResponse(
     return;
   }
 
-  const bodyPreview = truncateSyncErrorText(response.bodyText);
+  const bodyPreview = formatSyncErrorText(response.bodyText);
   throw new Error(
     `人员同步在${stage}阶段返回 HTTP ${response.status}：${sanitizePersonnelSyncUrl(url)}${bodyPreview ? `，响应片段：${bodyPreview}` : ""}`
   );
@@ -743,7 +770,7 @@ async function fetchPersonnelUsers(onProgress?: UserSyncProgressReporter): Promi
     throw new Error("未配置人员同步接口地址 PERSONNEL_SYNC_API_URL");
   }
 
-  onProgress?.({
+  emitUserSyncProgress(onProgress, {
     stage: "authenticating",
     message: "正在获取同步认证信息...",
   });
@@ -754,7 +781,7 @@ async function fetchPersonnelUsers(onProgress?: UserSyncProgressReporter): Promi
     Authorization: `Bearer ${accessToken}`,
   };
 
-  onProgress?.({
+  emitUserSyncProgress(onProgress, {
     stage: "fetching",
     message: "正在拉取外部人员数据...",
   });
@@ -772,7 +799,7 @@ async function fetchPersonnelUsers(onProgress?: UserSyncProgressReporter): Promi
   const payload = parsePersonnelJson<unknown>("拉取人员数据", config.url, response.bodyText);
   const users = extractPersonnelUsers(payload);
   log.info(`人员同步数据拉取完成，总数=${users.length}`);
-  onProgress?.({
+  emitUserSyncProgress(onProgress, {
     stage: "syncing",
     message: users.length > 0 ? `已拉取 ${users.length} 条人员信息，开始写入用户数据...` : "未拉取到可同步的人员信息。",
     total: users.length,
@@ -802,7 +829,7 @@ export async function performUserPersonnelSync(
     const createInputs = await buildCreateInputs(userRepo, syncWritePlan.usersToCreate, createdUsers);
 
     let processed = skipped;
-    onProgress?.({
+    emitUserSyncProgress(onProgress, {
       stage: "syncing",
       message: `已整理 ${normalizedUsers.length} 条有效人员，开始批量写入用户数据...`,
       total: rawUsers.length,
@@ -817,7 +844,7 @@ export async function performUserPersonnelSync(
       await userRepo.batchUpdateSyncedUsers(chunk);
       updated += chunk.length;
       processed += chunk.length;
-      onProgress?.({
+      emitUserSyncProgress(onProgress, {
         stage: "syncing",
         message: `正在批量更新用户（${chunkIndex + 1}/${Math.max(1, Math.ceil(syncWritePlan.usersToUpdate.length / USER_SYNC_BATCH_SIZE))} 批）...`,
         total: rawUsers.length,
@@ -833,7 +860,7 @@ export async function performUserPersonnelSync(
       await userRepo.batchCreateSyncedUsers(chunk);
       created += chunk.length;
       processed += chunk.length;
-      onProgress?.({
+      emitUserSyncProgress(onProgress, {
         stage: "syncing",
         message: `正在批量新增用户（${chunkIndex + 1}/${Math.max(1, Math.ceil(createInputs.length / USER_SYNC_BATCH_SIZE))} 批）...`,
         total: rawUsers.length,
@@ -860,24 +887,34 @@ export async function performUserPersonnelSync(
 }
 
 export async function runUserPersonnelSync(db: Knex, onProgress?: UserSyncProgressReporter): Promise<UserSyncResult> {
-  onProgress?.(createProgressSnapshot());
-  const rawUsers = await fetchPersonnelUsers(onProgress);
-  const data = await performUserPersonnelSync(db, rawUsers, onProgress);
-  onProgress?.({
-    stage: "completed",
-    message: "用户同步完成。",
-    total: data.total,
-    processed: data.total,
-    created: data.created,
-    updated: data.updated,
-    skipped: data.skipped,
-    failed: data.failed,
-    summary: data.summary,
-  });
-  log.info(
-    `用户同步完成: provider=${PERSONNEL_SYNC_PROVIDER} total=${data.total} created=${data.created} updated=${data.updated} skipped=${data.skipped}`
-  );
-  return { ok: true, data };
+  emitUserSyncProgress(onProgress, createProgressSnapshot());
+
+  try {
+    const rawUsers = await fetchPersonnelUsers(onProgress);
+    const data = await performUserPersonnelSync(db, rawUsers, onProgress);
+    emitUserSyncProgress(onProgress, {
+      stage: "completed",
+      message: "用户同步完成。",
+      total: data.total,
+      processed: data.total,
+      created: data.created,
+      updated: data.updated,
+      skipped: data.skipped,
+      failed: data.failed,
+      summary: data.summary,
+    });
+    log.info(
+      `用户同步完成: provider=${PERSONNEL_SYNC_PROVIDER} total=${data.total} created=${data.created} updated=${data.updated} skipped=${data.skipped}`
+    );
+    return { ok: true, data };
+  } catch (error) {
+    emitUserSyncProgress(onProgress, {
+      stage: "failed",
+      message: explainUserSyncError(error),
+    });
+    logUserSyncFailure(error);
+    throw error;
+  }
 }
 
 export function explainUserSyncError(error: unknown): string {
