@@ -15,9 +15,8 @@ export default defineEventHandler(async (event) => {
       statusMessage: `employee not found: ${id}`
     });
   }
-  const [skills, schedule, recentRunsFull, jobs] = await Promise.all([
+  const [skills, recentRunsFull, jobs] = await Promise.all([
     ctx.employeeSkillRepo.listByEmployeeId(id),
-    ctx.employeeScheduleRepo.getByEmployeeId(id),
     ctx.runRepo.listByEmployeeId(id, 20),
     ctx.employeeScheduleJobRepo.listByEmployeeId(id)
   ]);
@@ -45,23 +44,23 @@ export default defineEventHandler(async (event) => {
     jobs.map((j) => ({ enabled: j.enabled, nextRunAt: j.nextRunAt })),
     scheduledRuns.slice(0, 10).map((r) => ({ status: r.status }))
   );
-  const recentRuns = recentRunsFull.map(({ id: runId, status, summary, startedAt, finishedAt }) => ({
-    id: runId, status, summary, startedAt, finishedAt,
+  const recentRuns = recentRunsFull.map(({ id: runId, status }) => ({
+    id: runId, status,
   }));
   return {
     ok: true,
     data: {
-      ...employee,
+      id: employee.id,
+      name: employee.name,
+      code: employee.code,
+      description: employee.description,
+      departmentId: employee.departmentId,
       skills: skillsWithVersion,
-      schedule,
       recentRuns,
       automationSummary,
       health: {
         hasPrompt: Boolean(employee.systemPrompt.trim()),
-        hasSkills: skills.length > 0,
-        hasSchedule: Boolean(schedule),
-        jobsCount: jobs.length,
-        enabledJobsCount: jobs.filter((j) => j.enabled).length
+        hasSkills: skills.length > 0
       }
     }
   };

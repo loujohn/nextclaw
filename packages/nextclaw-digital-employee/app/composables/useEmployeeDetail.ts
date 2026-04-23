@@ -18,10 +18,7 @@ export type EmployeeDetailPayload = {
     name: string;
     code: string;
     description: string;
-    systemPrompt: string;
     departmentId: string | null;
-    createdByUserId: string | null;
-    updatedByUserId: string | null;
     skills: Array<{
       id: string;
       skillName: string;
@@ -30,22 +27,12 @@ export type EmployeeDetailPayload = {
       hasUpdate: boolean;
       installMissing: boolean;
     }>;
-    schedule: {
-      id: string;
-      scheduleKind: string;
-      cronExpr?: string | null;
-      everyMs?: number | null;
-      nextRunAt?: string | null;
-    } | null;
     automationSummary: AutomationSummaryView;
     health: {
       hasPrompt: boolean;
       hasSkills: boolean;
-      hasSchedule: boolean;
-      jobsCount: number;
-      enabledJobsCount: number;
     };
-    recentRuns: Array<{ id: string; status: string; summary: string; startedAt: string; finishedAt?: string | null }>;
+    recentRuns: Array<{ id: string; status: string }>;
   };
 };
 
