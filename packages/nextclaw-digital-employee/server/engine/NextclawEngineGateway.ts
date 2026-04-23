@@ -364,7 +364,9 @@ export class NextclawEngineGateway {
       providerManager: this.providerManager,
       sessionManager: this.sessionManager,
       cronService: cronServiceOverride !== undefined ? cronServiceOverride : this.cronService,
-      restrictToWorkspace: this.config.tools.restrictToWorkspace,
+      // Employee workspaces are always sandboxed; only the global workspace
+      // respects the config flag so that platform-level agents remain unrestricted.
+      restrictToWorkspace: workspace !== this.workspaceDir ? true : this.config.tools.restrictToWorkspace,
       searchConfig: this.config.search,
       execConfig: this.config.tools.exec,
       contextConfig: this.config.agents.context,

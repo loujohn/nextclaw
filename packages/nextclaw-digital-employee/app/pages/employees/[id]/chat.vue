@@ -20,6 +20,7 @@ import {
   upsertLocalChatSession,
   type LocalChatSessionListItem
 } from "~/lib/chat-post-run-refresh";
+import { isConversationResetCommand } from "~~/shared/chat-command";
 import {
   AlertCircle,
   Bot,
@@ -873,6 +874,17 @@ async function loadOlderMessages() {
 async function sendMessage(input = draft.value) {
   const message = input.trim();
   if (!message || sending.value || uploadingFiles.value) {
+    return;
+  }
+  if (isConversationResetCommand(message)) {
+    draft.value = "";
+    pendingUploads.value = [];
+    errorMessage.value = "";
+    resetStreamingAssistant();
+    if (textareaEl.value) {
+      textareaEl.value.style.height = "auto";
+    }
+    await createSession(true);
     return;
   }
   const attachments = pendingUploads.value.map((item) => ({ ...item }));

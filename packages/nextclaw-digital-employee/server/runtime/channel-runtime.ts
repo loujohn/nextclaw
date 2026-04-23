@@ -1,6 +1,7 @@
 import {
   AgentRouteResolver,
   ChannelManager,
+  CommandRegistry,
   type Config,
   type ExtensionRegistry,
   type InboundMessage
@@ -22,8 +23,10 @@ import { prepareEmployeeRuntime } from "../services/employee-runtime-preparation
 import { buildChatResultCards } from "../../shared/ui-models";
 import { createLogger } from "../utils/logger";
 import { IdentityResolver } from "../services/identity-resolver";
+import { isConversationResetCommand } from "../../shared/chat-command";
 
 const log = createLogger("ChannelRuntime");
+const RESET_COMMAND_REPLY = "好的，我们重新开始。接下来想聊什么？";
 
 export type DigitalEmployeeChannelRuntimeState = {
   config: Config;
@@ -173,6 +176,10 @@ export class DigitalEmployeeChannelRuntime {
     }
     log.info(`分派给员工 code=${employee.code} name=${employee.name} 会话=${route.sessionKey}`);
 
+    if (await this.tryHandleConversationCommand(message, route.sessionKey)) {
+      return;
+    }
+
     if (this.options.identityResolver && meta.is_group === true && meta.conversation_title && meta.conversation_id) {
       this.options.identityResolver.registerGroup(
         String(meta.conversation_id),
@@ -244,6 +251,30 @@ export class DigitalEmployeeChannelRuntime {
       throw error;
     }
     log.info(`处理完成 员工=${route.agentId} 会话=${route.sessionKey}`);
+  }
+
+  private async tryHandleConversationCommand(message: InboundMessage, sessionKey: string): Promise<boolean> {
+    if (!isConversationResetCommand(message.content)) {
+      return false;
+    }
+    const registry = new CommandRegistry(this.gateway.runtimeConfig, this.gateway.sessions);
+    const result = await registry.executeText(message.content, {
+      channel: message.channel,
+      chatId: message.chatId,
+      senderId: message.senderId,
+      sessionKey
+    });
+    if (!result) {
+      return false;
+    }
+    await this.gateway.messageBus.publishOutbound({
+      channel: message.channel,
+      chatId: message.chatId,
+      content: RESET_COMMAND_REPLY,
+      media: [],
+      metadata: message.metadata ?? {}
+    });
+    return true;
   }
 
   private async enrichWithSenderIdentity(message: InboundMessage): Promise<InboundMessage> {
