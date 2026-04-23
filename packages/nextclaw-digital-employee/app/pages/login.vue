@@ -1,25 +1,59 @@
 <script setup lang="ts">
 import { Zap, ArrowRight, Lock, User, Eye, EyeOff } from "lucide-vue-next";
+import { clearLoginModeOverride, readLoginModeOverride, type LoginMode } from "~/composables/useAuthRedirect";
 
 definePageMeta({ layout: false });
 
 const { login, loginWithPassword, isAuthenticated } = useAuth();
 const router = useRouter();
+const route = useRoute();
 const config = useRuntimeConfig();
 const hasSso = !!(config.public.keycloakUrl && config.public.keycloakRealm);
 const redirectNotice = useAuthRedirectNotice();
+const initialModeOverride = ref<LoginMode | null>(readLoginModeOverride());
+
+function resolveLoginMode(mode: unknown): "sso" | "password" {
+  if (mode === "sso" && hasSso) {
+    return "sso";
+  }
+
+  if (mode === "password") {
+    return "password";
+  }
+
+  if (initialModeOverride.value) {
+    const rememberedMode = initialModeOverride.value;
+    initialModeOverride.value = null;
+    if (rememberedMode === "sso" && hasSso) {
+      return "sso";
+    }
+    return "password";
+  }
+
+  return hasSso ? "sso" : "password";
+}
 
 watch(isAuthenticated, (val) => {
   if (val) router.replace("/dashboard");
 }, { immediate: true });
 
-const loginMode = ref<"sso" | "password">(hasSso ? "sso" : "password");
+const loginMode = ref<"sso" | "password">(resolveLoginMode(route.query.mode));
 const username = ref("");
 const password = ref("");
 const showPassword = ref(false);
 const errorMsg = ref("");
 const systemMsg = ref("");
 const submitting = ref(false);
+
+onMounted(() => {
+  if (initialModeOverride.value) {
+    clearLoginModeOverride();
+  }
+});
+
+watch(() => route.query.mode, (mode) => {
+  loginMode.value = resolveLoginMode(mode);
+});
 
 watch(redirectNotice, (message) => {
   if (!message) {
