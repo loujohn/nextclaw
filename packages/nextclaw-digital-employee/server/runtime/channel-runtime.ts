@@ -156,6 +156,17 @@ export class DigitalEmployeeChannelRuntime {
   }
 
   private async handleInbound(message: InboundMessage): Promise<void> {
+    // employee internal channel: route directly by chatId (employee code)
+    // Errors are caught here to prevent runLoop from trying to publish an error
+    // response to the non-existent "employee" outbound channel adapter.
+    if (message.channel === "employee") {
+      try {
+        await this.handleEmployeeInbound(message);
+      } catch (error) {
+        log.error(`employee inbox 处理失败 code=${message.chatId}`, error);
+      }
+      return;
+    }
     const meta = message.metadata ?? {};
     const route = this.routeResolver.resolveInbound({
       message,
@@ -251,6 +262,49 @@ export class DigitalEmployeeChannelRuntime {
       throw error;
     }
     log.info(`处理完成 员工=${route.agentId} 会话=${route.sessionKey}`);
+  }
+
+  private async handleEmployeeInbound(message: InboundMessage): Promise<void> {
+    const targetCode = message.chatId;
+    const employee = await this.options.employeeRepo.getByCode(targetCode);
+    if (!employee) {
+      log.warn(`employee inbox: 目标员工不存在 code=${targetCode}`);
+      return;
+    }
+
+    // inbox session key: agent:{code}:employee:direct:{code}
+    // Matches buildSessionKey per-channel-peer format (5 segments)
+    const sessionKey = `agent:${employee.code}:employee:direct:${employee.code}`;
+    log.info(`employee inbox 分派 code=${employee.code} session=${sessionKey}`);
+
+    const { workspace, skillNames } = await prepareEmployeeRuntime({
+      employee,
+      employeeSkillRepo: this.options.employeeSkillRepo,
+      skillInstallationRepo: this.options.skillInstallationRepo,
+      homeDir: this.gateway.homeDir,
+      workspaceDir: this.gateway.workspaceDir
+    });
+
+    const enrichedMessage: InboundMessage = skillNames.length > 0
+      ? { ...message, metadata: { ...message.metadata, requested_skills: skillNames } }
+      : message;
+
+    const engine = await this.gateway.getOrCreateEngineWithSecrets({
+      agentId: employee.code,
+      employeeId: employee.id,
+      workspace,
+      model: employee.model || undefined
+    });
+
+    // publishResponse: false — fire-and-forget semantics
+    // Employee B responds via its own bound channels (e.g. DingTalk), not back to A
+    // Note: RunRecord is intentionally omitted for inbox messages — B's response
+    // (if any) is dispatched asynchronously through B's own channels.
+    await engine.handleInbound({
+      message: enrichedMessage,
+      sessionKey,
+      publishResponse: false
+    });
   }
 
   private async tryHandleConversationCommand(message: InboundMessage, sessionKey: string): Promise<boolean> {
