@@ -10,9 +10,9 @@ type UploadedFile = {
 };
 
 function parseSkillNameFromContent(content: string, fallback: string): string {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return fallback;
-  for (const line of (match[1] ?? "").split("\n")) {
+  for (const line of (match[1] ?? "").split(/\r?\n/)) {
     const [key, ...rest] = line.split(":");
     if (key?.trim() === "name") {
       const value = rest.join(":").trim().replace(/^['"]|['"]$/g, "");
@@ -26,9 +26,9 @@ function parseSkillNameFromContent(content: string, fallback: string): string {
  * 从 SKILL.md 内容中读取 version；若缺失则返回 null（调用方负责写入默认值）。
  */
 function parseSkillVersionFromContent(content: string): string | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
-  for (const line of (match[1] ?? "").split("\n")) {
+  for (const line of (match[1] ?? "").split(/\r?\n/)) {
     const [key, ...rest] = line.split(":");
     if (key?.trim() === "version") {
       const value = rest.join(":").trim().replace(/^['"]|['"]$/g, "");
@@ -64,8 +64,8 @@ export default defineEventHandler(async (event) => {
   if (!parsedVersion) {
     parsedVersion = defaultVersion;
     const versionInjected = skillMdFile.content.replace(
-      /^---\n([\s\S]*?)\n---/,
-      (_, block) => `---\n${block}\nversion: ${defaultVersion}\n---`
+      /^---\r?\n([\s\S]*?)\r?\n---/,
+      (_, block) => `---\n${block.replace(/\r\n/g, "\n")}\nversion: ${defaultVersion}\n---`
     );
     skillMdFile.content = versionInjected;
   }
