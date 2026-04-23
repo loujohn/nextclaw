@@ -90,3 +90,70 @@ describe("SessionsSendTool agent handoff", () => {
     expect(inbound.metadata.agent_handoff_depth).toBe(1);
   });
 });
+
+describe("SessionsSendTool employee inbox (agentId only)", () => {
+  let tempHome: string;
+  let previousHome: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env[HOME_ENV_KEY];
+    tempHome = mkdtempSync(join(tmpdir(), "nextclaw-inbox-test-"));
+    process.env[HOME_ENV_KEY] = tempHome;
+  });
+
+  afterEach(() => {
+    if (previousHome === undefined) {
+      delete process.env[HOME_ENV_KEY];
+    } else {
+      process.env[HOME_ENV_KEY] = previousHome;
+    }
+    rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("delivers to employee channel when only agentId is given", async () => {
+    const bus = new MessageBus();
+    const sessions = new SessionManager(tempHome);
+
+    const tool = new SessionsSendTool(sessions, bus);
+    tool.setContext({
+      currentAgentId: "alice",
+      currentSessionKey: "agent:alice:dingtalk:acc:group:g1",
+      channel: "dingtalk",
+      chatId: "g1",
+      maxPingPongTurns: 2,
+      currentHandoffDepth: 0
+    });
+
+    const result = JSON.parse(
+      await tool.execute({
+        agentId: "bob",
+        message: "请处理报销申请"
+      })
+    ) as { status: string; dispatched?: string; targetAgentId?: string };
+
+    expect(result.status).toBe("ok");
+    expect(result.dispatched).toBe("inbound");
+    expect(result.targetAgentId).toBe("bob");
+
+    const inbound = await bus.consumeInbound();
+    expect(inbound.channel).toBe("employee");
+    expect(inbound.chatId).toBe("bob");
+    expect(inbound.senderId).toBe("agent:alice");
+    expect(inbound.metadata.source).toBe("sessions_send");
+    expect(inbound.metadata.target_agent_id).toBe("bob");
+    expect(inbound.metadata.agent_handoff_from).toBe("alice");
+  });
+
+  it("still requires sessionKey or label when sending to self", async () => {
+    const bus = new MessageBus();
+    const sessions = new SessionManager(tempHome);
+    const tool = new SessionsSendTool(sessions, bus);
+    tool.setContext({ currentAgentId: "alice", maxPingPongTurns: 0, currentHandoffDepth: 0 });
+
+    const result = JSON.parse(
+      await tool.execute({ agentId: "alice", message: "hello" })
+    ) as { status: string };
+
+    expect(result.status).toBe("error");
+  });
+});
