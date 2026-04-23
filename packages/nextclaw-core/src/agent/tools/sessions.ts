@@ -326,6 +326,12 @@ export class SessionsHistoryTool extends Tool {
     super();
   }
 
+  private agentId: string | undefined = undefined;
+
+  setContext(ctx: { agentId?: string }): void {
+    this.agentId = ctx.agentId?.trim().toLowerCase() || undefined;
+  }
+
   get name(): string {
     return "sessions_history";
   }
@@ -350,6 +356,13 @@ export class SessionsHistoryTool extends Tool {
     const sessionKey = String(params.sessionKey ?? "").trim();
     if (!sessionKey) {
       return "Error: sessionKey is required";
+    }
+    // agentId access control
+    if (this.agentId) {
+      const normalizedKey = sessionKey.trim().toLowerCase();
+      if (!normalizedKey.startsWith(`agent:${this.agentId}:`)) {
+        return `Error: session '${sessionKey}' not found`;
+      }
     }
     let session = this.sessions.getIfExists(sessionKey);
     if (!session) {

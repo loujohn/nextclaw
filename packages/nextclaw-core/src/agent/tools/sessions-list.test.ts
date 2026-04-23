@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../../session/manager.js";
-import { SessionsListTool } from "./sessions.js";
+import { SessionsListTool, SessionsHistoryTool } from "./sessions.js";
 
 const HOME_ENV_KEY = "NEXTCLAW_HOME";
 
@@ -92,5 +92,71 @@ describe("SessionsListTool agentId filtering", () => {
     const keys = result.sessions.map((s) => s.key);
     expect(keys.every((k) => k.includes("agent:alice:"))).toBe(true);
     expect(keys.some((k) => k.includes("alice-bot"))).toBe(false);
+  });
+});
+
+describe("SessionsHistoryTool agentId access control", () => {
+  let tempHome: string;
+  let cleanup: () => void;
+  let previousHome: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env[HOME_ENV_KEY];
+    ({ tempHome, cleanup } = makeTempHome());
+    process.env[HOME_ENV_KEY] = tempHome;
+  });
+
+  afterEach(() => {
+    cleanup();
+    if (previousHome === undefined) {
+      delete process.env[HOME_ENV_KEY];
+    } else {
+      process.env[HOME_ENV_KEY] = previousHome;
+    }
+  });
+
+  it("allows reading own session when agentId is set", async () => {
+    const sessions = new SessionManager(tempHome);
+    const s = sessions.getOrCreate("agent:alice:dingtalk:acc:group:g1");
+    sessions.addMessage(s, "user", "hello");
+    sessions.save(s);
+
+    const tool = new SessionsHistoryTool(sessions);
+    tool.setContext({ agentId: "alice" });
+    const result = JSON.parse(
+      await tool.execute({ sessionKey: "agent:alice:dingtalk:acc:group:g1" })
+    ) as { messages?: unknown[]; error?: string };
+
+    expect(result.error).toBeUndefined();
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it("blocks reading another agent session when agentId is set", async () => {
+    const sessions = new SessionManager(tempHome);
+    const s = sessions.getOrCreate("agent:bob:dingtalk:acc:group:g2");
+    sessions.addMessage(s, "user", "secret");
+    sessions.save(s);
+
+    const tool = new SessionsHistoryTool(sessions);
+    tool.setContext({ agentId: "alice" });
+    const result = await tool.execute({ sessionKey: "agent:bob:dingtalk:acc:group:g2" });
+
+    expect(result).toMatch(/not found/i);
+  });
+
+  it("allows reading any session when agentId is not set (backward compat)", async () => {
+    const sessions = new SessionManager(tempHome);
+    const s = sessions.getOrCreate("agent:bob:dingtalk:acc:group:g2");
+    sessions.addMessage(s, "user", "data");
+    sessions.save(s);
+
+    const tool = new SessionsHistoryTool(sessions);
+    // No setContext call — backward compat mode (no isolation)
+    const result = JSON.parse(
+      await tool.execute({ sessionKey: "agent:bob:dingtalk:acc:group:g2" })
+    ) as { messages?: unknown[]; error?: string };
+
+    expect(result.error).toBeUndefined();
+    expect(result.messages).toHaveLength(1);
   });
 });
