@@ -104,12 +104,12 @@ export type SessionHistoryMessage = {
 
 function parseSkillName(skillFilePath: string): string {
   const raw = readFileSync(skillFilePath, "utf-8");
-  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) {
     return basename(resolve(skillFilePath, ".."));
   }
   const metadataBlock = match[1] ?? "";
-  for (const line of metadataBlock.split("\n")) {
+  for (const line of metadataBlock.split(/\r?\n/)) {
     const [key, ...rest] = line.split(":");
     if (key?.trim() === "name") {
       const value = rest.join(":").trim().replace(/^['"]|['"]$/g, "");
@@ -126,10 +126,10 @@ function parseSkillName(skillFilePath: string): string {
  */
 function ensureSkillVersion(skillFilePath: string, defaultVersion = "1.0.0"): string {
   const raw = readFileSync(skillFilePath, "utf-8");
-  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (match) {
     const metadataBlock = match[1] ?? "";
-    for (const line of metadataBlock.split("\n")) {
+    for (const line of metadataBlock.split(/\r?\n/)) {
       const [key, ...rest] = line.split(":");
       if (key?.trim() === "version") {
         const value = rest.join(":").trim().replace(/^['"]|['"]$/g, "");
@@ -138,8 +138,8 @@ function ensureSkillVersion(skillFilePath: string, defaultVersion = "1.0.0"): st
     }
     // version 字段缺失，自动注入
     const updated = raw.replace(
-      /^---\n([\s\S]*?)\n---/,
-      `---\n${metadataBlock}\nversion: ${defaultVersion}\n---`
+      /^---\r?\n([\s\S]*?)\r?\n---/,
+      `---\n${metadataBlock.replace(/\r\n/g, "\n")}\nversion: ${defaultVersion}\n---`
     );
     writeFileSync(skillFilePath, updated, "utf-8");
   }
@@ -364,7 +364,9 @@ export class NextclawEngineGateway {
       providerManager: this.providerManager,
       sessionManager: this.sessionManager,
       cronService: cronServiceOverride !== undefined ? cronServiceOverride : this.cronService,
-      restrictToWorkspace: this.config.tools.restrictToWorkspace,
+      // Employee workspaces are always sandboxed; only the global workspace
+      // respects the config flag so that platform-level agents remain unrestricted.
+      restrictToWorkspace: workspace !== this.workspaceDir ? true : this.config.tools.restrictToWorkspace,
       searchConfig: this.config.search,
       execConfig: this.config.tools.exec,
       contextConfig: this.config.agents.context,
