@@ -196,6 +196,12 @@ export class SessionsListTool extends Tool {
     super();
   }
 
+  private agentId: string | undefined = undefined;
+
+  setContext(ctx: { agentId?: string }): void {
+    this.agentId = ctx.agentId?.trim().toLowerCase() || undefined;
+  }
+
   get name(): string {
     return "sessions_list";
   }
@@ -227,10 +233,18 @@ export class SessionsListTool extends Tool {
     const activeMinutes = toInt(params.activeMinutes, 0);
     const messageLimit = Math.min(toInt(params.messageLimit, DEFAULT_MESSAGE_LIMIT), MAX_MESSAGE_LIMIT);
     const now = Date.now();
+    const agentIdFilter = this.agentId;
     const sessions = this.sessions
       .listSessions()
       .sort((a, b) => (toTimestamp(b.updated_at) ?? 0) - (toTimestamp(a.updated_at) ?? 0))
       .filter((entry) => {
+        // agentId isolation filter
+        if (agentIdFilter) {
+          const key = String(entry.key ?? "").toLowerCase();
+          if (!key.startsWith(`agent:${agentIdFilter}:`)) {
+            return false;
+          }
+        }
         if (activeMinutes > 0 && entry.updated_at) {
           const updated = Date.parse(String(entry.updated_at));
           if (Number.isFinite(updated) && now - updated > activeMinutes * 60 * 1000) {
