@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import {
-  buildChatFailureMessage,
-  formatRunStatusMeta,
   type ChatAttachmentView,
   type ChatMessageView,
   type ChatProcessTimelineEntry
@@ -9,21 +7,9 @@ import {
 import type { UploadFilesPayload } from "~~/shared/api-types";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { buildChatDisplayMessages } from "~/lib/chat-message-groups";
-import {
-  resolveInitialChatSelection,
-  shouldDeferInitialMessageLoadToWatcher
-} from "~/lib/chat-session-bootstrap";
 import { renderMarkdown, formatTime } from "~/lib/utils";
+import { useEmployeeChatStore } from "~/composables/useEmployeeChatStore";
 import StatusBadge from "~/components/StatusBadge.vue";
-import {
-  createLocalDraftChatSession,
-  isDraftChatSessionKey,
-  refreshChatAfterRun,
-  shouldCommitLocalChatSessionUpdate,
-  upsertLocalChatSession,
-  type LocalChatSessionListItem
-} from "~/lib/chat-post-run-refresh";
-import { isConversationResetCommand } from "~~/shared/chat-command";
 import {
   AlertCircle,
   Bot,
@@ -43,36 +29,6 @@ import {
   X
 } from "lucide-vue-next";
 
-type ChatSessionListItem = LocalChatSessionListItem;
-
-type SessionListPayload = {
-  ok: boolean;
-  data: {
-    items: ChatSessionListItem[];
-    nextCursor: string | null;
-  };
-};
-
-type SessionMessagesPayload = {
-  ok: boolean;
-  data: {
-    sessionKey: string;
-    items: ChatMessageView[];
-    nextCursor: string | null;
-  };
-};
-
-type StreamEvent =
-  | { event: "run_started"; data: { runId: string; sessionKey: string } }
-  | { event: "thinking"; data: { runId: string; content?: string } }
-  | { event: "tool_call"; data: { runId: string; toolCallId?: string; name: string; args: string } }
-  | { event: "tool_result"; data: { runId: string; toolCallId?: string; name: string; output: string } }
-  | { event: "reply_delta"; data: { runId: string; delta: string } }
-  | { event: "reply_final"; data: { runId: string; content: string } }
-  | { event: "run_failed"; data: { runId: string; message: string } }
-  | { event: "run_aborted"; data: { runId: string; reason: string } }
-  | { event: "done"; data: { runId: string; sessionKey: string; status: string } };
-
 function tryParseJson(raw: string): string {
   try {
     return JSON.stringify(JSON.parse(raw), null, 2);
@@ -83,155 +39,6 @@ function tryParseJson(raw: string): string {
 
 function truncateStr(s: string, max = 200): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
-}
-
-function parseSseFrame(frame: string): StreamEvent | null {
-  const lines = frame.split("\n");
-  let eventName = "";
-  const dataLines: string[] = [];
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (!line || line.startsWith(":")) {
-      continue;
-    }
-    if (line.startsWith("event:")) {
-      eventName = line.slice(6).trim();
-      continue;
-    }
-    if (line.startsWith("data:")) {
-      dataLines.push(line.slice(5).trimStart());
-    }
-  }
-  if (!eventName) {
-    return null;
-  }
-  const rawData = dataLines.join("\n");
-  const parsed = rawData ? JSON.parse(rawData) : {};
-  return { event: eventName as StreamEvent["event"], data: parsed } as StreamEvent;
-}
-
-function makeLocalId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function mergeProgressText(existing: string | undefined, incoming: string | undefined): string | undefined {
-  const nextText = incoming?.trim();
-  if (!nextText) {
-    return existing;
-  }
-  const currentText = existing?.trim();
-  if (!currentText) {
-    return incoming;
-  }
-  if (nextText === currentText) {
-    return existing;
-  }
-  if (nextText.startsWith(currentText)) {
-    return incoming;
-  }
-  if (currentText.endsWith(nextText)) {
-    return existing;
-  }
-  return `${existing}\n${incoming}`;
-}
-
-function mergeTerminalMessage(existing: string, incoming: string): string {
-  const nextText = incoming.trim();
-  if (!nextText) {
-    return existing;
-  }
-  const currentText = existing.trim();
-  if (!currentText) {
-    return nextText;
-  }
-  if (currentText.includes(nextText)) {
-    return currentText;
-  }
-  return `${currentText}\n\n${nextText}`;
-}
-
-function upsertProcessTimelineEntry(message: ChatMessageView, entry: ChatProcessTimelineEntry): ChatMessageView {
-  const currentTimeline = message.processTimeline ?? [];
-  const existingIndex = currentTimeline.findIndex((item) => item.id === entry.id);
-  if (existingIndex === -1) {
-    return {
-      ...message,
-      processTimeline: [...currentTimeline, entry]
-    };
-  }
-  const nextTimeline = [...currentTimeline];
-  nextTimeline[existingIndex] = {
-    ...nextTimeline[existingIndex],
-    ...entry
-  };
-  return {
-    ...message,
-    processTimeline: nextTimeline
-  };
-}
-
-function upsertStreamingReplyTimeline(message: ChatMessageView, content: string): ChatMessageView {
-  const trimmedContent = content.trim();
-  if (!trimmedContent) {
-    return message;
-  }
-  return upsertProcessTimelineEntry(message, {
-    id: `${message.id ?? "assistant"}-reply-live`,
-    kind: "reply",
-    timestamp: new Date().toISOString(),
-    content: trimmedContent
-  });
-}
-
-function upsertStreamingReasoningTimeline(message: ChatMessageView, content: string): ChatMessageView {
-  const trimmedContent = content.trim();
-  if (!trimmedContent) {
-    return message;
-  }
-  return {
-    ...message,
-    processTimeline: [
-      ...(message.processTimeline ?? []),
-      {
-        id: makeLocalId(`${message.id ?? "assistant"}-reasoning`),
-        kind: "reasoning",
-        timestamp: new Date().toISOString(),
-        content: trimmedContent
-      }
-    ]
-  };
-}
-
-function appendStreamingToolCallTimeline(message: ChatMessageView, params: {
-  toolCallId?: string;
-  name: string;
-  args: string;
-}): ChatMessageView {
-  return upsertProcessTimelineEntry(message, {
-    id: params.toolCallId || makeLocalId("tool-call-timeline"),
-    kind: "tool_call",
-    timestamp: new Date().toISOString(),
-    name: params.name,
-    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-    arguments: params.args
-  });
-}
-
-function appendStreamingToolResultTimeline(message: ChatMessageView, params: {
-  toolCallId?: string;
-  name: string;
-  output: string;
-}): ChatMessageView {
-  return upsertProcessTimelineEntry(message, {
-    id: params.toolCallId
-      ? `${params.toolCallId}-result`
-      : makeLocalId("tool-result-timeline"),
-    kind: "tool_result",
-    timestamp: new Date().toISOString(),
-    name: params.name,
-    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-    output: params.output
-  });
 }
 
 function processEntryLabel(entry: ChatProcessTimelineEntry): string {
@@ -278,7 +85,7 @@ function processEntryUsesMarkdown(entry: ChatProcessTimelineEntry): boolean {
     || /(^|\n)#{1,6}\s/.test(body)
     || /(^|\n)\s*[-*+]\s/.test(body)
     || /(^|\n)\s*\d+\.\s/.test(body)
-    || /\[[^\]]+\]\([^\)]+\)/.test(body)
+    || /\[[^\]]+\]\([^)]+\)/.test(body)
     || /(^|\n)\s*>\s/.test(body)
     || /\*\*[^*]+\*\*/.test(body)
     || /`[^`]+`/.test(body)
@@ -323,38 +130,21 @@ function toggleProcessTimeline(messageKey: string) {
 
 const route = useRoute();
 const employeeId = computed(() => String(route.params.id));
+const chatStore = useEmployeeChatStore(employeeId);
 const draft = ref("");
-const sending = ref(false);
-const loadingSessions = ref(false);
-const loadingMoreSessions = ref(false);
-const loadingMessages = ref(false);
-const loadingMore = ref(false);
-const errorMessage = ref("");
-const messages = ref<ChatMessageView[]>([]);
-const sessions = ref<ChatSessionListItem[]>([]);
-const sessionNextCursor = ref<string | null>(null);
-const activeSessionKey = ref("");
 const collapsedProcessTimelineKeys = ref<Set<string>>(new Set());
-const nextCursor = ref<string | null>(null);
-const activeRunId = ref("");
 const threadEl = ref<HTMLElement | null>(null);
 const sessionListEl = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
-const streamAbortController = ref<AbortController | null>(null);
-const messageLoadAbortController = ref<AbortController | null>(null);
-const streamingAssistantId = ref<string | null>(null);
 const shouldStickToBottom = ref(true);
 const restoringHistoryScroll = ref(false);
-const suppressNextSessionLoad = ref(false);
-const messageLoadVersion = ref(0);
-const pendingUploads = ref<ChatAttachmentView[]>([]);
 const uploadingFiles = ref(false);
 const deletingUploadPaths = ref<Set<string>>(new Set());
 const uploadDeleteNotice = ref("");
+const localErrorMessage = ref("");
 let uploadDeleteNoticeTimer: ReturnType<typeof setTimeout> | null = null;
-const SESSION_PAGE_SIZE = 30;
-const { data: employee, refresh: refreshEmployee } = useLazyFetch<{
+const { data: employee } = useLazyFetch<{
   ok: boolean;
   data: {
     id: string;
@@ -362,19 +152,33 @@ const { data: employee, refresh: refreshEmployee } = useLazyFetch<{
     code: string;
   };
 }>(() => `/api/employees/${employeeId.value}/identity`);
-const { refresh: refreshRuns } = useLazyFetch(`/api/employees/${employeeId.value}/runs`, {
-  key: computed(() => `employee-runs:${employeeId.value}`)
+
+const chatState = computed(() => chatStore.state.value);
+const currentSessionState = computed(() => chatStore.currentSessionState.value);
+const sending = computed(() => {
+  const runPhase = currentSessionState.value?.runPhase;
+  return runPhase === "preparing" || runPhase === "streaming";
 });
+const loadingSessions = computed(() => chatState.value.loadingSessions);
+const loadingMoreSessions = computed(() => chatState.value.loadingMoreSessions);
+const loadingMessages = computed(() => currentSessionState.value?.loadStatus === "loading");
+const loadingMore = computed(() => currentSessionState.value?.loadingMoreMessages ?? false);
+const messages = computed(() => chatStore.displayMessages.value);
+const sessions = computed(() => chatState.value.sessions);
+const activeSessionKey = computed(() => chatState.value.selectedSessionKey);
+const nextCursor = computed(() => currentSessionState.value?.nextCursor ?? null);
+const pendingUploads = computed(() => chatState.value.pendingUploads);
+const errorMessage = computed(() => localErrorMessage.value || currentSessionState.value?.lastError || "");
 
 const assistantLoadingVisible = computed(() => {
   if (!sending.value) {
     return false;
   }
-  const assistantId = streamingAssistantId.value;
+  const assistantId = currentSessionState.value?.streamingAssistantId;
   if (!assistantId) {
     return true;
   }
-  const assistantMessage = messages.value.find((message) => message.id === assistantId);
+  const assistantMessage = messages.value.find((message: ChatMessageView) => message.id === assistantId);
   if (!assistantMessage) {
     return true;
   }
@@ -438,32 +242,15 @@ async function removePendingUpload(relativePath: string) {
       method: "DELETE",
       body: { relativePath }
     });
-    pendingUploads.value = pendingUploads.value.filter((item) => item.relativePath !== relativePath);
+    chatStore.removePendingUpload(relativePath);
     setUploadDeleteNotice(result.data.deleted ? "已删除待发送文件" : "文件不存在，已从待发送列表移除");
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error);
+    localErrorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
     const updatedDeleting = new Set(deletingUploadPaths.value);
     updatedDeleting.delete(relativePath);
     deletingUploadPaths.value = updatedDeleting;
   }
-}
-
-function invalidateMessageLoad() {
-  messageLoadVersion.value += 1;
-  messageLoadAbortController.value?.abort();
-  messageLoadAbortController.value = null;
-  loadingMessages.value = false;
-}
-
-function isStaleMessageLoad(params: {
-  sessionKey: string;
-  employeeId: string;
-  version: number;
-}): boolean {
-  return params.version !== messageLoadVersion.value
-    || params.employeeId !== employeeId.value
-    || params.sessionKey !== activeSessionKey.value;
 }
 
 function openAttachmentWorkspace(attachment: ChatAttachmentView) {
@@ -487,19 +274,15 @@ async function handleFileSelection(event: Event) {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
   uploadingFiles.value = true;
-  errorMessage.value = "";
+  localErrorMessage.value = "";
   try {
     const payload = await $fetch<UploadFilesPayload>(`/api/employees/${employeeId.value}/upload-files`, {
       method: "POST",
       body: formData
     });
-    const existing = new Set(pendingUploads.value.map((item) => item.relativePath));
-    pendingUploads.value = [
-      ...pendingUploads.value,
-      ...payload.data.items.filter((item) => !existing.has(item.relativePath))
-    ];
+    chatStore.appendPendingUploads(payload.data.items);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error);
+    localErrorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
     uploadingFiles.value = false;
     input.value = "";
@@ -528,82 +311,8 @@ function handleSessionListScroll() {
   }
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
   if (distanceFromBottom <= 48) {
-    void loadMoreSessions();
+    void chatStore.loadMoreSessions();
   }
-}
-
-function resetStreamingAssistant() {
-  streamingAssistantId.value = null;
-}
-
-function ensureStreamingAssistantMessage(): ChatMessageView {
-  const existing = streamingAssistantId.value
-    ? messages.value.find((message) => message.id === streamingAssistantId.value)
-    : null;
-  if (existing) {
-    return existing;
-  }
-  const nextMessage: ChatMessageView = {
-    id: makeLocalId("assistant"),
-    role: "assistant",
-    content: "",
-    timestamp: new Date().toISOString()
-  };
-  streamingAssistantId.value = nextMessage.id ?? null;
-  messages.value = [...messages.value, nextMessage];
-  return nextMessage;
-}
-
-function replaceMessage(next: ChatMessageView) {
-  messages.value = messages.value.map((message) => (message.id === next.id ? next : message));
-}
-
-function removeEmptyStreamingAssistantMessage() {
-  const assistantId = streamingAssistantId.value;
-  if (!assistantId) {
-    return;
-  }
-  const target = messages.value.find((message) => message.id === assistantId);
-  if (!target) {
-    return;
-  }
-  const hasVisibleContent = Boolean(target.content.trim())
-    || Boolean(target.reasoning?.trim())
-    || Boolean(target.toolCalls?.length)
-    || Boolean(target.processTimeline?.length)
-    || Boolean(target.replyStatus);
-  if (!hasVisibleContent) {
-    messages.value = messages.value.filter((message) => message.id !== assistantId);
-  }
-}
-
-function applyStreamingTerminalState(status: string, content?: string) {
-  const assistantMessage = ensureStreamingAssistantMessage();
-  const nextMessage = content?.trim()
-    ? upsertStreamingReplyTimeline({
-        ...assistantMessage,
-        content: mergeTerminalMessage(assistantMessage.content, content)
-      }, mergeTerminalMessage(assistantMessage.content, content))
-    : assistantMessage;
-  replaceMessage({
-    ...nextMessage,
-    ...(content?.trim() ? { content: mergeTerminalMessage(assistantMessage.content, content) } : {}),
-    replyStatus: formatRunStatusMeta(status)
-  });
-}
-
-function appendLocalTerminalMessage(status: string, content: string) {
-  messages.value = [
-    ...messages.value,
-    {
-      id: makeLocalId("assistant-terminal"),
-      role: "assistant",
-      content,
-      replyStatus: formatRunStatusMeta(status),
-      timestamp: new Date().toISOString()
-    }
-  ];
-  scrollToBottom(true);
 }
 
 function shouldRenderAssistantMessage(message: ChatMessageView & {
@@ -621,548 +330,52 @@ function shouldRenderAssistantMessage(message: ChatMessageView & {
   if (hasVisibleContent) {
     return true;
   }
-  return !(assistantLoadingVisible.value && message.id === streamingAssistantId.value);
+  return !(assistantLoadingVisible.value && message.id === currentSessionState.value?.streamingAssistantId);
 }
 
-function getLatestSessionPreviewFallback(fallback: string): string {
-  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
-    const candidate = messages.value[index];
-    if (candidate?.content?.trim()) {
-      return candidate.content;
-    }
-  }
-  return fallback;
-}
-
-function syncLocalSessionAfterRun(params: {
-  sessionKey: string;
-  previousSessionKey?: string;
-  titleSeed: string;
-  messageCountIncrement: number;
-}) {
-  if (!params.sessionKey) {
-    return;
-  }
-  sessions.value = upsertLocalChatSession({
-    sessions: sessions.value,
-    sessionKey: params.sessionKey,
-    previousSessionKey: params.previousSessionKey,
-    latestContent: getLatestSessionPreviewFallback(params.titleSeed),
-    occurredAt: new Date().toISOString(),
-    titleSeed: params.titleSeed,
-    messageCountIncrement: params.messageCountIncrement
-  });
-}
-
-function mergeSessionPage(existing: ChatSessionListItem[], incoming: ChatSessionListItem[]): ChatSessionListItem[] {
-  if (existing.length === 0) {
-    return incoming;
-  }
-  const existingKeys = new Set(existing.map((session) => session.sessionKey));
-  return [...existing, ...incoming.filter((session) => !existingKeys.has(session.sessionKey))];
-}
-
-function mergeLatestSessionPage(existing: ChatSessionListItem[], incoming: ChatSessionListItem[]): ChatSessionListItem[] {
-  if (existing.length === 0) {
-    return incoming;
-  }
-  const nextByKey = new Map(incoming.map((session) => [session.sessionKey, session]));
-  const preserved = existing.filter((session) => !nextByKey.has(session.sessionKey));
-  return [...incoming, ...preserved];
-}
-
-function buildSessionSyncToken(session?: ChatSessionListItem | null): string {
-  if (!session) {
-    return "";
-  }
-  return [session.updatedAt, String(session.messageCount), session.lastMessageAt ?? ""].join("|");
-}
-
-async function fetchSessions(options?: { append?: boolean; preserveExisting?: boolean }): Promise<ChatSessionListItem[]> {
-  const append = options?.append ?? false;
-  const preserveExisting = options?.preserveExisting ?? false;
-  if (append && !sessionNextCursor.value) {
-    return [];
-  }
-  if (append) {
-    loadingMoreSessions.value = true;
-  } else {
-    loadingSessions.value = true;
-  }
-  try {
-    const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE) });
-    if (append && sessionNextCursor.value) {
-      query.set("before", sessionNextCursor.value);
-    }
-    const response = await $fetch<SessionListPayload>(`/api/employees/${employeeId.value}/sessions?${query.toString()}`);
-    sessionNextCursor.value = response.data.nextCursor;
-    sessions.value = append
-      ? mergeSessionPage(sessions.value, response.data.items)
-      : preserveExisting
-        ? mergeLatestSessionPage(sessions.value, response.data.items)
-        : response.data.items;
-    return response.data.items;
-  } finally {
-    loadingSessions.value = false;
-    loadingMoreSessions.value = false;
-  }
-}
-
-async function syncChatWithExternalRuns() {
-  if (
-    sending.value
-    || loadingSessions.value
-    || loadingMessages.value
-    || loadingMore.value
-    || loadingMoreSessions.value
-  ) {
-    return;
-  }
-
-  const activeSessionBeforeSync = sessions.value.find((session) => session.sessionKey === activeSessionKey.value) ?? null;
-  const activeSessionTokenBeforeSync = buildSessionSyncToken(activeSessionBeforeSync);
-  await fetchSessions({ preserveExisting: true });
-
-  if (!activeSessionKey.value || isDraftChatSessionKey(activeSessionKey.value)) {
-    return;
-  }
-
-  const activeSessionAfterSync = sessions.value.find((session) => session.sessionKey === activeSessionKey.value) ?? null;
-  const activeSessionTokenAfterSync = buildSessionSyncToken(activeSessionAfterSync);
-  if (activeSessionTokenAfterSync && activeSessionTokenAfterSync !== activeSessionTokenBeforeSync) {
-    await loadMessages(activeSessionKey.value);
-  }
-}
 
 function handleChatVisibilityChange() {
   if (!document.hidden) {
-    void syncChatWithExternalRuns();
+    void chatStore.syncChatWithExternalRuns();
   }
 }
-
-async function loadMoreSessions() {
-  if (loadingSessions.value || loadingMoreSessions.value || !sessionNextCursor.value) {
-    return;
-  }
-  await fetchSessions({ append: true });
-}
-
-async function createSession(selectAfterCreate = true): Promise<string> {
-  const existingDraft = sessions.value.find((session) => session.isDraft);
-  const draft = existingDraft ?? createLocalDraftChatSession(new Date().toISOString());
-  if (!existingDraft) {
-    sessions.value = [draft, ...sessions.value];
-  }
-  invalidateMessageLoad();
-  messages.value = [];
-  nextCursor.value = null;
-  errorMessage.value = "";
-  if (selectAfterCreate) {
-    activeSessionKey.value = draft.sessionKey;
-  }
-  return draft.sessionKey;
-}
-
-async function loadMessages(sessionKey: string, before?: string | null) {
-  if (!sessionKey || isDraftChatSessionKey(sessionKey)) {
-    if (!before) {
-      invalidateMessageLoad();
-      messages.value = [];
-      nextCursor.value = null;
-    }
-    return;
-  }
-  const requestEmployeeId = employeeId.value;
-  const requestVersion = before ? messageLoadVersion.value : messageLoadVersion.value + 1;
-  let controller: AbortController | null = null;
-  const previousScrollTop = before ? threadEl.value?.scrollTop ?? 0 : 0;
-  const previousScrollHeight = before ? threadEl.value?.scrollHeight ?? 0 : 0;
-  if (before) {
-    loadingMore.value = true;
-  } else {
-    messageLoadAbortController.value?.abort();
-    controller = new AbortController();
-    messageLoadAbortController.value = controller;
-    messageLoadVersion.value = requestVersion;
-    loadingMessages.value = true;
-  }
-  try {
-    const query = new URLSearchParams({ limit: "50" });
-    if (before) {
-      query.set("before", before);
-    }
-    const response = await $fetch<SessionMessagesPayload>(
-      `/api/employees/${requestEmployeeId}/sessions/${encodeURIComponent(sessionKey)}/messages?${query.toString()}`,
-      controller ? { signal: controller.signal } : undefined
-    );
-    if (isStaleMessageLoad({
-      sessionKey,
-      employeeId: requestEmployeeId,
-      version: requestVersion
-    })) {
-      return;
-    }
-    nextCursor.value = response.data.nextCursor;
-    messages.value = before
-      ? [...response.data.items, ...messages.value]
-      : response.data.items;
-    if (before) {
-      restoringHistoryScroll.value = true;
-      await nextTick();
-      if (threadEl.value) {
-        const scrollDelta = threadEl.value.scrollHeight - previousScrollHeight;
-        threadEl.value.scrollTop = previousScrollTop + scrollDelta;
-      }
-      restoringHistoryScroll.value = false;
-      syncStickToBottomState();
-    } else {
-      scrollToBottom(true);
-    }
-  } catch (error) {
-    if (controller?.signal.aborted) {
-      return;
-    }
-    throw error;
-  } finally {
-    if (!before && messageLoadAbortController.value === controller) {
-      messageLoadAbortController.value = null;
-      loadingMessages.value = false;
-    }
-    loadingMore.value = false;
-  }
-}
-
-async function initializeChat() {
-  errorMessage.value = "";
-  const items = await fetchSessions();
-  const previousSessionKey = activeSessionKey.value;
-  const initialSelection = resolveInitialChatSelection({
-    activeSessionKey: previousSessionKey,
-    sessions: items
-  });
-  activeSessionKey.value = initialSelection.sessionKey;
-  if (!initialSelection.shouldLoadMessages) {
-    messages.value = [];
-    nextCursor.value = null;
-    return;
-  }
-  if (shouldDeferInitialMessageLoadToWatcher({
-    previousSessionKey,
-    nextSessionKey: initialSelection.sessionKey,
-    shouldLoadMessages: initialSelection.shouldLoadMessages
-  })) {
-    return;
-  }
-  await loadMessages(initialSelection.sessionKey);
-}
-
-async function refreshAfterRun() {
-  const failedRefreshes = await refreshChatAfterRun({
-    refreshEmployee,
-    refreshRuns
-  });
-
-  if (failedRefreshes.length > 0) {
-    console.warn("[employee-chat] post-run partial refresh failed", {
-      employeeId: employeeId.value,
-      failedRefreshes
-    });
-    if (!errorMessage.value) {
-      errorMessage.value = `消息已发送，但${failedRefreshes.join("、")}刷新失败`;
-    }
-  }
-}
-
 async function loadOlderMessages() {
   if (!activeSessionKey.value || !nextCursor.value || loadingMore.value) {
     return;
   }
-  await loadMessages(activeSessionKey.value, nextCursor.value);
+  const previousScrollTop = threadEl.value?.scrollTop ?? 0;
+  const previousScrollHeight = threadEl.value?.scrollHeight ?? 0;
+  await chatStore.loadOlderMessages();
+  restoringHistoryScroll.value = true;
+  await nextTick();
+  if (threadEl.value) {
+    const scrollDelta = threadEl.value.scrollHeight - previousScrollHeight;
+    threadEl.value.scrollTop = previousScrollTop + scrollDelta;
+  }
+  restoringHistoryScroll.value = false;
+  syncStickToBottomState();
 }
 
-// eslint-disable-next-line max-lines-per-function
+async function createSession() {
+  localErrorMessage.value = "";
+  await chatStore.createSession(true);
+}
+
 async function sendMessage(input = draft.value) {
   const message = input.trim();
-  if (!message || sending.value || uploadingFiles.value) {
+  if (!message || uploadingFiles.value) {
     return;
   }
-  if (isConversationResetCommand(message)) {
-    draft.value = "";
-    pendingUploads.value = [];
-    errorMessage.value = "";
-    resetStreamingAssistant();
-    if (textareaEl.value) {
-      textareaEl.value.style.height = "auto";
-    }
-    await createSession(true);
-    return;
-  }
-  const attachments = pendingUploads.value.map((item) => ({ ...item }));
-  pendingUploads.value = [];
-  const draftSessionKey = isDraftChatSessionKey(activeSessionKey.value) ? activeSessionKey.value : "";
-  const persistedActiveSessionKey = draftSessionKey ? "" : activeSessionKey.value;
-  const initialMessageCount = messages.value.length;
-  sending.value = true;
-  errorMessage.value = "";
-  resetStreamingAssistant();
-  const optimisticMessage: ChatMessageView = {
-    id: makeLocalId("user"),
-    role: "user",
-    content: message,
-    ...(attachments.length > 0 ? { attachments } : {}),
-    timestamp: new Date().toISOString()
-  };
-  messages.value = [...messages.value, optimisticMessage];
+  localErrorMessage.value = "";
   draft.value = "";
   if (textareaEl.value) {
     textareaEl.value.style.height = "auto";
   }
-
-  const controller = new AbortController();
-  streamAbortController.value = controller;
-  let finalSessionKey = persistedActiveSessionKey;
-  let terminalStatus: string | null = null;
-  let acceptedByServer = false;
-
-  try {
-    const response = await fetch(`/api/employees/${employeeId.value}/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream"
-      },
-      body: JSON.stringify({
-        message,
-        attachments,
-        ...(persistedActiveSessionKey ? { sessionKey: persistedActiveSessionKey } : {})
-      }),
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      throw new Error((await response.text()).trim() || `HTTP ${response.status}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("流式响应不可用");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const consumeEvent = async (streamEvent: StreamEvent) => {
-      switch (streamEvent.event) {
-        case "run_started": {
-          activeRunId.value = streamEvent.data.runId;
-          finalSessionKey = streamEvent.data.sessionKey;
-          acceptedByServer = true;
-          break;
-        }
-        case "thinking": {
-          const assistantMessage = ensureStreamingAssistantMessage();
-          const nextReasoning = mergeProgressText(assistantMessage.reasoning, streamEvent.data.content);
-          replaceMessage({
-            ...upsertStreamingReasoningTimeline(
-              assistantMessage,
-              streamEvent.data.content ?? ""
-            ),
-            reasoning: nextReasoning
-          });
-          break;
-        }
-        case "tool_call": {
-          const assistantMessage = ensureStreamingAssistantMessage();
-          const toolCalls = assistantMessage.toolCalls ?? [];
-          replaceMessage({
-            ...appendStreamingToolCallTimeline(assistantMessage, streamEvent.data),
-            toolCalls: [
-              ...toolCalls,
-              {
-                id: streamEvent.data.toolCallId ?? makeLocalId("tool-call"),
-                name: streamEvent.data.name,
-                arguments: streamEvent.data.args
-              }
-            ]
-          });
-          break;
-        }
-        case "tool_result": {
-          const assistantMessage = ensureStreamingAssistantMessage();
-          messages.value = [
-            ...messages.value.filter((message) => message.id !== assistantMessage.id),
-            appendStreamingToolResultTimeline(assistantMessage, streamEvent.data)
-          ];
-          break;
-        }
-        case "reply_delta": {
-          const assistantMessage = ensureStreamingAssistantMessage();
-          const nextContent = `${assistantMessage.content}${streamEvent.data.delta}`;
-          replaceMessage({
-            ...upsertStreamingReplyTimeline(assistantMessage, nextContent),
-            content: nextContent
-          });
-          scrollToBottom();
-          break;
-        }
-        case "reply_final": {
-          const assistantMessage = ensureStreamingAssistantMessage();
-          replaceMessage({
-            ...upsertStreamingReplyTimeline(assistantMessage, streamEvent.data.content),
-            content: streamEvent.data.content
-          });
-          break;
-        }
-        case "run_failed": {
-          terminalStatus = "failed";
-          const failureMessage = buildChatFailureMessage(streamEvent.data.message);
-          errorMessage.value = failureMessage;
-          applyStreamingTerminalState("failed", failureMessage);
-          break;
-        }
-        case "run_aborted": {
-          terminalStatus = "aborted";
-          errorMessage.value = "本次对话已取消";
-          applyStreamingTerminalState("aborted", "本次对话已取消");
-          break;
-        }
-        case "done": {
-          terminalStatus = streamEvent.data.status || terminalStatus;
-          if (streamEvent.data.status) {
-            applyStreamingTerminalState(streamEvent.data.status);
-          }
-          finalSessionKey = streamEvent.data.sessionKey || finalSessionKey;
-          break;
-        }
-      }
-    };
-
-    try {
-      let reading = true;
-      while (reading) {
-        const { done, value } = await reader.read();
-        if (done) {
-          reading = false;
-          continue;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf("\n\n");
-        while (boundary !== -1) {
-          const frame = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          const parsed = parseSseFrame(frame);
-          if (parsed) {
-            await consumeEvent(parsed);
-          }
-          boundary = buffer.indexOf("\n\n");
-        }
-      }
-      if (buffer.trim()) {
-        const parsed = parseSseFrame(buffer);
-        if (parsed) {
-          await consumeEvent(parsed);
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    if (finalSessionKey && activeSessionKey.value !== finalSessionKey) {
-      suppressNextSessionLoad.value = true;
-      activeSessionKey.value = finalSessionKey;
-    }
-    if (acceptedByServer) {
-      pendingUploads.value = [];
-    }
-    removeEmptyStreamingAssistantMessage();
-    if (shouldCommitLocalChatSessionUpdate(terminalStatus)) {
-      syncLocalSessionAfterRun({
-        sessionKey: finalSessionKey,
-        previousSessionKey: draftSessionKey || undefined,
-        titleSeed: message,
-        messageCountIncrement: Math.max(0, messages.value.length - initialMessageCount)
-      });
-      await refreshAfterRun();
-    } else {
-      const sessionKeyToReload = finalSessionKey || persistedActiveSessionKey;
-      if (sessionKeyToReload) {
-        await fetchSessions();
-        if (activeSessionKey.value !== sessionKeyToReload) {
-          suppressNextSessionLoad.value = true;
-          activeSessionKey.value = sessionKeyToReload;
-        }
-        await loadMessages(sessionKeyToReload);
-      } else {
-        messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
-      }
-      if (acceptedByServer) {
-        pendingUploads.value = [];
-      }
-    }
-  } catch (error) {
-    if (controller.signal.aborted) {
-      const sessionKeyToRestore = finalSessionKey || persistedActiveSessionKey;
-      if (sessionKeyToRestore) {
-        await fetchSessions();
-        await loadMessages(sessionKeyToRestore);
-      } else {
-        messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
-      }
-      if (!acceptedByServer) {
-        pendingUploads.value = attachments;
-      }
-      if (acceptedByServer) {
-        pendingUploads.value = [];
-      }
-      if (!errorMessage.value) {
-        errorMessage.value = "本次对话已取消";
-      }
-    } else {
-      const failureMessage = buildChatFailureMessage(error instanceof Error ? error.message : String(error));
-      errorMessage.value = failureMessage;
-      const sessionKeyToRestore = finalSessionKey || persistedActiveSessionKey;
-      if (sessionKeyToRestore) {
-        await fetchSessions();
-        await loadMessages(sessionKeyToRestore);
-        if (!acceptedByServer) {
-          appendLocalTerminalMessage("failed", failureMessage);
-        }
-      } else {
-        messages.value = messages.value.filter((item) => item.id !== optimisticMessage.id);
-        appendLocalTerminalMessage("failed", failureMessage);
-      }
-      if (!acceptedByServer) {
-        pendingUploads.value = attachments;
-      }
-      if (acceptedByServer) {
-        pendingUploads.value = [];
-      }
-    }
-  } finally {
-    removeEmptyStreamingAssistantMessage();
-    sending.value = false;
-    activeRunId.value = "";
-    streamAbortController.value = null;
-    resetStreamingAssistant();
-  }
+  await chatStore.sendMessage(message);
 }
 
 async function cancelMessage() {
-  if (!activeRunId.value) {
-    streamAbortController.value?.abort();
-    return;
-  }
-  try {
-    const result = await $fetch<{ ok: boolean; data: { stopped: boolean } }>(
-      `/api/employees/${employeeId.value}/chat/${activeRunId.value}/cancel`,
-      { method: "POST" }
-    );
-    if (!result.data.stopped) {
-      streamAbortController.value?.abort();
-    }
-  } catch {
-    streamAbortController.value?.abort();
-  }
+  await chatStore.cancelRun();
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -1179,42 +392,25 @@ function autoResize(e: Event) {
 }
 
 function selectSession(sessionKey: string) {
-  if (sending.value || sessionKey === activeSessionKey.value) {
-    return;
-  }
-  activeSessionKey.value = sessionKey;
+  localErrorMessage.value = "";
+  void chatStore.selectSession(sessionKey);
 }
 
 onMounted(() => {
-  void initializeChat();
+  void chatStore.initializeChat();
   document.addEventListener("visibilitychange", handleChatVisibilityChange);
 });
 
 onBeforeUnmount(() => {
-  invalidateMessageLoad();
   document.removeEventListener("visibilitychange", handleChatVisibilityChange);
+  if (uploadDeleteNoticeTimer) {
+    clearTimeout(uploadDeleteNoticeTimer);
+  }
 });
 
 watch(() => employeeId.value, () => {
-  invalidateMessageLoad();
-  activeSessionKey.value = "";
-  messages.value = [];
-  sessions.value = [];
-  sessionNextCursor.value = null;
-  nextCursor.value = null;
-  void initializeChat();
-});
-
-watch(activeSessionKey, async (sessionKey, previous) => {
-  if (!sessionKey || sessionKey === previous) {
-    return;
-  }
-  invalidateMessageLoad();
-  if (suppressNextSessionLoad.value) {
-    suppressNextSessionLoad.value = false;
-    return;
-  }
-  await loadMessages(sessionKey);
+  localErrorMessage.value = "";
+  void chatStore.initializeChat();
 });
 
 watch(messages, () => {
@@ -1233,7 +429,7 @@ watch(messages, () => {
           <span class="section-label">会话</span>
           <h2 class="mt-0.5 text-lg font-semibold">聊天会话</h2>
         </div>
-        <button class="btn-secondary rounded-xl px-3" :disabled="sending" @click="createSession()">
+        <button class="btn-secondary rounded-xl px-3" @click="createSession()">
           <Plus class="h-3.5 w-3.5" />
           新建
         </button>
@@ -1254,7 +450,6 @@ watch(messages, () => {
           :key="session.sessionKey"
           class="w-full rounded-2xl border px-3 py-2.5 text-left transition-colors"
           :class="session.sessionKey === activeSessionKey ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'"
-          :disabled="sending"
           @click="selectSession(session.sessionKey)"
         >
           <div class="flex items-start gap-2">
