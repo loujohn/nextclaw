@@ -1,0 +1,221 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SessionManager } from "../../session/manager.js";
+import { SessionsListTool, SessionsHistoryTool } from "./sessions.js";
+
+const HOME_ENV_KEY = "NEXTCLAW_HOME";
+
+function makeTempHome(): { tempHome: string; cleanup: () => void } {
+  const tempHome = mkdtempSync(join(tmpdir(), "nextclaw-sessions-list-test-"));
+  return {
+    tempHome,
+    cleanup: () => rmSync(tempHome, { recursive: true, force: true })
+  };
+}
+
+describe("SessionsListTool agentId filtering", () => {
+  let tempHome: string;
+  let cleanup: () => void;
+  let previousHome: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env[HOME_ENV_KEY];
+    ({ tempHome, cleanup } = makeTempHome());
+    process.env[HOME_ENV_KEY] = tempHome;
+  });
+
+  afterEach(() => {
+    cleanup();
+    if (previousHome === undefined) {
+      delete process.env[HOME_ENV_KEY];
+    } else {
+      process.env[HOME_ENV_KEY] = previousHome;
+    }
+  });
+
+  function seedSession(sessions: SessionManager, key: string): void {
+    const s = sessions.getOrCreate(key);
+    sessions.addMessage(s, "user", "hello");
+    sessions.save(s);
+  }
+
+  it("returns all sessions when no agentId is set", async () => {
+    const sessions = new SessionManager(tempHome);
+    seedSession(sessions, "agent:alice:dingtalk:acc:group:g1");
+    seedSession(sessions, "agent:bob:dingtalk:acc:group:g2");
+
+    const tool = new SessionsListTool(sessions);
+    const result = JSON.parse(await tool.execute({})) as { sessions: Array<{ key: string }> };
+
+    const keys = result.sessions.map((s) => s.key);
+    expect(keys.some((k) => k.includes("alice"))).toBe(true);
+    expect(keys.some((k) => k.includes("bob"))).toBe(true);
+  });
+
+  it("returns only own sessions when agentId is set", async () => {
+    const sessions = new SessionManager(tempHome);
+    seedSession(sessions, "agent:alice:dingtalk:acc:group:g1");
+    seedSession(sessions, "agent:bob:dingtalk:acc:group:g2");
+
+    const tool = new SessionsListTool(sessions);
+    tool.setContext({ agentId: "alice" });
+    const result = JSON.parse(await tool.execute({})) as { sessions: Array<{ key: string }> };
+
+    const keys = result.sessions.map((s) => s.key);
+    expect(keys.some((k) => k.includes("alice"))).toBe(true);
+    expect(keys.some((k) => k.includes("bob"))).toBe(false);
+  });
+
+  it("agentId filter is case-insensitive", async () => {
+    const sessions = new SessionManager(tempHome);
+    seedSession(sessions, "agent:alice:dingtalk:acc:group:g1");
+
+    const tool = new SessionsListTool(sessions);
+    tool.setContext({ agentId: "ALICE" });
+    const result = JSON.parse(await tool.execute({})) as { sessions: Array<{ key: string }> };
+
+    expect(result.sessions.length).toBe(1);
+  });
+
+  it("does not leak a session whose agentId is a prefix of the filter agentId", async () => {
+    // guard against prefix false-positive: "alice" must not match "alice-bot"
+    const sessions = new SessionManager(tempHome);
+    seedSession(sessions, "agent:alice:dingtalk:acc:group:g1");
+    seedSession(sessions, "agent:alice-bot:dingtalk:acc:group:g2");
+
+    const tool = new SessionsListTool(sessions);
+    tool.setContext({ agentId: "alice" });
+    const result = JSON.parse(await tool.execute({})) as { sessions: Array<{ key: string }> };
+
+    const keys = result.sessions.map((s) => s.key);
+    expect(keys.every((k) => k.includes("agent:alice:"))).toBe(true);
+    expect(keys.some((k) => k.includes("alice-bot"))).toBe(false);
+  });
+});
+
+describe("SessionsHistoryTool agentId access control", () => {
+  let tempHome: string;
+  let cleanup: () => void;
+  let previousHome: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env[HOME_ENV_KEY];
+    ({ tempHome, cleanup } = makeTempHome());
+    process.env[HOME_ENV_KEY] = tempHome;
+  });
+
+  afterEach(() => {
+    cleanup();
+    if (previousHome === undefined) {
+      delete process.env[HOME_ENV_KEY];
+    } else {
+      process.env[HOME_ENV_KEY] = previousHome;
+    }
+  });
+
+  it("allows reading own session when agentId is set", async () => {
+    const sessions = new SessionManager(tempHome);
+    const s = sessions.getOrCreate("agent:alice:dingtalk:acc:group:g1");
+    sessions.addMessage(s, "user", "hello");
+    sessions.save(s);
+
+    const tool = new SessionsHistoryTool(sessions);
+    tool.setContext({ agentId: "alice" });
+    const result = JSON.parse(
+      await tool.execute({ sessionKey: "agent:alice:dingtalk:acc:group:g1" })
+    ) as { messages?: unknown[]; error?: string };
+
+    expect(result.error).toBeUndefined();
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it("blocks reading another agent session when agentId is set", async () => {
+    const sessions = new SessionManager(tempHome);
+    const s = sessions.getOrCreate("agent:bob:dingtalk:acc:group:g2");
+    sessions.addMessage(s, "user", "secret");
+    sessions.save(s);
+
+    const tool = new SessionsHistoryTool(sessions);
+    tool.setContext({ agentId: "alice" });
+    const result = await tool.execute({ sessionKey: "agent:bob:dingtalk:acc:group:g2" });
+
+    expect(result).toMatch(/not found/i);
+  });
+
+  it("allows reading any session when agentId is not set (backward compat)", async () => {
+    const sessions = new SessionManager(tempHome);
+    const s = sessions.getOrCreate("agent:bob:dingtalk:acc:group:g2");
+    sessions.addMessage(s, "user", "data");
+    sessions.save(s);
+
+    const tool = new SessionsHistoryTool(sessions);
+    // No setContext call — backward compat mode (no isolation)
+    const result = JSON.parse(
+      await tool.execute({ sessionKey: "agent:bob:dingtalk:acc:group:g2" })
+    ) as { messages?: unknown[]; error?: string };
+
+    expect(result.error).toBeUndefined();
+    expect(result.messages).toHaveLength(1);
+  });
+});
+
+describe("AgentLoop injects agentId into sessions_list and sessions_history", () => {
+  let tempHome: string;
+  let cleanup: () => void;
+  let previousHome: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env[HOME_ENV_KEY];
+    ({ tempHome, cleanup } = makeTempHome());
+    process.env[HOME_ENV_KEY] = tempHome;
+  });
+
+  afterEach(() => {
+    cleanup();
+    if (previousHome === undefined) {
+      delete process.env[HOME_ENV_KEY];
+    } else {
+      process.env[HOME_ENV_KEY] = previousHome;
+    }
+  });
+
+  it("sessions_list and sessions_history context is set with the loop agentId after setSessionsToolContext", async () => {
+    const { AgentLoop } = await import("../../agent/loop.js");
+    const { MessageBus } = await import("../../bus/queue.js");
+
+    const providerManager = {
+      get: () => ({ getDefaultModel: () => "openai/gpt-5" }),
+      chat: vi.fn(async () => ({ content: "unused", toolCalls: [] }))
+    };
+    const bus = new MessageBus();
+    const sessions = new SessionManager(tempHome);
+
+    const loop = new AgentLoop({
+      bus: bus as never,
+      providerManager: providerManager as never,
+      workspace: tempHome,
+      sessionManager: sessions,
+      agentId: "alice"
+    });
+
+    // Call the private method via type cast
+    const loopAny = loop as unknown as {
+      setSessionsToolContext: (p: { sessionKey: string; channel: string; chatId: string; handoffDepth: number }) => void;
+      tools: { get: (name: string) => unknown };
+    };
+
+    loopAny.setSessionsToolContext({
+      sessionKey: "agent:alice:dingtalk:acc:group:g1",
+      channel: "dingtalk",
+      chatId: "g1",
+      handoffDepth: 0
+    });
+
+    const listTool = loopAny.tools.get("sessions_list") as { agentId?: string } | undefined;
+    const historyTool = loopAny.tools.get("sessions_history") as { agentId?: string } | undefined;
+    expect(listTool?.agentId).toBe("alice");
+    expect(historyTool?.agentId).toBe("alice");
+  });
+});

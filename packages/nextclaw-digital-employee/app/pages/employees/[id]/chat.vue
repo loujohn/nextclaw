@@ -9,7 +9,10 @@ import {
 import type { UploadFilesPayload } from "~~/shared/api-types";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { buildChatDisplayMessages } from "~/lib/chat-message-groups";
-import { resolveInitialChatSelection } from "~/lib/chat-session-bootstrap";
+import {
+  resolveInitialChatSelection,
+  shouldDeferInitialMessageLoadToWatcher
+} from "~/lib/chat-session-bootstrap";
 import { renderMarkdown, formatTime } from "~/lib/utils";
 import StatusBadge from "~/components/StatusBadge.vue";
 import {
@@ -832,8 +835,9 @@ async function loadMessages(sessionKey: string, before?: string | null) {
 async function initializeChat() {
   errorMessage.value = "";
   const items = await fetchSessions();
+  const previousSessionKey = activeSessionKey.value;
   const initialSelection = resolveInitialChatSelection({
-    activeSessionKey: activeSessionKey.value,
+    activeSessionKey: previousSessionKey,
     sessions: items
   });
   activeSessionKey.value = initialSelection.sessionKey;
@@ -842,7 +846,13 @@ async function initializeChat() {
     nextCursor.value = null;
     return;
   }
-  suppressNextSessionLoad.value = true;
+  if (shouldDeferInitialMessageLoadToWatcher({
+    previousSessionKey,
+    nextSessionKey: initialSelection.sessionKey,
+    shouldLoadMessages: initialSelection.shouldLoadMessages
+  })) {
+    return;
+  }
   await loadMessages(initialSelection.sessionKey);
 }
 

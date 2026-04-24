@@ -83,8 +83,8 @@ export function ensureEmployeeWorkspace(
   seedFromTemplates(wsDir);
   seedFromGlobal(wsDir, globalWorkspaceDir);
 
-  writeSoulFile(wsDir, employee);
-  writeIdentityFile(wsDir, employee);
+  seedSoulFile(wsDir, employee);
+  seedIdentityFile(wsDir, employee);
 
   return wsDir;
 }
@@ -142,14 +142,18 @@ function seedFromGlobal(wsDir: string, globalWorkspaceDir: string): void {
   }
 }
 
-function writeSoulFile(wsDir: string, emp: EmployeeIdentity): void {
+function seedSoulFile(wsDir: string, emp: EmployeeIdentity): void {
+  const target = join(wsDir, "SOUL.md");
+  if (existsSync(target)) return;
   const content = emp.systemPrompt.trim()
     ? `# SOUL.md - ${emp.name}\n\n${emp.systemPrompt.trim()}\n`
     : `# SOUL.md - ${emp.name}\n\nYou are ${emp.name}.\n\n${emp.description || "No role description provided yet."}\n`;
-  writeFileSync(join(wsDir, "SOUL.md"), content, "utf-8");
+  writeFileSync(target, content, "utf-8");
 }
 
-function writeIdentityFile(wsDir: string, emp: EmployeeIdentity): void {
+function seedIdentityFile(wsDir: string, emp: EmployeeIdentity): void {
+  const target = join(wsDir, "IDENTITY.md");
+  if (existsSync(target)) return;
   const content = [
     `# IDENTITY.md - ${emp.name}`,
     "",
@@ -159,7 +163,7 @@ function writeIdentityFile(wsDir: string, emp: EmployeeIdentity): void {
     `- Description: ${emp.description || "Not specified"}`,
     ""
   ].join("\n");
-  writeFileSync(join(wsDir, "IDENTITY.md"), content, "utf-8");
+  writeFileSync(target, content, "utf-8");
 }
 
 export function removeEmployeeWorkspace(homeDir: string, employeeCode: string): void {

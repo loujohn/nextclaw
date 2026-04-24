@@ -581,7 +581,7 @@ export class AutomationService {
     }
     this.stopHeartbeatForEmployee(input.employeeId);
 
-    const scheduleMessage = `${employee.systemPrompt}\n\n请按你的职责执行一次定时任务，并输出当前最新摘要。`;
+    const scheduleMessage = "请按你的职责执行一次定时任务，并输出当前最新摘要。";
 
     if (input.scheduleKind === "heartbeat") {
       const intervalS = Math.max(1, Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000));

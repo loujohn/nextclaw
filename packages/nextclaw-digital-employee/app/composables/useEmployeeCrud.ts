@@ -24,6 +24,15 @@ function createEmployeeCode(name: string): string {
   return n || `employee-${Date.now().toString().slice(-6)}`;
 }
 
+function buildSoulFileContent(name: string, content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+  if (/^#\s*SOUL\.md\b/i.test(trimmed)) {
+    return `${trimmed}\n`;
+  }
+  return `# SOUL.md - ${name.trim() || "Unnamed Employee"}\n\n${trimmed}\n`;
+}
+
 async function loadWorkspaceFile(employeeId: string, filename: string): Promise<string> {
   try {
     const result = await $fetch<{ ok: boolean; data: { content: string } }>(
@@ -38,6 +47,8 @@ async function loadWorkspaceFile(employeeId: string, filename: string): Promise<
 function buildCreatePayload(form: ReturnType<typeof createFormState>) {
   const code = form.code.trim() || createEmployeeCode(form.name);
   const workspaceFiles: Record<string, string> = {};
+  const soulContent = buildSoulFileContent(form.name, form.systemPrompt);
+  if (soulContent) workspaceFiles["SOUL.md"] = soulContent;
   if (form.heartbeatContent.trim()) workspaceFiles["HEARTBEAT.md"] = form.heartbeatContent.trim();
   if (form.userContent.trim()) workspaceFiles["USER.md"] = form.userContent.trim();
   if (form.bootContent.trim()) workspaceFiles["BOOT.md"] = form.bootContent.trim();
@@ -58,10 +69,10 @@ function buildCreatePayload(form: ReturnType<typeof createFormState>) {
 }
 
 function buildEditPayload(editForm: ReturnType<typeof createEditFormState>) {
+  const soulContent = buildSoulFileContent(editForm.name, editForm.systemPrompt);
   return {
     name: editForm.name,
     description: editForm.description,
-    systemPrompt: editForm.systemPrompt,
     model: editForm.model,
     departmentId: editForm.departmentId,
     skillNames: editForm.skillNames,
@@ -69,6 +80,7 @@ function buildEditPayload(editForm: ReturnType<typeof createEditFormState>) {
     cronExpr: editForm.cronExpr,
     everyMs: editForm.everyMs,
     workspaceFiles: {
+      "SOUL.md": soulContent,
       "HEARTBEAT.md": editForm.heartbeatContent,
       "USER.md": editForm.userContent,
       "BOOT.md": editForm.bootContent,
@@ -158,13 +170,13 @@ export function useEmployeeCrud(options: CrudOptions) {
     try {
       const detail = await $fetch<EmployeeDetailPayload>(`/api/employees/${employee.id}/edit`);
       const files = await Promise.all(
-        (["HEARTBEAT.md", "USER.md", "BOOT.md", "AGENTS.md"] as const).map((f) => loadWorkspaceFile(employee.id, f))
+        (["SOUL.md", "HEARTBEAT.md", "USER.md", "BOOT.md", "AGENTS.md"] as const).map((f) => loadWorkspaceFile(employee.id, f))
       );
       Object.assign(editForm, {
         id: detail.data.id, name: detail.data.name, code: detail.data.code,
-        description: detail.data.description, systemPrompt: detail.data.systemPrompt,
+        description: detail.data.description, systemPrompt: files[0] || detail.data.systemPrompt,
         model: detail.data.model || "", departmentId: detail.data.departmentId,
-        heartbeatContent: files[0], userContent: files[1], bootContent: files[2], agentsContent: files[3],
+        heartbeatContent: files[1], userContent: files[2], bootContent: files[3], agentsContent: files[4],
         skillNames: detail.data.skillNames,
         scheduleKind: detail.data.schedule?.scheduleKind ?? "cron",
         cronExpr: detail.data.schedule?.cronExpr ?? "0 18 * * *",
