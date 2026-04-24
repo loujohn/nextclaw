@@ -1,5 +1,3 @@
-import http from "node:http";
-import https from "node:https";
 import {
   BaseChannel,
   evaluateChannelAccessPolicy,
@@ -9,8 +7,7 @@ import {
   type OutboundMessage
 } from "@nextclaw/core";
 import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
-import { HttpsProxyAgent } from "https-proxy-agent";
-import { fetch, EnvHttpProxyAgent, Agent } from "undici";
+import { fetch } from "undici";
 
 import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
@@ -20,131 +17,6 @@ const INITIAL_RECONNECT_DELAY_MS = 2_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
-
-function getProxyUrl(): string | undefined {
-  return process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
-}
-
-/**
- * 语义与 curl / Go / Python requests 对齐的 NO_PROXY 规则解析。
- *
- * 为什么在这里就地实现一次：本插件也会被 desktop / openclaw-compat 等
- * 未加载 digital-employee 全局代理 bootstrap 的入口集成，必须自带
- * "按 NO_PROXY 分流" 的能力，否则一旦出现环境里有 HTTPS_PROXY，所有
- * 钉钉流量就会被无条件拖进代理（包括本应直连的内网网关）。
- */
-type NoProxyRule = { host: string; matchAll: boolean };
-
-function parseNoProxyRules(raw: string | undefined): NoProxyRule[] {
-  if (!raw) return [];
-  const out: NoProxyRule[] = [];
-  for (const part of raw.split(",")) {
-    const trimmed = part.trim().toLowerCase();
-    if (!trimmed) continue;
-    if (trimmed === "*") {
-      out.push({ host: "*", matchAll: true });
-      continue;
-    }
-    let value = trimmed;
-    if (value.startsWith("*.")) value = value.slice(2);
-    else if (value.startsWith(".")) value = value.slice(1);
-    const lastColon = value.lastIndexOf(":");
-    const lastBracket = value.lastIndexOf("]");
-    if (lastColon > -1 && lastColon > lastBracket) {
-      value = value.slice(0, lastColon);
-    }
-    if (value) out.push({ host: value, matchAll: false });
-  }
-  return out;
-}
-
-function shouldBypassProxy(hostname: string, rules: NoProxyRule[]): boolean {
-  if (!hostname || rules.length === 0) return false;
-  const host = hostname.toLowerCase();
-  return rules.some(
-    (rule) => rule.matchAll || host === rule.host || host.endsWith(`.${rule.host}`)
-  );
-}
-
-type AgentWithAddRequest = http.Agent & {
-  addRequest(
-    req: http.ClientRequest,
-    options: http.RequestOptions & { hostname?: string; host?: string }
-  ): void;
-};
-
-/**
- * 按目标 host 在"走 HttpsProxyAgent"与"直连"之间动态路由。
- * 行为与 digital-employee 侧 server/plugins/00.proxy-bootstrap.ts 的
- * ProxyAwareAgent 一致，避免两侧 NO_PROXY 语义割裂。
- */
-class ProxyAwareAgent extends http.Agent {
-  constructor(
-    private readonly proxyAgent: AgentWithAddRequest,
-    private readonly directAgent: AgentWithAddRequest,
-    private readonly bypassRules: NoProxyRule[]
-  ) {
-    super();
-  }
-
-  addRequest(
-    req: http.ClientRequest,
-    options: http.RequestOptions & { hostname?: string; host?: string }
-  ): void {
-    const host = options.hostname ?? options.host ?? "";
-    const delegate =
-      host && shouldBypassProxy(host, this.bypassRules)
-        ? this.directAgent
-        : this.proxyAgent;
-    delegate.addRequest(req, options);
-  }
-}
-
-/**
- * 构造给 undici fetch 使用的 dispatcher。
- *
- * 有代理时使用 `EnvHttpProxyAgent`，它会在每次请求时按 NO_PROXY
- * 自动判断目标是否直连，不需要插件自己再解析一次。
- */
-function buildDispatcher() {
-  const proxyUrl = getProxyUrl();
-  if (proxyUrl) {
-    const noProxy = process.env.NO_PROXY ?? process.env.no_proxy;
-    console.log(
-      `[dingtalk] using http proxy: ${proxyUrl} (noProxy=${noProxy || "(empty)"})`
-    );
-    return new EnvHttpProxyAgent();
-  }
-  return new Agent();
-}
-
-/**
- * 为 ws 注入代理 agent。
- *
- * 真实行为：不再直接注入裸 HttpsProxyAgent，而是注入一个会
- * 按 NO_PROXY 规则分流的 ProxyAwareAgent，从而对齐 fetch 与
- * digital-employee 全局代理的 NO_PROXY 语义。
- * 注释留旧说明：不直接调用 HttpsProxyAgent.connect() 以免传入非
- * ClientRequest 导致 req.emit 异常。
- */
-function injectWsProxy(client: DWClient): void {
-  const proxyUrl = getProxyUrl();
-  if (!proxyUrl) return;
-
-  const bypassRules = parseNoProxyRules(process.env.NO_PROXY ?? process.env.no_proxy);
-  const proxyAgent = new HttpsProxyAgent(proxyUrl) as unknown as AgentWithAddRequest;
-  const directAgent = new https.Agent() as unknown as AgentWithAddRequest;
-  const agent = new ProxyAwareAgent(proxyAgent, directAgent, bypassRules);
-
-  const base = (client as any).sslopts ?? {};
-  (client as any).sslopts = {
-    ...base,
-    agent,
-  };
-  console.log(
-    `[dingtalk] ws proxy injected → ${proxyUrl} (noProxy rules=${bypassRules.length})`
-  );
-}
 
 /**
  * Replace the library's verbose socket error handler (dumps full stack trace
@@ -319,7 +191,6 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
       clientSecret: account.clientSecret,
       debug: false
     });
-    injectWsProxy(client);
     patchSocketLogging(client, accountId);
     const { dispose } = patchClientConnect(client, accountId);
     this.clientDisposers.set(accountId, dispose);
@@ -441,7 +312,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           "x-acs-dingtalk-access-token": token
         },
         body: JSON.stringify(payload),
-        dispatcher: buildDispatcher(),
+
         signal: AbortSignal.timeout(15_000)
       });
     } catch (err) {
@@ -555,7 +426,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           appKey: account.clientId,
           appSecret: account.clientSecret
         }),
-        dispatcher: buildDispatcher(),
+
         signal: AbortSignal.timeout(15_000)
       });
     } catch (err) {
