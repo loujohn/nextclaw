@@ -14,9 +14,9 @@ export function readSkillVersion(skillDir: string): string | null {
   const skillFile = join(skillDir, "SKILL.md");
   if (!existsSync(skillFile)) return null;
   const raw = readFileSync(skillFile, "utf-8");
-  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
-  for (const line of (match[1] ?? "").split("\n")) {
+  for (const line of (match[1] ?? "").split(/\r?\n/)) {
     const [key, ...rest] = line.split(":");
     if (key?.trim() === "version") {
       return rest.join(":").trim().replace(/^['"]|['"]$/g, "") || null;

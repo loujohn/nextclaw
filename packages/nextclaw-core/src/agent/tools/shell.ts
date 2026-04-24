@@ -121,8 +121,22 @@ export class ExecTool extends Tool {
         return "Error: Command blocked by safety guard (path traversal detected)";
       }
       const cwdPath = resolve(cwd);
-      const matches = [...command.matchAll(/(?:^|[\s|>])([^\s"'>]+)/g)].map((match) => match[1]);
-      for (const raw of matches) {
+      const writeTargets: string[] = [];
+
+      // redirect operators: > /path  >> /path
+      for (const m of command.matchAll(/>{1,2}\s*([^\s"'|&;]+)/g)) {
+        writeTargets.push(m[1]);
+      }
+      // tee /path
+      for (const m of command.matchAll(/\btee\s+([^\s|&;]+)/g)) {
+        writeTargets.push(m[1]);
+      }
+      // cp / mv: last token before pipe/semicolon is the destination
+      for (const m of command.matchAll(/\b(?:cp|mv)\s+(?:[^\s]+\s+)+([^\s|&;]+)/g)) {
+        writeTargets.push(m[1]);
+      }
+
+      for (const raw of writeTargets) {
         if (raw.startsWith("/") || /^[A-Za-z]:\\/.test(raw)) {
           const resolved = resolve(raw);
           if (!resolved.startsWith(cwdPath)) {
