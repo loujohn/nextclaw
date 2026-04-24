@@ -5,7 +5,7 @@ import {
   type ChatMessageView,
   type ChatProcessTimelineEntry
 } from "../../shared/ui-models";
-import { isConversationResetCommand } from "../../shared/chat-command";
+import { isConversationResetCommand } from "~~/shared/chat-command";
 import { mergePersistedAndOverlay, prunePersistedMatchesFromOverlay } from "./chat-message-merge";
 import {
   createLocalDraftChatSession,
