@@ -237,6 +237,26 @@
     @apply font-semibold;
   }
 
+  .timeline-entry-md .code-block {
+    @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
+  }
+
+  .timeline-entry-md pre {
+    @apply my-2 overflow-x-auto rounded-lg bg-foreground/5 p-3 whitespace-pre-wrap break-words;
+  }
+
+  .timeline-entry-md pre code {
+    @apply block min-w-0 font-mono text-xs leading-relaxed;
+  }
+
+  .timeline-entry-md :not(pre) > code {
+    @apply rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-xs text-foreground break-all;
+  }
+
+  .timeline-entry-md p {
+    @apply my-1.5 break-words;
+  }
+
   .result-card-md .code-block {
     @apply relative my-2 overflow-hidden rounded-lg bg-foreground/5;
   }

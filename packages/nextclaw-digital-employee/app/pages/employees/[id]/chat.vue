@@ -1409,7 +1409,7 @@ watch(messages, () => {
                         >{{ processEntryBody(entry) }}</pre>
                         <div
                           v-else-if="processEntryUsesMarkdown(entry)"
-                          class="prose prose-slate mt-2 max-w-none break-words rounded-xl border border-border/70 bg-background px-3 py-2.5 text-xs"
+                          class="timeline-entry-md prose prose-slate mt-2 max-w-none break-words rounded-xl border border-border/70 bg-background px-3 py-2.5 text-xs"
                           v-html="renderMarkdown(processEntryBody(entry))"
                         />
                         <div
