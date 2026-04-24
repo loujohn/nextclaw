@@ -174,9 +174,25 @@ function patchSocketLogging(client: DWClient, accountId: string): void {
         }
       });
 
+      // 追加一条 close 监听，不动 SDK 自己的 reconnect close handler。
+      // 只为了能在日志里看到 close code / reason（钉钉 stream 服务端主动关连接时
+      // 只会走 close 事件而非 error，之前的日志里根本看不出为什么掉线）。
+      socket.on("close", (code: number, reason: Buffer) => {
+        const reasonStr = reason?.toString?.() ?? "";
+        const connectedFor = this.connectedAt
+          ? `${Date.now() - this.connectedAt}ms`
+          : "(unknown)";
+        console.warn(
+          `[dingtalk] ws closed account=${accountId} code=${code} reason=${
+            reasonStr || "(empty)"
+          } connectedFor=${connectedFor}`
+        );
+      });
+
       const origOpenListeners = socket.listeners("open").slice();
       socket.removeAllListeners("open");
       socket.on("open", (...args: unknown[]) => {
+        this.connectedAt = Date.now();
         if (wsErrorCount > 0) {
           console.log(`[dingtalk] ws recovered account=${accountId} after ${wsErrorCount} error(s)`);
           wsErrorCount = 0;
