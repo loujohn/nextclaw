@@ -35,6 +35,7 @@ export async function ensureTestDatabase(db: Knex): Promise<void> {
  */
 export async function cleanTestDatabase(db: Knex): Promise<void> {
   const tables = [
+    "chat_messages", "chat_sessions",
     "users", "run_events", "run_records", "org_sync_config", "secrets",
     "integration_connections", "skill_installations",
     "employee_schedule_jobs", "employee_schedules", "employee_skills",
