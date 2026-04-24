@@ -197,24 +197,33 @@ export class AgentLoop {
     };
   }
 
-  private setSessionsSendToolContext(params: {
+  private setSessionsToolContext(params: {
     sessionKey: string;
     channel: string;
     chatId: string;
     handoffDepth: number;
   }): void {
     const sessionsSendTool = this.tools.get("sessions_send");
-    if (!(sessionsSendTool instanceof SessionsSendTool)) {
-      return;
+    if (sessionsSendTool instanceof SessionsSendTool) {
+      sessionsSendTool.setContext({
+        currentSessionKey: params.sessionKey,
+        currentAgentId: this.agentId,
+        channel: params.channel,
+        chatId: params.chatId,
+        maxPingPongTurns: this.options.config?.session?.agentToAgent?.maxPingPongTurns ?? 0,
+        currentHandoffDepth: params.handoffDepth
+      });
     }
-    sessionsSendTool.setContext({
-      currentSessionKey: params.sessionKey,
-      currentAgentId: this.agentId,
-      channel: params.channel,
-      chatId: params.chatId,
-      maxPingPongTurns: this.options.config?.session?.agentToAgent?.maxPingPongTurns ?? 0,
-      currentHandoffDepth: params.handoffDepth
-    });
+
+    const sessionsListTool = this.tools.get("sessions_list");
+    if (sessionsListTool instanceof SessionsListTool) {
+      sessionsListTool.setContext({ agentId: this.agentId });
+    }
+
+    const sessionsHistoryTool = this.tools.get("sessions_history");
+    if (sessionsHistoryTool instanceof SessionsHistoryTool) {
+      sessionsHistoryTool.setContext({ agentId: this.agentId });
+    }
   }
 
   private resolveHandoffDepth(metadata: Record<string, unknown>): number {
@@ -617,7 +626,7 @@ export class AgentLoop {
     const sessionKey = sessionKeyOverride ?? `${msg.channel}:${msg.chatId}`;
     const session = this.sessions.getOrCreate(sessionKey);
     this.setExtensionToolContext({ sessionKey, channel: msg.channel, chatId: msg.chatId });
-    this.setSessionsSendToolContext({
+    this.setSessionsToolContext({
       sessionKey,
       channel: msg.channel,
       chatId: msg.chatId,
@@ -843,7 +852,7 @@ export class AgentLoop {
     const sessionKey = sessionKeyOverride ?? metadataSessionKey ?? `${originChannel}:${originChatId}`;
     const session = this.sessions.getOrCreate(sessionKey);
     this.setExtensionToolContext({ sessionKey, channel: originChannel, chatId: originChatId });
-    this.setSessionsSendToolContext({
+    this.setSessionsToolContext({
       sessionKey,
       channel: originChannel,
       chatId: originChatId,

@@ -1,9 +1,15 @@
 import { createError, getRouterParam } from "h3";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getPlatformContext } from "../../runtime/platform-context";
 import { buildAutomationSummary } from "../../../shared/ui-models";
-import { readSkillVersion } from "../../engine/employee-workspace";
+import { readSkillVersion, resolveEmployeeWorkspace } from "../../engine/employee-workspace";
+
+function hasSoulFileContent(homeDir: string, employeeCode: string): boolean {
+  const soulPath = join(resolveEmployeeWorkspace(homeDir, employeeCode), "SOUL.md");
+  if (!existsSync(soulPath)) return false;
+  return readFileSync(soulPath, "utf-8").trim().length > 0;
+}
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id") ?? "";
@@ -59,7 +65,7 @@ export default defineEventHandler(async (event) => {
       recentRuns,
       automationSummary,
       health: {
-        hasPrompt: Boolean(employee.systemPrompt.trim()),
+        hasPrompt: hasSoulFileContent(ctx.gateway.homeDir, employee.code) || Boolean(employee.systemPrompt.trim()),
         hasSkills: skills.length > 0
       }
     }

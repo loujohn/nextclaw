@@ -106,7 +106,7 @@ function formatNextRun(dateStr: string): string {
 const healthChecks = computed(() => [
   {
     ok: props.employee.health.hasPrompt,
-    label: `系统提示词 ${props.employee.health.hasPrompt ? "已配置" : "待补充"}`,
+    label: `SOUL.md ${props.employee.health.hasPrompt ? "已配置" : "待补充"}`,
   },
   {
     ok: props.employee.health.hasSkills,

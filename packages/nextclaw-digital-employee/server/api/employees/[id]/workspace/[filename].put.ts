@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { getPlatformContext } from "../../../../runtime/platform-context";
 import { resolveEmployeeWorkspace } from "../../../../engine/employee-workspace";
 
-const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
+const WRITABLE_FILES = new Set(["AGENTS.md", "SOUL.md", "USER.md", "IDENTITY.md", "TOOLS.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id") ?? "";
