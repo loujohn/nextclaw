@@ -166,7 +166,7 @@ function handleSave() {
             <textarea
               v-model="form.taskPrompt"
               class="input-field min-h-[90px] resize-y font-mono text-xs"
-              placeholder="留空则使用员工 systemPrompt + 默认定时提示语。&#10;填写后将作为本次定时触发的专属消息，覆盖默认 prompt。"
+              placeholder="留空则使用员工工作区上下文。&#10;填写后将作为本次定时触发的专属消息。"
             />
           </label>
 
