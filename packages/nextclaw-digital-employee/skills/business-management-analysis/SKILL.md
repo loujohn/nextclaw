@@ -1,8 +1,8 @@
 ---
 name: business-management-analysis
 name_zh: 经营管理分析
-version: 1.0.0
-description: "利用 mcporter 连接经营管理 MCP 服务，进行数据分析、报表查询等经营管理工作。当需要进行经营管理数据分析、生成经营报表、或查询业务指标时使用。"
+version: 1.0.1
+description: "连接经营管理服务，进行数据分析、报表查询等经营管理工作。当需要进行经营管理数据分析、生成经营报表、或查询业务指标时使用。"
 metadata:
   nextclaw:
     emoji: "📊"
@@ -40,15 +40,6 @@ mcporter call business-mgmt.forewarn  # ❌ 错误！
 
 **必须先阅读 [mcporter 技能](../mcporter/SKILL.md)，确保 mcporter 已安装。**
 
-## 环境变量
-
-| 变量          | 说明                       |
-| ------------- | -------------------------- |
-| PM_MCP_URL    | MCP 服务端点地址           |
-| PM_BASE_URL   | 基础 URL（用于获取 Token） |
-| PM_USERNAME   | API 用户名                 |
-| PM_PASSWORD   | API 密码                   |
-| PM_BASIC_AUTH | Basic 认证凭证             |
 
 ## 使用方法
 
@@ -102,8 +93,10 @@ python skills/business-management-analysis/scripts/bm-query.py all
 
 查询结果会保存到文件，终端只输出文件路径。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段，只展示用户友好的中文描述**。
 
-- `call <tool>` → `~/nextclaw-temp/business-management-analysis_{tool}.json`
-- `all` → `~/nextclaw-temp/business-management-analysis_all.json`
+- `call <tool>` → `skills-log-files/business-management-analysis/business-management-analysis_{tool}_{timestamp}.json`
+- `all` → `skills-log-files/business-management-analysis/business-management-analysis_all_{timestamp}.json`
+- 每次请求前自动清理该技能上次产生的文件
+- 临时文件带时间戳，防止复用上次的文件
 - 每次请求前自动清理该技能上次产生的文件
 
 ## 可用工具
