@@ -82,7 +82,7 @@ function isActive(path: string): boolean {
           </div>
           <div v-if="!collapsed" class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-sidebar-foreground">{{ user.displayName }}</p>
-            <p class="truncate text-[11px] text-sidebar-muted">{{ user.role }}</p>
+            <p class="truncate text-[11px] text-sidebar-muted">{{ user.username }}</p>
           </div>
         </div>
         <NuxtLink
