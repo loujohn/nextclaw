@@ -1,7 +1,7 @@
 import { defineEventHandler, readBody, createError } from "h3";
 import { hashSync } from "bcryptjs";
-import { getPlatformContext } from "../../runtime/platform-context";
-import { requireRole } from "../../utils/auth-guards";
+import { getPlatformContext } from "../../../runtime/platform-context";
+import { requireRole } from "../../../utils/auth-guards";
 
 export default defineEventHandler(async (event) => {
   requireRole(event, "admin");

@@ -5,6 +5,7 @@ import type { UserListPayload, UserView, UserRole, UpdateUserInput } from "../..
 const { getAccessToken, user: currentUser, loading: authLoading } = useAuth();
 
 const toast = useToast();
+const { toasts, dismissToast } = toast;
 const USERS_PAGE_SIZE = 10;
 
 function extractApiError(error: unknown): string {
@@ -534,20 +535,26 @@ function openResetPwDialog(u: UserView) {
 
 async function confirmResetPassword() {
   if (!resetPwTarget.value) return;
+  resetPwError.value = "";
   if (newPassword.value.length < 6) {
     resetPwError.value = "密码至少 6 位";
+    toast.showToast("error", "密码重置失败：密码至少 6 位");
     return;
   }
-  const res = await execute(() =>
-    $fetch<{ ok: boolean }>(`/api/users/${resetPwTarget.value!.id}/reset-password`, {
+  try {
+    const res = await $fetch<{ ok: boolean }>(`/api/users/${resetPwTarget.value.id}/reset-password`, {
       method: "POST",
       body: { password: newPassword.value },
       headers: authHeaders(),
-    })
-  );
-  if (res?.ok) {
-    toast.showToast("success", "密码已重置");
-    resetPwDialogOpen.value = false;
+    });
+    if (res?.ok) {
+      toast.showToast("success", "密码重置成功");
+      resetPwDialogOpen.value = false;
+    }
+  } catch (error) {
+    const message = extractApiError(error);
+    resetPwError.value = message;
+    toast.showToast("error", `密码重置失败：${message}`);
   }
 }
 
@@ -817,6 +824,8 @@ onUnmounted(() => {
       />
       </div>
     </template>
+
+    <SharedToastContainer :toasts="toasts" @dismiss="dismissToast" />
 
     <Teleport to="body">
       <SharedConfirmDialog
