@@ -1,7 +1,7 @@
 ---
 name: employee-query
 name_zh: 人员查询
-version: 1.0.0
+version: 1.0.1
 description: "查询公司员工信息，包括部门树、公司领导、部门负责人等"
 metadata:
   nextclaw:

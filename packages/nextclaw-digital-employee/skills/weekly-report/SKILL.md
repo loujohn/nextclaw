@@ -1,7 +1,7 @@
 ---
 name: weekly-report
 name_zh: 项目周报生成
-version: 1.0.3
+version: 1.0.4
 description: "基于日报数据生成周报，支持个人/部门/全公司三种维度，部门查询调用 API 确认后查日报汇总。"
 metadata:
   nextclaw:
@@ -14,6 +14,8 @@ metadata:
 **⚠️ 重要：本技能使用 Python 编写，必须使用 `python` 命令调用，禁止使用 `node`！**
 
 **⚠️ 脚本路径：`skills/weekly-report/scripts/weekly-report.py`**
+
+**📁 日志文件目录：工作区下 `skills-log-files/daily-report/`（读取日报数据）**
 
 ## 功能
 
@@ -82,7 +84,7 @@ python weekly-report.py company
 
 ## 数据来源
 
-- 优先从本地日报汇总文件（`~/nextclaw-temp/daily-report/{周}/`）读取
+- 优先从本地日报汇总文件（`skills-log-files/daily-report/{周}/`）读取
 - 包含：`users.md`（人员维度）、`projects.md`（项目维度）、`raw_dailies.json`（原始数据）
 
 ## 注意事项
