@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { ProxyAgent, setGlobalDispatcher } from "undici";
 import {
   type NoProxyRule,
   formatNoProxyRulesForLog,
@@ -14,16 +14,13 @@ import {
  *
  * 同时覆盖两条出站路径，并原生支持 NO_PROXY（内网直连、外网走代理）：
  *
- * 1. fetch / ofetch / $fetch：底层走 undici → 通过 `EnvHttpProxyAgent`
- *    自动读取 HTTP_PROXY / HTTPS_PROXY / NO_PROXY；
+ * 1. fetch / ofetch / $fetch：底层走 undici → 通过 ProxyAgent
  * 2. http.request / https.request：通过自定义 ProxyAwareAgent
  *    替换 globalAgent，按目标 host 动态选择走代理或直连。
  *
  * 设计约束：
  * - 未配置任何 *_PROXY 时整个插件不生效，保持零侵入；
  * - NO_PROXY 未配置视为"全部走代理"；
- * - NO_PROXY 规则解析与匹配统一委托给 utils/no-proxy，避免重复实现
- *   并便于单元测试覆盖。
  */
 
 type ClientRequest = http.ClientRequest;
@@ -53,14 +50,33 @@ class ProxyAwareAgent extends http.Agent {
   }
 }
 
-class TracingEnvHttpProxyAgent extends EnvHttpProxyAgent {
+class TracingProxyAgent extends ProxyAgent {
+  private readonly bypassRules: NoProxyRule[];
+
+  constructor(proxyUrl: string, bypassRules: NoProxyRule[]) {
+    super(proxyUrl);
+    this.bypassRules = bypassRules;
+  }
+
   dispatch(
-    opts: Parameters<EnvHttpProxyAgent["dispatch"]>[0],
-    handlers: Parameters<EnvHttpProxyAgent["dispatch"]>[1]
+    opts: Parameters<ProxyAgent["dispatch"]>[0],
+    handlers: Parameters<ProxyAgent["dispatch"]>[1]
   ) {
-    const origin = opts.origin ?? "";
+    let origin = opts.origin ?? "";
+    if (origin.startsWith("http://")) origin = origin.slice(7);
+    else if (origin.startsWith("https://")) origin = origin.slice(8);
     const path = opts.path ?? "";
-    console.log(`[proxy-bootstrap] undici origin=${origin} path=${path}`);
+    const bypass = shouldBypassProxy(origin, this.bypassRules);
+    console.log(`[proxy-bootstrap] undici origin=${origin} path=${path} bypass=${bypass}`);
+    
+    // 如果命中 NO_PROXY，创建直接 Agent
+    if (bypass) {
+      const direct = origin.startsWith("https") 
+        ? new https.Agent() 
+        : new http.Agent();
+      return direct.dispatch(opts, handlers);
+    }
+    
     return super.dispatch(opts, handlers);
   }
 }
@@ -75,23 +91,18 @@ export default defineNitroPlugin(() => {
   if (!proxyUrl) return;
 
   const noProxy = process.env.NO_PROXY ?? process.env.no_proxy ?? "";
-
-  setGlobalDispatcher(
-    new TracingEnvHttpProxyAgent({
-      httpProxy: proxyUrl,
-      httpsProxy: proxyUrl,
-      noProxy,
-    })
-  );
-
   const bypassRules = parseNoProxy(noProxy);
-  const proxyAgent = new HttpsProxyAgent(proxyUrl) as unknown as AgentWithAddRequest;
+
+  const proxyAgent = new TracingProxyAgent(proxyUrl, bypassRules);
+  setGlobalDispatcher(proxyAgent);
+
+  const httpProxyAgent = new HttpsProxyAgent(proxyUrl) as unknown as AgentWithAddRequest;
   const directHttpAgent = new http.Agent() as AgentWithAddRequest;
   const directHttpsAgent = new https.Agent() as unknown as AgentWithAddRequest;
 
-  http.globalAgent = new ProxyAwareAgent(proxyAgent, directHttpAgent, bypassRules);
+  http.globalAgent = new ProxyAwareAgent(httpProxyAgent, directHttpAgent, bypassRules);
   https.globalAgent = new ProxyAwareAgent(
-    proxyAgent,
+    httpProxyAgent,
     directHttpsAgent,
     bypassRules
   ) as unknown as https.Agent;
