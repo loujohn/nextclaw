@@ -46,11 +46,22 @@ class ProxyAwareAgent extends http.Agent {
 
   addRequest(req: ClientRequest, options: AgentRequestOptions): void {
     const host = options.hostname ?? options.host ?? "";
-    const delegate =
-      host && shouldBypassProxy(host, this.bypassRules)
-        ? this.directAgent
-        : this.proxyAgent;
+    const bypass = shouldBypassProxy(host, this.bypassRules);
+    console.log(`[proxy-bootstrap] http.request host=${host} bypass=${bypass}`);
+    const delegate = bypass ? this.directAgent : this.proxyAgent;
     delegate.addRequest(req, options);
+  }
+}
+
+class TracingEnvHttpProxyAgent extends EnvHttpProxyAgent {
+  dispatch(
+    opts: Parameters<EnvHttpProxyAgent["dispatch"]>[0],
+    handlers: Parameters<EnvHttpProxyAgent["dispatch"]>[1]
+  ) {
+    const origin = opts.origin ?? "";
+    const path = opts.path ?? "";
+    console.log(`[proxy-bootstrap] undici origin=${origin} path=${path}`);
+    return super.dispatch(opts, handlers);
   }
 }
 
@@ -63,9 +74,17 @@ export default defineNitroPlugin(() => {
 
   if (!proxyUrl) return;
 
-  setGlobalDispatcher(new EnvHttpProxyAgent());
+  const noProxy = process.env.NO_PROXY ?? process.env.no_proxy ?? "";
 
-  const bypassRules = parseNoProxy(process.env.NO_PROXY ?? process.env.no_proxy);
+  setGlobalDispatcher(
+    new TracingEnvHttpProxyAgent({
+      httpProxy: proxyUrl,
+      httpsProxy: proxyUrl,
+      noProxy,
+    })
+  );
+
+  const bypassRules = parseNoProxy(noProxy);
   const proxyAgent = new HttpsProxyAgent(proxyUrl) as unknown as AgentWithAddRequest;
   const directHttpAgent = new http.Agent() as AgentWithAddRequest;
   const directHttpsAgent = new https.Agent() as unknown as AgentWithAddRequest;
