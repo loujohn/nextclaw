@@ -11,7 +11,10 @@ export type ChatSessionView = {
   preview: string;
   messageCount: number;
   createdByUserId: string | null;
+  createdByUserDisplayName: string | null;
   updatedByUserId: string | null;
+  source: "chat" | "scheduled";
+  sourceLabel: "对话" | "定时任务";
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -21,6 +24,8 @@ export type ChatSessionPage = {
   items: ChatSessionView[];
   nextCursor: string | null;
 };
+
+export type ChatSessionAccessScope = "all" | "own";
 
 type CursorToken = {
   updatedAt: string;
@@ -51,6 +56,7 @@ function decodeCursor(value?: string | null): CursorToken | null {
 }
 
 function toView(record: ChatSessionListRow): ChatSessionView {
+  const source = record.created_by_user_id ? "chat" : "scheduled";
   return {
     id: record.id,
     employeeId: record.employee_id,
@@ -59,7 +65,10 @@ function toView(record: ChatSessionListRow): ChatSessionView {
     preview: record.preview,
     messageCount: record.message_count,
     createdByUserId: record.created_by_user_id ?? null,
+    createdByUserDisplayName: null,
     updatedByUserId: record.updated_by_user_id ?? null,
+    source,
+    sourceLabel: source === "chat" ? "对话" : "定时任务",
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     lastMessageAt: record.last_message_at ?? null
@@ -80,6 +89,31 @@ function buildSessionPreview(message: string): string {
     return "";
   }
   return normalized.length > 120 ? `${normalized.slice(0, 120)}…` : normalized;
+}
+
+function applyAccessScope(
+  query: Knex.QueryBuilder,
+  accessScope: ChatSessionAccessScope,
+  actorUserId?: string | null
+): void {
+  if (accessScope === "all") {
+    return;
+  }
+
+  const normalizedActorUserId = actorUserId?.trim();
+  if (!normalizedActorUserId) {
+    query.andWhereRaw("1 = 0");
+    return;
+  }
+
+  query.andWhere((builder) => {
+    builder
+      .where(`${PLATFORM_TABLES.chatSessions}.created_by_user_id`, normalizedActorUserId)
+      .orWhere((nested) => {
+        nested.whereNull(`${PLATFORM_TABLES.chatSessions}.created_by_user_id`)
+          .andWhere(`${PLATFORM_TABLES.chatSessions}.updated_by_user_id`, normalizedActorUserId);
+      });
+  });
 }
 
 export class ChatSessionRepository {
@@ -110,13 +144,21 @@ export class ChatSessionRepository {
     return toView(record);
   }
 
-  async getByEmployeeIdAndSessionKey(employeeId: string, sessionKey: string): Promise<ChatSessionView | null> {
-    const row = await this.db<ChatSessionRecord>(PLATFORM_TABLES.chatSessions)
+  async getByEmployeeIdAndSessionKey(
+    employeeId: string,
+    sessionKey: string,
+    options?: {
+      accessScope?: ChatSessionAccessScope;
+      actorUserId?: string | null;
+    }
+  ): Promise<ChatSessionView | null> {
+    const query = this.db<ChatSessionRecord>(PLATFORM_TABLES.chatSessions)
       .where({
         employee_id: employeeId,
         session_key: sessionKey
-      })
-      .first();
+      });
+    applyAccessScope(query, options?.accessScope ?? "all", options?.actorUserId);
+    const row = await query.first();
     return row ? toView(row) : null;
   }
 
@@ -124,6 +166,8 @@ export class ChatSessionRepository {
     employeeId: string;
     limit?: number;
     before?: string | null;
+    accessScope?: ChatSessionAccessScope;
+    actorUserId?: string | null;
   }): Promise<ChatSessionPage> {
     const limit = Math.max(1, Math.min(params.limit ?? 30, 100));
     const before = decodeCursor(params.before);
@@ -140,6 +184,7 @@ export class ChatSessionRepository {
       )
       .where(`${PLATFORM_TABLES.chatSessions}.employee_id`, params.employeeId)
       .select(`${PLATFORM_TABLES.chatSessions}.*`, "session_message_stats.last_message_at");
+    applyAccessScope(query, params.accessScope ?? "all", params.actorUserId);
     if (before) {
       query = query.andWhere((builder) => {
         builder.where(`${PLATFORM_TABLES.chatSessions}.updated_at`, "<", before.updatedAt)

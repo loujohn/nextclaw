@@ -6,7 +6,10 @@ export type LocalChatSessionListItem = {
   preview: string;
   messageCount: number;
   createdByUserId?: string | null;
+  createdByUserDisplayName?: string | null;
   updatedByUserId?: string | null;
+  source?: "chat" | "scheduled";
+  sourceLabel?: "对话" | "定时任务";
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -60,6 +63,9 @@ export function createLocalDraftChatSession(occurredAt: string): LocalChatSessio
     title: "新对话",
     preview: "",
     messageCount: 0,
+    createdByUserDisplayName: null,
+    source: "chat",
+    sourceLabel: "对话",
     createdAt: occurredAt,
     updatedAt: occurredAt,
     lastMessageAt: null,

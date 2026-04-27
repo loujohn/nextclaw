@@ -57,6 +57,8 @@ export type ListUsersPageResult = {
   pageSize: number;
 };
 
+export type UserCountByRole = Partial<Record<UserRole, number>>;
+
 function buildSyncedKeycloakSub(externalUserId: string): string {
   return `personnel-sync:${externalUserId}`;
 }
@@ -380,11 +382,41 @@ export class UserRepository {
     return records.map(toUserView);
   }
 
+  async listDisplayNamesByIds(userIds: string[]): Promise<Record<string, string>> {
+    if (userIds.length === 0) {
+      return {};
+    }
+
+    const records = await this.db(PLATFORM_TABLES.users)
+      .whereIn("id", userIds)
+      .select<Array<Pick<UserRecord, "id" | "display_name">>>("id", "display_name");
+
+    return records.reduce<Record<string, string>>((result, record) => {
+      if (record.id && record.display_name) {
+        result[record.id] = record.display_name;
+      }
+      return result;
+    }, {});
+  }
+
   async listAll(): Promise<UserView[]> {
     const records = await this.db(PLATFORM_TABLES.users)
       .orderBy("created_at", "desc")
       .select<UserRecord[]>("*");
     return records.map(toUserView);
+  }
+
+  async countByRole(): Promise<UserCountByRole> {
+    const rows = await this.db(PLATFORM_TABLES.users)
+      .select("role")
+      .count<{ role: string; count: number | string }[]>("id as count")
+      .groupBy("role");
+
+    return rows.reduce<UserCountByRole>((result, row) => {
+      const role = row.role as UserRole;
+      result[role] = Number(row.count ?? 0);
+      return result;
+    }, {});
   }
 
   async listPage(input: ListUsersPageInput): Promise<ListUsersPageResult> {
