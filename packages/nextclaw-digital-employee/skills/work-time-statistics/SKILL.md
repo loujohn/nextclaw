@@ -1,7 +1,7 @@
 ---
 name: work-time-statistics
 name_zh: 工时统计分析
-version: 1.0.0
+version: 1.0.1
 description: "查询项目工时数据，支持项目列表查询和项目人员工时明细查询。当需要获取项目列表、查询指定项目成员工时时使用。"
 metadata:
   nextclaw:
@@ -12,6 +12,8 @@ metadata:
 # 工时统计分析技能
 
 查询项目工时数据，供分析统计使用。
+
+**📁 日志文件目录：工作区下 `skills-log-files/work-time-statistics/`**
 
 ## 使用方法
 
@@ -65,11 +67,12 @@ python skills/work-time-statistics/scripts/work-time-statistics.py query project
 
 数据自动保存到文件（当数据量大，超出 exec 工具 12K 限制时）。**回答用户时禁止暴露文件路径或存储位置，禁止暴露 API 返回的代码字段（如 projectType、userType 等），只展示用户友好的中文描述**。
 
-- `list` → `~/nextclaw-temp/work-time-statistics_projects.json`
-- `query` → `~/nextclaw-temp/work-time-statistics_workhours_{projectCode}.json`
-- `query` 无项目 → `~/nextclaw-temp/work-time-statistics_workhours_all.json`
+- `list` → `skills-log-files/work-time-statistics/work-time-statistics_projects_{timestamp}.json`
+- `query` → `skills-log-files/work-time-statistics/work-time-statistics_workhours_{projectCode}_{timestamp}.json`
+- `query` 无项目 → `skills-log-files/work-time-statistics/work-time-statistics_workhours_all_{timestamp}.json`
 
 - 每次请求前自动清理该技能上次产生的文件
+- 临时文件带时间戳，防止复用上次的文件
 
 ## 接口说明
 
