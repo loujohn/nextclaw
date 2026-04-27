@@ -17,6 +17,7 @@ const clientInstances: Array<{
   registerAllEventListener: ReturnType<typeof vi.fn>;
   socketCallBackResponse: ReturnType<typeof vi.fn>;
   sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
+  connectedAt?: number;
 }> = [];
 
 type DingTalkConfig = Config["channels"]["dingtalk"];
@@ -287,6 +288,7 @@ describe("DingTalkChannel", () => {
 
       await expect(startPromise).resolves.toBeUndefined();
       expect(channel.isRunning).toBe(true);
+      expect(typeof clientInstances[0]?.connectedAt).toBe("number");
     } finally {
       vi.useRealTimers();
     }
@@ -327,6 +329,7 @@ describe("DingTalkChannel", () => {
 
     await expect(channel.start()).rejects.toThrow("connect failed");
     expect(clientInstances[0]?.disconnect).toHaveBeenCalled();
+    expect(clientInstances[1]?.disconnect).toHaveBeenCalled();
     expect(channel.isRunning).toBe(false);
   });
 
