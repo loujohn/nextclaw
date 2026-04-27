@@ -38,6 +38,10 @@ function parseIpv4ToInt(value: string): number | null {
   return result >>> 0;
 }
 
+function toUnsigned32(value: number): number {
+  return value >>> 0;
+}
+
 function parseIpv4Cidr(value: string): NoProxyCidr | null {
   const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(value);
   if (!match) return null;
@@ -51,7 +55,7 @@ function parseIpv4Cidr(value: string): NoProxyCidr | null {
   const mask =
     prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
   return {
-    baseAddress: address & mask,
+    baseAddress: toUnsigned32(address & mask),
     prefixLength,
     mask,
   };
@@ -105,7 +109,10 @@ export function matchesNoProxyRule(hostname: string, rule: NoProxyRule): boolean
   const host = normalizeHostnameInput(hostname);
   if (rule.cidr) {
     const address = parseIpv4ToInt(host);
-    return address !== null && (address & rule.cidr.mask) === rule.cidr.baseAddress;
+    return (
+      address !== null &&
+      toUnsigned32(address & rule.cidr.mask) === rule.cidr.baseAddress
+    );
   }
 
   if (host === rule.host) return true;
