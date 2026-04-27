@@ -43,16 +43,6 @@ const DINGTALK_GATEWAY_OPEN_URL =
 const ENDPOINT_REQUEST_TIMEOUT_MS = 15_000;
 const ENDPOINT_ERROR_BODY_LIMIT = 500;
 
-type AgentRequestOptions = http.RequestOptions & {
-  hostname?: string;
-  host?: string;
-  port?: string | number;
-};
-
-type AgentWithAddRequest = http.Agent & {
-  addRequest(req: http.ClientRequest, options: AgentRequestOptions): void;
-};
-
 type WebSocketLike = {
   readyState?: number;
   once(event: string, listener: (...args: any[]) => void): void;
@@ -81,27 +71,6 @@ type DingTalkEndpointFetchOptions = NonNullable<Parameters<typeof fetch>[1]> & {
   dispatcher?: unknown;
 };
 
-class ProxyAwareAgent extends http.Agent {
-  constructor(
-    private readonly accountId: string,
-    private readonly proxyAgent: AgentWithAddRequest,
-    private readonly directAgent: AgentWithAddRequest,
-    private readonly bypassRules: NoProxyRule[],
-  ) {
-    super();
-  }
-
-  addRequest(req: http.ClientRequest, options: AgentRequestOptions): void {
-    const host = options.hostname ?? options.host ?? "";
-    const bypass = host ? shouldBypassProxy(host, this.bypassRules) : false;
-    const delegate = bypass ? this.directAgent : this.proxyAgent;
-    console.log(
-      `[dingtalk] ws proxy route account=${this.accountId} target=${formatHostPort(host, options.port)} route=${bypass ? "direct" : "proxy"}`,
-    );
-    delegate.addRequest(req, options);
-  }
-}
-
 function formatHostPort(host: string, port: string | number | undefined): string {
   if (!host) return "(unknown)";
   return port ? `${host}:${port}` : host;
@@ -114,6 +83,22 @@ function formatWsTarget(rawUrl: unknown): string {
     return `${url.protocol}//${url.host}${url.pathname}`;
   } catch {
     return "(unparseable)";
+  }
+}
+
+function resolveWsHostPort(rawUrl: unknown): {
+  host: string;
+  port?: string;
+} {
+  if (typeof rawUrl !== "string" || !rawUrl) return { host: "" };
+  try {
+    const url = new URL(rawUrl);
+    return {
+      host: url.hostname,
+      port: url.port || (url.protocol === "wss:" ? "443" : "80"),
+    };
+  } catch {
+    return { host: "" };
   }
 }
 
@@ -354,25 +339,27 @@ function patchWebSocketProxy(client: DWClient, accountId: string): void {
   if (typeof origInternalConnect !== "function") return;
 
   const bypassRules = parseNoProxy(process.env.NO_PROXY ?? process.env.no_proxy);
-  const proxyAgent = new HttpsProxyAgent(
-    proxyUrl,
-  ) as unknown as AgentWithAddRequest;
-  const directAgent = new https.Agent() as unknown as AgentWithAddRequest;
-  const agent = new ProxyAwareAgent(
-    accountId,
-    proxyAgent,
-    directAgent,
-    bypassRules,
-  );
+  const proxyAgent = new HttpsProxyAgent(proxyUrl);
+  const directAgent = new https.Agent();
   console.log(
     `[dingtalk] ws proxy injected -> ${proxyUrl} (noProxy=${formatNoProxyRulesForLog(bypassRules)})`,
   );
 
   (client as any)._connect = function (this: any) {
     // Inject a NO_PROXY-aware agent before WebSocket is created.
-    this.sslopts = { ...this.sslopts, agent };
+    const target = resolveWsHostPort(this.dw_url);
+    const bypass = target.host
+      ? shouldBypassProxy(target.host, bypassRules)
+      : false;
+    this.sslopts = {
+      ...this.sslopts,
+      agent: bypass ? directAgent : proxyAgent,
+    };
     console.log(
       `[dingtalk] ws connecting account=${accountId} target=${formatWsTarget(this.dw_url)}`,
+    );
+    console.log(
+      `[dingtalk] ws proxy route account=${accountId} target=${formatHostPort(target.host, target.port)} route=${bypass ? "direct" : "proxy"}`,
     );
     return origInternalConnect.call(this);
   };
