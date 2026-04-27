@@ -1,9 +1,15 @@
+import http from "node:http";
+import https from "node:https";
 import {
   BaseChannel,
   evaluateChannelAccessPolicy,
+  formatNoProxyRulesForLog,
+  parseNoProxy,
   resolveGroupMentionPolicy,
+  shouldBypassProxy,
   type Config,
   type MessageBus,
+  type NoProxyRule,
   type OutboundMessage,
 } from "@nextclaw/core";
 import {
@@ -31,6 +37,34 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
 
+type AgentRequestOptions = http.RequestOptions & {
+  hostname?: string;
+  host?: string;
+};
+
+type AgentWithAddRequest = http.Agent & {
+  addRequest(req: http.ClientRequest, options: AgentRequestOptions): void;
+};
+
+class ProxyAwareAgent extends http.Agent {
+  constructor(
+    private readonly proxyAgent: AgentWithAddRequest,
+    private readonly directAgent: AgentWithAddRequest,
+    private readonly bypassRules: NoProxyRule[],
+  ) {
+    super();
+  }
+
+  addRequest(req: http.ClientRequest, options: AgentRequestOptions): void {
+    const host = options.hostname ?? options.host ?? "";
+    const delegate =
+      host && shouldBypassProxy(host, this.bypassRules)
+        ? this.directAgent
+        : this.proxyAgent;
+    delegate.addRequest(req, options);
+  }
+}
+
 /**
  * Patch DWClient._connect() to inject a proxy agent into sslopts.
  *
@@ -53,12 +87,20 @@ function patchWebSocketProxy(client: DWClient): void {
 
   const origInternalConnect = (client as any)._connect;
   if (typeof origInternalConnect !== "function") return;
-  console.log("wsproxyUrl", proxyUrl);
-  const proxyAgent = new HttpsProxyAgent(proxyUrl);
+
+  const bypassRules = parseNoProxy(process.env.NO_PROXY ?? process.env.no_proxy);
+  const proxyAgent = new HttpsProxyAgent(
+    proxyUrl,
+  ) as unknown as AgentWithAddRequest;
+  const directAgent = new https.Agent() as unknown as AgentWithAddRequest;
+  const agent = new ProxyAwareAgent(proxyAgent, directAgent, bypassRules);
+  console.log(
+    `[dingtalk] ws proxy injected -> ${proxyUrl} (noProxy=${formatNoProxyRulesForLog(bypassRules)})`,
+  );
 
   (client as any)._connect = function (this: any) {
-    // Inject proxy agent into sslopts before WebSocket is created
-    this.sslopts = { ...this.sslopts, agent: proxyAgent };
+    // Inject a NO_PROXY-aware agent before WebSocket is created.
+    this.sslopts = { ...this.sslopts, agent };
     return origInternalConnect.call(this);
   };
 }

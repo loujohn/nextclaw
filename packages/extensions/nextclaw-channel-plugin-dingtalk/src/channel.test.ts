@@ -1,7 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import https from "node:https";
+import { EventEmitter } from "node:events";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageBus } from "@nextclaw/core";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { DingTalkChannel } from "./channel";
+
+let mockConnectHost = "api.dingtalk.com";
+let mockConnectPort = 443;
 
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
@@ -9,11 +15,29 @@ const clientInstances: Array<{
   registerCallbackListener: ReturnType<typeof vi.fn>;
   registerAllEventListener: ReturnType<typeof vi.fn>;
   socketCallBackResponse: ReturnType<typeof vi.fn>;
+  sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
 }> = [];
 
 vi.mock("dingtalk-stream", () => {
   class MockDWClient {
-    connect = vi.fn(async () => undefined);
+    connected = false;
+    sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
+    socket?: EventEmitter;
+    _connect = vi.fn(async () => {
+      this.sslopts?.agent?.addRequest?.(
+        new EventEmitter(),
+        {
+          host: mockConnectHost,
+          hostname: mockConnectHost,
+          port: mockConnectPort
+        }
+      );
+      this.socket = new EventEmitter();
+      this.connected = true;
+    });
+    connect = vi.fn(async () => {
+      await this._connect();
+    });
     disconnect = vi.fn(() => undefined);
     registerCallbackListener = vi.fn(() => undefined);
     registerAllEventListener = vi.fn(() => undefined);
@@ -34,6 +58,23 @@ vi.mock("dingtalk-stream", () => {
     EventAck: { SUCCESS: "SUCCESS" },
     TOPIC_ROBOT: "robot"
   };
+});
+
+beforeEach(() => {
+  vi.unstubAllEnvs();
+  vi.stubEnv("HTTPS_PROXY", "");
+  vi.stubEnv("https_proxy", "");
+  vi.stubEnv("HTTP_PROXY", "");
+  vi.stubEnv("http_proxy", "");
+  vi.stubEnv("NO_PROXY", "");
+  vi.stubEnv("no_proxy", "");
+  mockConnectHost = "api.dingtalk.com";
+  mockConnectPort = 443;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("normalizeInboundDingTalkMessage", () => {
@@ -142,6 +183,45 @@ describe("resolveOutboundTarget", () => {
 });
 
 describe("DingTalkChannel", () => {
+  it("bypasses proxy for WebSocket targets matched by CIDR NO_PROXY", async () => {
+    clientInstances.length = 0;
+    mockConnectHost = "172.31.1.95";
+    mockConnectPort = 1080;
+    vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
+    vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
+    const directAddRequest = vi
+      .spyOn(https.Agent.prototype as any, "addRequest")
+      .mockImplementation(() => undefined);
+    const channel = new DingTalkChannel(
+      {
+        enabled: true,
+        defaultAccountId: "ops-bot",
+        accounts: {
+          "ops-bot": {
+            clientId: "client-ok",
+            clientSecret: "secret-ok",
+            robotCode: "",
+            corpId: "",
+            agentId: "",
+            allowFrom: [],
+            dmPolicy: "open",
+            groupPolicy: "open",
+            groupAllowFrom: [],
+            requireMention: false,
+            mentionPatterns: [],
+            groups: {}
+          }
+        }
+      },
+      new MessageBus()
+    );
+
+    await channel.start();
+
+    expect(clientInstances[0]?.sslopts?.agent).not.toBeInstanceOf(HttpsProxyAgent);
+    expect(directAddRequest).toHaveBeenCalledTimes(1);
+  });
+
   it("disconnects already-started clients when one account fails during startup", async () => {
     clientInstances.length = 0;
     const channel = new DingTalkChannel(
