@@ -359,10 +359,14 @@ describe("DingTalkChannel", () => {
 
   it("attaches an EnvHttpProxyAgent dispatcher to endpoint fetch when proxy is configured", async () => {
     clientInstances.length = 0;
-    mockConnectHost = "172.31.1.95";
-    mockConnectPort = 1080;
     vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
     vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
+    mockUndiciFetch.mockResolvedValueOnce(
+      createFetchResponse(200, {
+        endpoint: "wss://172.31.1.95/connect",
+        ticket: "ticket-ok"
+      })
+    );
     vi.spyOn(https.Agent.prototype as any, "addRequest").mockImplementation(
       () => undefined
     );
@@ -423,10 +427,14 @@ describe("DingTalkChannel", () => {
 
   it("bypasses proxy for WebSocket targets matched by CIDR NO_PROXY", async () => {
     clientInstances.length = 0;
-    mockConnectHost = "172.31.1.95";
-    mockConnectPort = 1080;
     vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
     vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
+    mockUndiciFetch.mockResolvedValueOnce(
+      createFetchResponse(200, {
+        endpoint: "wss://172.31.1.95/connect",
+        ticket: "ticket-ok"
+      })
+    );
     const directAddRequest = vi
       .spyOn(https.Agent.prototype as any, "addRequest")
       .mockImplementation(() => undefined);
@@ -439,6 +447,26 @@ describe("DingTalkChannel", () => {
 
     expect(clientInstances[0]?.sslopts?.agent).not.toBeInstanceOf(HttpsProxyAgent);
     expect(directAddRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a concrete HTTPS proxy agent for proxied WebSocket targets", async () => {
+    clientInstances.length = 0;
+    mockConnectHost = "api.dingtalk.com";
+    mockConnectPort = 443;
+    vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
+    vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
+    const proxyAddRequest = vi
+      .spyOn(HttpsProxyAgent.prototype as any, "addRequest")
+      .mockImplementation(() => undefined);
+    const channel = new DingTalkChannel(
+      createDingTalkConfig(),
+      new MessageBus()
+    );
+
+    await channel.start();
+
+    expect(clientInstances[0]?.sslopts?.agent).toBeInstanceOf(HttpsProxyAgent);
+    expect(proxyAddRequest).toHaveBeenCalledTimes(1);
   });
 
   it("disconnects already-started clients when one account fails during startup", async () => {
