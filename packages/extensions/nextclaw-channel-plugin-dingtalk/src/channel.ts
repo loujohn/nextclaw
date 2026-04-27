@@ -37,6 +37,7 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
 const WS_OPEN_TIMEOUT_MS = 30_000;
+const WS_SOCKET_POLL_INTERVAL_MS = 10;
 
 type AgentRequestOptions = http.RequestOptions & {
   hostname?: string;
@@ -105,20 +106,18 @@ function removeSocketListener(
 
 function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
   if (client.connected === true) return Promise.resolve();
-  const socket = client.socket as WebSocketLike | undefined;
-  if (!socket) {
-    throw new Error(`DingTalk WebSocket socket missing account=${accountId}`);
-  }
-  if (socket.readyState === 1) return Promise.resolve();
-
-  const target = formatWsTarget(client.dw_url);
   return new Promise((resolve, reject) => {
     let settled = false;
+    let socket: WebSocketLike | undefined;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
     const cleanup = () => {
-      clearTimeout(timer);
-      removeSocketListener(socket, "open", onOpen);
-      removeSocketListener(socket, "error", onError);
-      removeSocketListener(socket, "close", onClose);
+      clearTimeout(timeoutTimer);
+      if (pollTimer) clearInterval(pollTimer);
+      if (socket) {
+        removeSocketListener(socket, "open", onOpen);
+        removeSocketListener(socket, "error", onError);
+        removeSocketListener(socket, "close", onClose);
+      }
     };
     const finish = (err?: Error) => {
       if (settled) return;
@@ -128,13 +127,15 @@ function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
       else resolve();
     };
     const onOpen = () => {
-      console.log(`[dingtalk] ws open account=${accountId} target=${target}`);
+      console.log(
+        `[dingtalk] ws open account=${accountId} target=${formatWsTarget(client.dw_url)}`,
+      );
       finish();
     };
     const onError = (err: Error) => {
       finish(
         new Error(
-          `DingTalk WebSocket error before open account=${accountId} target=${target}: ${err.message}`,
+          `DingTalk WebSocket error before open account=${accountId} target=${formatWsTarget(client.dw_url)}: ${err.message}`,
         ),
       );
     };
@@ -142,21 +143,45 @@ function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
       const reasonStr = reason?.toString?.() ?? "";
       finish(
         new Error(
-          `DingTalk WebSocket closed before open account=${accountId} target=${target} code=${code} reason=${reasonStr || "(empty)"}`,
+          `DingTalk WebSocket closed before open account=${accountId} target=${formatWsTarget(client.dw_url)} code=${code} reason=${reasonStr || "(empty)"}`,
         ),
       );
     };
-    const timer = setTimeout(() => {
-      finish(
-        new Error(
-          `DingTalk WebSocket did not open within ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target} readyState=${socket.readyState ?? "(unknown)"}`,
-        ),
-      );
+    const attachSocket = (nextSocket: WebSocketLike) => {
+      socket = nextSocket;
+      if (socket.readyState === 1 || client.connected === true) {
+        finish();
+        return;
+      }
+      socket.once("open", onOpen);
+      socket.once("error", onError);
+      socket.once("close", onClose);
+    };
+    const checkSocket = () => {
+      if (client.connected === true) {
+        finish();
+        return;
+      }
+      const nextSocket = client.socket as WebSocketLike | undefined;
+      if (!nextSocket) return;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+      attachSocket(nextSocket);
+    };
+    const timeoutTimer = setTimeout(() => {
+      const target = formatWsTarget(client.dw_url);
+      const errorMessage = socket
+        ? `DingTalk WebSocket did not open within ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target} readyState=${socket.readyState ?? "(unknown)"}`
+        : `DingTalk WebSocket socket missing after ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target}`;
+      finish(new Error(errorMessage));
     }, WS_OPEN_TIMEOUT_MS);
 
-    socket.once("open", onOpen);
-    socket.once("error", onError);
-    socket.once("close", onClose);
+    checkSocket();
+    if (!settled && !socket) {
+      pollTimer = setInterval(checkSocket, WS_SOCKET_POLL_INTERVAL_MS);
+    }
   });
 }
 
@@ -351,18 +376,20 @@ export class DingTalkChannel extends BaseChannel<
       throw new Error("DingTalk accounts not configured");
     }
 
-    const startedClients: DWClient[] = [];
+    const attemptedClients: DWClient[] = [];
     try {
       for (const [accountId, account] of entries) {
         const client = this.createClient(accountId, account);
+        attemptedClients.push(client);
         await client.connect();
         this.clients.set(accountId, client);
-        startedClients.push(client);
         console.log(`[dingtalk] connected account=${accountId}`);
       }
     } catch (error) {
       this.running = false;
-      for (const client of startedClients) {
+      for (const dispose of this.clientDisposers.values()) dispose();
+      this.clientDisposers.clear();
+      for (const client of attemptedClients) {
         client.disconnect();
       }
       this.clients.clear();

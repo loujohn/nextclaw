@@ -2,13 +2,13 @@ import https from "node:https";
 import { EventEmitter } from "node:events";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MessageBus } from "@nextclaw/core";
+import { MessageBus, type Config } from "@nextclaw/core";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { DingTalkChannel } from "./channel";
 
 let mockConnectHost = "api.dingtalk.com";
 let mockConnectPort = 443;
-let mockSocketOpenMode: "open" | "never" = "open";
+let mockSocketOpenMode: "open" | "delayed-open" | "never" = "open";
 
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
@@ -18,6 +18,53 @@ const clientInstances: Array<{
   socketCallBackResponse: ReturnType<typeof vi.fn>;
   sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
 }> = [];
+
+type DingTalkConfig = Config["channels"]["dingtalk"];
+type DingTalkAccount = DingTalkConfig["accounts"][string];
+
+function createDingTalkAccount(
+  overrides: Partial<DingTalkAccount> = {}
+): DingTalkAccount {
+  return {
+    clientId: "client-ok",
+    clientSecret: "secret-ok",
+    robotCode: "",
+    corpId: "",
+    agentId: "",
+    allowFrom: [],
+    dmPolicy: "open",
+    groupPolicy: "open",
+    groupAllowFrom: [],
+    requireMention: false,
+    mentionPatterns: [],
+    groups: {},
+    ...overrides
+  };
+}
+
+function createDingTalkConfig(
+  accounts: Record<string, DingTalkAccount> = {
+    "ops-bot": createDingTalkAccount()
+  }
+): DingTalkConfig {
+  return {
+    enabled: true,
+    clientId: "",
+    clientSecret: "",
+    robotCode: "",
+    corpId: "",
+    agentId: "",
+    allowFrom: [],
+    dmPolicy: "open",
+    groupPolicy: "open",
+    groupAllowFrom: [],
+    requireMention: false,
+    mentionPatterns: [],
+    groups: {},
+    defaultAccountId: "ops-bot",
+    accounts
+  };
+}
 
 vi.mock("dingtalk-stream", () => {
   class MockDWClient {
@@ -33,10 +80,22 @@ vi.mock("dingtalk-stream", () => {
           port: mockConnectPort
         }
       );
-      this.socket = new EventEmitter();
-      this.socket.on("open", () => {
-        this.connected = true;
-      });
+      const attachSocket = () => {
+        this.socket = new EventEmitter();
+        this.socket.on("open", () => {
+          this.connected = true;
+        });
+      };
+      if (mockSocketOpenMode === "delayed-open") {
+        setTimeout(() => {
+          attachSocket();
+          setTimeout(() => {
+            this.socket?.emit("open");
+          }, 0);
+        }, 10);
+        return;
+      }
+      attachSocket();
       if (mockSocketOpenMode === "open") {
         setTimeout(() => {
           this.socket?.emit("open");
@@ -197,26 +256,7 @@ describe("DingTalkChannel", () => {
     clientInstances.length = 0;
     mockSocketOpenMode = "never";
     const channel = new DingTalkChannel(
-      {
-        enabled: true,
-        defaultAccountId: "ops-bot",
-        accounts: {
-          "ops-bot": {
-            clientId: "client-ok",
-            clientSecret: "secret-ok",
-            robotCode: "",
-            corpId: "",
-            agentId: "",
-            allowFrom: [],
-            dmPolicy: "open",
-            groupPolicy: "open",
-            groupAllowFrom: [],
-            requireMention: false,
-            mentionPatterns: [],
-            groups: {}
-          }
-        }
-      },
+      createDingTalkConfig(),
       new MessageBus()
     );
 
@@ -231,6 +271,27 @@ describe("DingTalkChannel", () => {
     vi.useRealTimers();
   });
 
+  it("waits for a WebSocket socket that is attached after connect resolves", async () => {
+    vi.useFakeTimers();
+    clientInstances.length = 0;
+    mockSocketOpenMode = "delayed-open";
+    try {
+      const channel = new DingTalkChannel(
+        createDingTalkConfig(),
+        new MessageBus()
+      );
+
+      const startPromise = channel.start();
+      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(0);
+
+      await expect(startPromise).resolves.toBeUndefined();
+      expect(channel.isRunning).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("bypasses proxy for WebSocket targets matched by CIDR NO_PROXY", async () => {
     clientInstances.length = 0;
     mockConnectHost = "172.31.1.95";
@@ -241,26 +302,7 @@ describe("DingTalkChannel", () => {
       .spyOn(https.Agent.prototype as any, "addRequest")
       .mockImplementation(() => undefined);
     const channel = new DingTalkChannel(
-      {
-        enabled: true,
-        defaultAccountId: "ops-bot",
-        accounts: {
-          "ops-bot": {
-            clientId: "client-ok",
-            clientSecret: "secret-ok",
-            robotCode: "",
-            corpId: "",
-            agentId: "",
-            allowFrom: [],
-            dmPolicy: "open",
-            groupPolicy: "open",
-            groupAllowFrom: [],
-            requireMention: false,
-            mentionPatterns: [],
-            groups: {}
-          }
-        }
-      },
+      createDingTalkConfig(),
       new MessageBus()
     );
 
@@ -273,40 +315,13 @@ describe("DingTalkChannel", () => {
   it("disconnects already-started clients when one account fails during startup", async () => {
     clientInstances.length = 0;
     const channel = new DingTalkChannel(
-      {
-        enabled: true,
-        defaultAccountId: "ops-bot",
-        accounts: {
-          "ops-bot": {
-            clientId: "client-ok",
-            clientSecret: "secret-ok",
-            robotCode: "",
-            corpId: "",
-            agentId: "",
-            allowFrom: [],
-            dmPolicy: "open",
-            groupPolicy: "open",
-            groupAllowFrom: [],
-            requireMention: false,
-            mentionPatterns: [],
-            groups: {}
-          },
-          "bad-bot": {
-            clientId: "client-bad",
-            clientSecret: "secret-bad",
-            robotCode: "",
-            corpId: "",
-            agentId: "",
-            allowFrom: [],
-            dmPolicy: "open",
-            groupPolicy: "open",
-            groupAllowFrom: [],
-            requireMention: false,
-            mentionPatterns: [],
-            groups: {}
-          }
-        }
-      },
+      createDingTalkConfig({
+        "ops-bot": createDingTalkAccount(),
+        "bad-bot": createDingTalkAccount({
+          clientId: "client-bad",
+          clientSecret: "secret-bad"
+        })
+      }),
       new MessageBus()
     );
 
@@ -318,26 +333,7 @@ describe("DingTalkChannel", () => {
   it("acks callback even when message handling fails", async () => {
     clientInstances.length = 0;
     const channel = new DingTalkChannel(
-      {
-        enabled: true,
-        defaultAccountId: "ops-bot",
-        accounts: {
-          "ops-bot": {
-            clientId: "client-ok",
-            clientSecret: "secret-ok",
-            robotCode: "",
-            corpId: "",
-            agentId: "",
-            allowFrom: [],
-            dmPolicy: "open",
-            groupPolicy: "open",
-            groupAllowFrom: [],
-            requireMention: false,
-            mentionPatterns: [],
-            groups: {}
-          }
-        }
-      },
+      createDingTalkConfig(),
       new MessageBus()
     );
     await channel.start();
