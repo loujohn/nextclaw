@@ -243,9 +243,9 @@ function onFormSubmit() {
                   </label>
 
                   <label class="block space-y-1.5">
-                    <span class="text-sm font-medium">角色设定</span>
+                    <span class="text-sm font-medium">SOUL.md 角色设定</span>
                     <textarea v-model="form.systemPrompt" rows="4" placeholder="定义角色人格、行为风格、输出边界和工作原则…" class="input-field" />
-                    <p class="text-[11px] text-muted-foreground">定义这位员工的性格特征、行为准则和工作方式</p>
+                    <p class="text-[11px] text-muted-foreground">定义这位员工的性格特征、行为准则和工作方式，保存到工作区文件</p>
                   </label>
                 </div>
 

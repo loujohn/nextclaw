@@ -138,7 +138,7 @@ curl -s -X POST "$PLATFORM_URL/api/employees" \
 - `scheduleKind` — `"cron"` | `"every"` | `"heartbeat"`
 - `cronExpr` — Cron 表达式（scheduleKind 为 cron 时）
 - `everyMs` — 间隔毫秒数（scheduleKind 为 every 时）
-- `workspaceFiles` — 初始工作区文件，可写：`AGENTS.md`、`TOOLS.md`、`USER.md`、`BOOT.md`、`HEARTBEAT.md`、`MEMORY.md`
+- `workspaceFiles` — 初始工作区文件，可写：`AGENTS.md`、`SOUL.md`、`USER.md`、`IDENTITY.md`、`TOOLS.md`、`BOOT.md`、`HEARTBEAT.md`、`MEMORY.md`
 
 ## 注意事项
 

@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { Knex } from "knex";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ensurePlatformDatabase, createPlatformKnex } from "../server/db/knex";
 import { EmployeeRepository } from "../server/repositories/employee-repository";
 import { EmployeeSkillRepository } from "../server/repositories/employee-skill-repository";
 import { RunRecordRepository } from "../server/repositories/run-record-repository";
@@ -10,8 +10,10 @@ import { ChatSessionRepository } from "../server/repositories/chat-session-repos
 import { ChatMessageRepository } from "../server/repositories/chat-message-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
 import { EmployeeRunService } from "../server/services/employee-run-service";
+import { cleanTestDatabase, createTestKnex, ensureTestDatabase } from "./test-db";
 
 const tempDirs: string[] = [];
+const activeDbs: Knex[] = [];
 
 function createTempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -25,6 +27,10 @@ afterEach(() => {
     if (dir) {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+  while (activeDbs.length > 0) {
+    const db = activeDbs.pop();
+    void db?.destroy();
   }
   vi.restoreAllMocks();
 });
@@ -79,8 +85,10 @@ function buildGateway(homeDir: string, options?: {
 }
 
 async function createService(homeDir: string, gateway = buildGateway(homeDir)) {
-  const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-  await ensurePlatformDatabase(db);
+  const db = createTestKnex();
+  activeDbs.push(db);
+  await ensureTestDatabase(db);
+  await cleanTestDatabase(db);
   const employeeRepo = new EmployeeRepository(db);
   const skillRepo = new EmployeeSkillRepository(db);
   const runRepo = new RunRecordRepository(db);
@@ -602,8 +610,10 @@ describe("ChatSessionRepository - BUG-3 atomic message_count increment", () => {
 describe("EmployeeRunService - session cross-employee isolation", () => {
   it("员工 A 无法读取员工 B 的会话历史", async () => {
     const homeDir = createTempDir("cross-employee-isolation-");
-    const db = createPlatformKnex(join(homeDir, "platform.sqlite"));
-    await ensurePlatformDatabase(db);
+    const db = createTestKnex();
+    activeDbs.push(db);
+    await ensureTestDatabase(db);
+    await cleanTestDatabase(db);
     const employeeRepo = new EmployeeRepository(db);
     const skillRepo = new EmployeeSkillRepository(db);
     const runRepo = new RunRecordRepository(db);

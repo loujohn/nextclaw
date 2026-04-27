@@ -196,6 +196,12 @@ export class SessionsListTool extends Tool {
     super();
   }
 
+  private agentId: string | undefined = undefined;
+
+  setContext(ctx: { agentId?: string }): void {
+    this.agentId = ctx.agentId?.trim().toLowerCase() || undefined;
+  }
+
   get name(): string {
     return "sessions_list";
   }
@@ -227,10 +233,18 @@ export class SessionsListTool extends Tool {
     const activeMinutes = toInt(params.activeMinutes, 0);
     const messageLimit = Math.min(toInt(params.messageLimit, DEFAULT_MESSAGE_LIMIT), MAX_MESSAGE_LIMIT);
     const now = Date.now();
+    const agentIdFilter = this.agentId;
     const sessions = this.sessions
       .listSessions()
       .sort((a, b) => (toTimestamp(b.updated_at) ?? 0) - (toTimestamp(a.updated_at) ?? 0))
       .filter((entry) => {
+        // agentId isolation filter
+        if (agentIdFilter) {
+          const key = String(entry.key ?? "").toLowerCase();
+          if (!key.startsWith(`agent:${agentIdFilter}:`)) {
+            return false;
+          }
+        }
         if (activeMinutes > 0 && entry.updated_at) {
           const updated = Date.parse(String(entry.updated_at));
           if (Number.isFinite(updated) && now - updated > activeMinutes * 60 * 1000) {
@@ -312,6 +326,12 @@ export class SessionsHistoryTool extends Tool {
     super();
   }
 
+  private agentId: string | undefined = undefined;
+
+  setContext(ctx: { agentId?: string }): void {
+    this.agentId = ctx.agentId?.trim().toLowerCase() || undefined;
+  }
+
   get name(): string {
     return "sessions_history";
   }
@@ -336,6 +356,13 @@ export class SessionsHistoryTool extends Tool {
     const sessionKey = String(params.sessionKey ?? "").trim();
     if (!sessionKey) {
       return "Error: sessionKey is required";
+    }
+    // agentId access control
+    if (this.agentId) {
+      const normalizedKey = sessionKey.trim().toLowerCase();
+      if (!normalizedKey.startsWith(`agent:${this.agentId}:`)) {
+        return `Error: session '${sessionKey}' not found`;
+      }
     }
     let session = this.sessions.getIfExists(sessionKey);
     if (!session) {
@@ -433,6 +460,36 @@ export class SessionsSendTool extends Tool {
     if (!message) {
       return JSON.stringify({ runId, status: "error", error: "message is required" }, null, 2);
     }
+    const callerAgentId = this.context.currentAgentId;
+    // ── employee inbox early path ──────────────────────────────────────────────
+    // When only agentId is given (no sessionKey, no label) and target differs
+    // from caller, deliver directly to the target employee's inbox via
+    // the "employee" internal channel. Fire-and-forget: B responds through
+    // its own bound channels (e.g. DingTalk), not back to A.
+    // Note: silently skipped if currentAgentId is absent from context.
+    if (targetAgentParam && !sessionKeyParam && !labelParam && callerAgentId && targetAgentParam !== callerAgentId) {
+      const inbound: InboundMessage = {
+        channel: "employee",
+        chatId: targetAgentParam,
+        senderId: `agent:${callerAgentId}`,
+        content: message,
+        timestamp: new Date(),
+        attachments: [],
+        metadata: {
+          source: "sessions_send",
+          target_agent_id: targetAgentParam,
+          agent_handoff_from: callerAgentId
+        }
+      };
+      await this.bus.publishInbound(inbound);
+      return JSON.stringify(
+        { runId, status: "ok", dispatched: "inbound", targetAgentId: targetAgentParam },
+        null,
+        2
+      );
+    }
+    // ── end employee inbox early path ─────────────────────────────────────────
+
     if (!sessionKey) {
       const label = labelParam;
       if (!label) {
@@ -478,7 +535,6 @@ export class SessionsSendTool extends Tool {
       );
     }
 
-    const callerAgentId = this.context.currentAgentId;
     const targetAgentId = targetAgentParam || parseAgentIdFromSessionKey(sessionKey) || callerAgentId;
     const isCrossAgent = Boolean(callerAgentId && targetAgentId && callerAgentId !== targetAgentId);
     const currentHandoffDepth = toInt(this.context.currentHandoffDepth, 0);

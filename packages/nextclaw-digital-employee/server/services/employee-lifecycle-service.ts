@@ -9,7 +9,7 @@ import { AutomationService } from "./automation-service";
 import { ensureEmployeeWorkspace, copySkillToEmployee, removeSkillFromEmployee, resolveEmployeeWorkspace } from "../engine/employee-workspace";
 import type { NextclawEngineGateway } from "../engine/NextclawEngineGateway";
 
-const WRITABLE_FILES = new Set(["AGENTS.md", "TOOLS.md", "USER.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
+const WRITABLE_FILES = new Set(["AGENTS.md", "SOUL.md", "USER.md", "IDENTITY.md", "TOOLS.md", "BOOT.md", "HEARTBEAT.md", "MEMORY.md"]);
 const VALID_SCHEDULE_KINDS = new Set(["cron", "every", "heartbeat"]);
 
 export class EmployeeLifecycleService {

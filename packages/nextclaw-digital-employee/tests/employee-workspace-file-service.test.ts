@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EmployeeWorkspaceFileService } from "../server/services/employee-workspace-file-service";
+import type { ChatMessageRepository } from "../server/repositories/chat-message-repository";
+import type { EmployeeRepository } from "../server/repositories/employee-repository";
 
 const tempDirs: string[] = [];
 
@@ -18,7 +20,7 @@ afterEach(() => {
 function createService() {
   const homeDir = mkdtempSync(join(tmpdir(), "digital-employee-workspace-test-"));
   tempDirs.push(homeDir);
-  const employeeRepo = {
+  const employeeRepo: Pick<EmployeeRepository, "getById"> = {
     async getById() {
       return {
         id: "employee-1",
@@ -29,12 +31,16 @@ function createService() {
         model: "",
         status: "active",
         departmentId: null,
+        createdByUserId: null,
+        updatedByUserId: null,
+        webhookEnabled: false,
+        webhookSecret: null,
         createdAt: "",
         updatedAt: ""
       };
     }
   };
-  const chatMessageRepo = {
+  const chatMessageRepo: Pick<ChatMessageRepository, "listAttachmentReferencesByEmployeeId"> = {
     async listAttachmentReferencesByEmployeeId() {
       return [{
         relativePath: "uploadFile/2026-04-15/up_ref_测试文件xlsx.xlsx",
@@ -61,12 +67,14 @@ function createService() {
   mkdirSync(join(workspaceDir, "uploadFile", "2026-04-15"), { recursive: true });
   writeFileSync(join(workspaceDir, "memory", "MEMORY.md"), "# Memory", "utf-8");
   writeFileSync(join(workspaceDir, "AGENTS.md"), "# Agents", "utf-8");
+  writeFileSync(join(workspaceDir, "SOUL.md"), "# Soul", "utf-8");
+  writeFileSync(join(workspaceDir, "IDENTITY.md"), "# Identity", "utf-8");
   writeFileSync(join(workspaceDir, ".nextclaw-digital-employee", "scripts", "is-workday.py"), "print('ok')\n", "utf-8");
   writeFileSync(join(workspaceDir, "unpacked_docx", "word", "media", "image1.png"), Buffer.from([1, 2, 3]));
   writeFileSync(join(workspaceDir, "uploadFile", "2026-04-15", "up_ref_测试文件xlsx.xlsx"), Buffer.from([1, 2, 3]));
 
   return {
-    service: new EmployeeWorkspaceFileService(employeeRepo as any, chatMessageRepo as any, homeDir),
+    service: new EmployeeWorkspaceFileService(employeeRepo as EmployeeRepository, chatMessageRepo as ChatMessageRepository, homeDir),
     workspaceDir
   };
 }
@@ -78,6 +86,8 @@ describe("EmployeeWorkspaceFileService", () => {
     const tree = await service.listWorkspace({ employeeId: "employee-1" });
     const hiddenWorkspaceDir = tree.find((node) => node.kind === "directory" && node.relativePath === ".nextclaw-digital-employee");
     const rootFile = tree.find((node) => node.kind === "file" && node.relativePath === "AGENTS.md");
+    const soulFile = tree.find((node) => node.kind === "file" && node.relativePath === "SOUL.md");
+    const identityFile = tree.find((node) => node.kind === "file" && node.relativePath === "IDENTITY.md");
     const memoryDir = tree.find((node) => node.kind === "directory" && node.relativePath === "memory");
     const uploadDir = tree.find((node) => node.kind === "directory" && node.relativePath === "uploadFile");
     const docxDir = tree.find((node) => node.kind === "directory" && node.relativePath === "unpacked_docx");
@@ -86,6 +96,8 @@ describe("EmployeeWorkspaceFileService", () => {
       ? JSON.stringify(hiddenWorkspaceDir).includes("is-workday.py")
       : false).toBe(true);
     expect(rootFile && rootFile.kind === "file" ? rootFile.editable : false).toBe(true);
+    expect(soulFile && soulFile.kind === "file" ? soulFile.editable : false).toBe(true);
+    expect(identityFile && identityFile.kind === "file" ? identityFile.editable : false).toBe(true);
     expect(memoryDir && memoryDir.kind === "directory"
       ? memoryDir.children.some((child) => child.kind === "file" && child.relativePath === "memory/MEMORY.md" && child.editable)
       : false).toBe(true);
@@ -133,9 +145,21 @@ describe("EmployeeWorkspaceFileService", () => {
       relativePath: ".nextclaw-digital-employee/scripts/is-workday.py",
       content: "print('updated')\n"
     });
+    await service.saveTextFile({
+      employeeId: "employee-1",
+      relativePath: "SOUL.md",
+      content: "# Soul\n\nupdated"
+    });
+    await service.saveTextFile({
+      employeeId: "employee-1",
+      relativePath: "IDENTITY.md",
+      content: "# Identity\n\nupdated"
+    });
 
     expect(readFileSync(join(workspaceDir, "AGENTS.md"), "utf-8")).toBe("updated");
     expect(readFileSync(join(workspaceDir, ".nextclaw-digital-employee", "scripts", "is-workday.py"), "utf-8")).toBe("print('updated')\n");
+    expect(readFileSync(join(workspaceDir, "SOUL.md"), "utf-8")).toBe("# Soul\n\nupdated");
+    expect(readFileSync(join(workspaceDir, "IDENTITY.md"), "utf-8")).toBe("# Identity\n\nupdated");
     await expect(service.saveTextFile({
       employeeId: "employee-1",
       relativePath: "uploadFile/2026-04-15/up_ref_测试文件xlsx.xlsx",

@@ -4,14 +4,26 @@ import {
   resolveGroupMentionPolicy,
   type Config,
   type MessageBus,
-  type OutboundMessage
+  type OutboundMessage,
 } from "@nextclaw/core";
-import { DWClient, EventAck, TOPIC_ROBOT, type DWClientDownStream } from "dingtalk-stream";
+import {
+  DWClient,
+  EventAck,
+  TOPIC_ROBOT,
+  type DWClientDownStream,
+} from "dingtalk-stream";
+import { fetch } from "undici";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import { fetch, ProxyAgent, Agent } from "undici";
 
-import { normalizeDingTalkConfig, resolveDingTalkAccount, type DingTalkAccountConfig } from "./config";
-import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
+import {
+  normalizeDingTalkConfig,
+  resolveDingTalkAccount,
+  type DingTalkAccountConfig,
+} from "./config";
+import {
+  normalizeInboundDingTalkMessage,
+  resolveOutboundTarget,
+} from "./message-normalizer";
 import { normalizeString } from "./utils";
 
 const INITIAL_RECONNECT_DELAY_MS = 2_000;
@@ -19,34 +31,36 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
 
-function getProxyUrl(): string | undefined {
-  return process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
-}
-
-function buildDispatcher() {
-  const proxyUrl = getProxyUrl();
-  if (proxyUrl) {
-    console.log(`[dingtalk] using http proxy: ${proxyUrl}`);
-    return new ProxyAgent(proxyUrl);
-  }
-  return new Agent();
-}
-
 /**
- * 为 ws 注入代理 agent。
- * 不直接调用 HttpsProxyAgent.connect()，避免传入非 ClientRequest 导致 req.emit 异常。
+ * Patch DWClient._connect() to inject a proxy agent into sslopts.
+ *
+ * The `ws` library does NOT read HTTP_PROXY/HTTPS_PROXY env vars.
+ * DWClient creates WebSocket via `new WebSocket(url, this.sslopts)` —
+ * without an agent, the connection goes direct and gets blocked in
+ * proxy-required production environments.
+ *
+ * This patch intercepts _connect and adds HttpsProxyAgent to sslopts
+ * before the WebSocket is instantiated.
  */
-function injectWsProxy(client: DWClient): void {
-  const proxyUrl = getProxyUrl();
+function patchWebSocketProxy(client: DWClient): void {
+  const proxyUrl =
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy;
+
   if (!proxyUrl) return;
 
-  const agent = new HttpsProxyAgent(proxyUrl);
-  const base = (client as any).sslopts ?? {};
-  (client as any).sslopts = {
-    ...base,
-    agent,
+  const origInternalConnect = (client as any)._connect;
+  if (typeof origInternalConnect !== "function") return;
+  console.log("wsproxyUrl", proxyUrl);
+  const proxyAgent = new HttpsProxyAgent(proxyUrl);
+
+  (client as any)._connect = function (this: any) {
+    // Inject proxy agent into sslopts before WebSocket is created
+    this.sslopts = { ...this.sslopts, agent: proxyAgent };
+    return origInternalConnect.call(this);
   };
-  console.log(`[dingtalk] ws proxy injected → ${proxyUrl}`);
 }
 
 /**
@@ -72,16 +86,34 @@ function patchSocketLogging(client: DWClient, accountId: string): void {
         if (wsErrorCount <= 3 || wsErrorCount % 10 === 0) {
           console.warn(
             `[dingtalk] ws error account=${accountId}: ${err.message}` +
-              (wsErrorCount > 1 ? ` (${wsErrorCount} consecutive)` : "")
+              (wsErrorCount > 1 ? ` (${wsErrorCount} consecutive)` : ""),
           );
         }
+      });
+
+      // 追加一条 close 监听，不动 SDK 自己的 reconnect close handler。
+      // 只为了能在日志里看到 close code / reason（钉钉 stream 服务端主动关连接时
+      // 只会走 close 事件而非 error，之前的日志里根本看不出为什么掉线）。
+      socket.on("close", (code: number, reason: Buffer) => {
+        const reasonStr = reason?.toString?.() ?? "";
+        const connectedFor = this.connectedAt
+          ? `${Date.now() - this.connectedAt}ms`
+          : "(unknown)";
+        console.warn(
+          `[dingtalk] ws closed account=${accountId} code=${code} reason=${
+            reasonStr || "(empty)"
+          } connectedFor=${connectedFor}`,
+        );
       });
 
       const origOpenListeners = socket.listeners("open").slice();
       socket.removeAllListeners("open");
       socket.on("open", (...args: unknown[]) => {
+        this.connectedAt = Date.now();
         if (wsErrorCount > 0) {
-          console.log(`[dingtalk] ws recovered account=${accountId} after ${wsErrorCount} error(s)`);
+          console.log(
+            `[dingtalk] ws recovered account=${accountId} after ${wsErrorCount} error(s)`,
+          );
           wsErrorCount = 0;
         }
         for (const fn of origOpenListeners) {
@@ -103,7 +135,10 @@ function patchSocketLogging(client: DWClient, accountId: string): void {
  * Returns a dispose function that prevents any pending retry from firing
  * after the client is intentionally stopped.
  */
-function patchClientConnect(client: DWClient, accountId: string): { dispose(): void } {
+function patchClientConnect(
+  client: DWClient,
+  accountId: string,
+): { dispose(): void } {
   const originalConnect = client.connect.bind(client);
   let backoffMs = INITIAL_RECONNECT_DELAY_MS;
   let connecting = false;
@@ -125,7 +160,9 @@ function patchClientConnect(client: DWClient, accountId: string): { dispose(): v
       const delay = backoffMs;
       backoffMs = Math.min(backoffMs * 2, MAX_RECONNECT_DELAY_MS);
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[dingtalk] connect error account=${accountId}, retry in ${delay / 1000}s: ${msg}`);
+      console.warn(
+        `[dingtalk] connect error account=${accountId}, retry in ${delay / 1000}s: ${msg}`,
+      );
       setTimeout(() => {
         connecting = false;
         client.connect().catch(() => {});
@@ -135,12 +172,18 @@ function patchClientConnect(client: DWClient, accountId: string): { dispose(): v
     connecting = false;
   };
 
-  return { dispose() { disposed = true; } };
+  return {
+    dispose() {
+      disposed = true;
+    },
+  };
 }
 
 type TokenState = { token: string; expiresAt: number };
 
-export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]> {
+export class DingTalkChannel extends BaseChannel<
+  Config["channels"]["dingtalk"]
+> {
   name = "dingtalk";
   private clients = new Map<string, DWClient>();
   private tokens = new Map<string, TokenState>();
@@ -151,8 +194,12 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
   async start(): Promise<void> {
     this.running = true;
     const normalized = normalizeDingTalkConfig(this.config);
-    const entries = Object.entries(normalized.accounts).filter(([, account]) => account.clientId && account.clientSecret);
-    console.log(`[dingtalk] starting, accounts=${entries.map(([id]) => id).join(",") || "(none)"}`);
+    const entries = Object.entries(normalized.accounts).filter(
+      ([, account]) => account.clientId && account.clientSecret,
+    );
+    console.log(
+      `[dingtalk] starting, accounts=${entries.map(([id]) => id).join(",") || "(none)"}`,
+    );
     if (entries.length === 0) {
       this.running = false;
       throw new Error("DingTalk accounts not configured");
@@ -199,20 +246,28 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     console.log(`[dingtalk] stopped`);
   }
 
-  private createClient(accountId: string, account: DingTalkAccountConfig): DWClient {
-    console.log(`[dingtalk] connecting account=${accountId} clientId=${account.clientId}`);
+  private createClient(
+    accountId: string,
+    account: DingTalkAccountConfig,
+  ): DWClient {
+    console.log(
+      `[dingtalk] connecting account=${accountId} clientId=${account.clientId}`,
+    );
     const client = new DWClient({
       clientId: account.clientId,
       clientSecret: account.clientSecret,
-      debug: false
+      debug: false,
     });
-    injectWsProxy(client);
+    patchWebSocketProxy(client);
     patchSocketLogging(client, accountId);
     const { dispose } = patchClientConnect(client, accountId);
     this.clientDisposers.set(accountId, dispose);
-    client.registerCallbackListener(TOPIC_ROBOT, async (event: DWClientDownStream) => {
-      await this.handleRobotMessage(accountId, account, event);
-    });
+    client.registerCallbackListener(
+      TOPIC_ROBOT,
+      async (event: DWClientDownStream) => {
+        await this.handleRobotMessage(accountId, account, event);
+      },
+    );
     client.registerAllEventListener(() => ({ status: EventAck.SUCCESS }));
     return client;
   }
@@ -227,15 +282,22 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         }
         const since = this.disconnectedSince.get(accountId);
         if (!since) {
-          console.log(`[dingtalk] health: account=${accountId} disconnected, monitoring...`);
+          console.log(
+            `[dingtalk] health: account=${accountId} disconnected, monitoring...`,
+          );
           this.disconnectedSince.set(accountId, Date.now());
           continue;
         }
         const elapsed = Date.now() - since;
         if (elapsed > FORCE_RESTART_AFTER_MS) {
-          console.warn(`[dingtalk] health: account=${accountId} disconnected >${Math.round(elapsed / 1000)}s, force restart`);
+          console.warn(
+            `[dingtalk] health: account=${accountId} disconnected >${Math.round(elapsed / 1000)}s, force restart`,
+          );
           this.forceRestartClient(accountId).catch((err) => {
-            console.error(`[dingtalk] health: restart failed account=${accountId}`, err);
+            console.error(
+              `[dingtalk] health: restart failed account=${accountId}`,
+              err,
+            );
           });
         }
       }
@@ -248,7 +310,11 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     if (oldDispose) oldDispose();
     const oldClient = this.clients.get(accountId);
     if (oldClient) {
-      try { oldClient.disconnect(); } catch { /* ignore */ }
+      try {
+        oldClient.disconnect();
+      } catch {
+        /* ignore */
+      }
     }
     const normalized = normalizeDingTalkConfig(this.config);
     const account = normalized.accounts[accountId];
@@ -257,13 +323,17 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     const newClient = this.createClient(accountId, account);
     await newClient.connect();
     this.clients.set(accountId, newClient);
-    console.log(`[dingtalk] health: account=${accountId} restarted successfully`);
+    console.log(
+      `[dingtalk] health: account=${accountId} restarted successfully`,
+    );
   }
 
   async send(msg: OutboundMessage): Promise<void> {
     const normalized = normalizeDingTalkConfig(this.config);
     const accountId =
-      normalizeString(msg.metadata.account_id) || normalizeString(msg.metadata.accountId) || normalized.defaultAccountId;
+      normalizeString(msg.metadata.account_id) ||
+      normalizeString(msg.metadata.accountId) ||
+      normalized.defaultAccountId;
     const account = resolveDingTalkAccount(normalized, accountId);
     if (!account) {
       throw new Error(`DingTalk account not found: ${accountId}`);
@@ -273,7 +343,9 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     const mentionIds = Array.isArray(msg.metadata.mention_user_ids)
       ? (msg.metadata.mention_user_ids as string[]).filter(Boolean)
       : [];
-    console.log(`[dingtalk] send account=${accountId} target=${target.kind}:${target.targetId} contentLen=${msg.content.length}${mentionIds.length > 0 ? ` mention=[${mentionIds.join(",")}]` : ""}`);
+    console.log(
+      `[dingtalk] send account=${accountId} target=${target.kind}:${target.targetId} contentLen=${msg.content.length}${mentionIds.length > 0 ? ` mention=[${mentionIds.join(",")}]` : ""}`,
+    );
     const t0 = Date.now();
     const token = await this.getAccessToken(accountId, account);
     const robotCode = account.robotCode || account.clientId;
@@ -283,7 +355,8 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         : "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend";
 
     const mentionNames =
-      msg.metadata.mention_user_names && typeof msg.metadata.mention_user_names === "object"
+      msg.metadata.mention_user_names &&
+      typeof msg.metadata.mention_user_names === "object"
         ? (msg.metadata.mention_user_names as Record<string, string>)
         : {};
     let groupText = msg.content;
@@ -305,9 +378,8 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
             msgKey: "sampleMarkdown",
             msgParam: JSON.stringify({
               title: "NextClaw Reply",
-              text: groupText
+              text: groupText,
             }),
-            
           }
         : {
             robotCode,
@@ -315,8 +387,8 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
             msgKey: "sampleMarkdown",
             msgParam: JSON.stringify({
               title: "NextClaw Reply",
-              text: msg.content
-            })
+              text: msg.content,
+            }),
           };
 
     let response: Awaited<ReturnType<typeof fetch>>;
@@ -325,28 +397,35 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-acs-dingtalk-access-token": token
+          "x-acs-dingtalk-access-token": token,
         },
         body: JSON.stringify(payload),
-        dispatcher: buildDispatcher(),
-        signal: AbortSignal.timeout(15_000)
+
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
-      console.error(`[dingtalk] send FAILED (network) account=${accountId} target=${target.kind}:${target.targetId} elapsed=${Date.now() - t0}ms`, err);
+      console.error(
+        `[dingtalk] send FAILED (network) account=${accountId} target=${target.kind}:${target.targetId} elapsed=${Date.now() - t0}ms`,
+        err,
+      );
       throw err;
     }
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      console.error(`[dingtalk] send FAILED (http) account=${accountId} status=${response.status} elapsed=${Date.now() - t0}ms body=${body}`);
+      console.error(
+        `[dingtalk] send FAILED (http) account=${accountId} status=${response.status} elapsed=${Date.now() - t0}ms body=${body}`,
+      );
       throw new Error(`DingTalk send failed: ${response.status} ${body}`);
     }
-    console.log(`[dingtalk] send OK account=${accountId} target=${target.kind}:${target.targetId} elapsed=${Date.now() - t0}ms`);
+    console.log(
+      `[dingtalk] send OK account=${accountId} target=${target.kind}:${target.targetId} elapsed=${Date.now() - t0}ms`,
+    );
   }
 
   private async handleRobotMessage(
     accountId: string,
     account: DingTalkAccountConfig,
-    res: DWClientDownStream
+    res: DWClientDownStream,
   ): Promise<void> {
     const client = this.clients.get(accountId);
     if (!res?.data || !client) {
@@ -354,7 +433,9 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     }
 
     const messageId = normalizeString(res.headers?.messageId);
-    console.log(`[dingtalk] inbound account=${accountId} messageId=${messageId || "(none)"}`);
+    console.log(
+      `[dingtalk] inbound account=${accountId} messageId=${messageId || "(none)"}`,
+    );
     if (!messageId) {
       return;
     }
@@ -362,7 +443,10 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     try {
       parsed = JSON.parse(res.data) as Record<string, unknown>;
     } catch (err) {
-      console.error(`[dingtalk] inbound parse error account=${accountId} messageId=${messageId}`, err);
+      console.error(
+        `[dingtalk] inbound parse error account=${accountId} messageId=${messageId}`,
+        err,
+      );
       client.socketCallBackResponse(messageId, { ok: true });
       return;
     }
@@ -380,17 +464,23 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
           chatbotUserId: normalizeString(parsed.chatbotUserId),
           isInAtList: parsed.isInAtList === true,
           mentioned: parsed.mentioned === true,
-          atUserIds: Array.isArray(parsed.atUserIds) ? (parsed.atUserIds as string[]) : undefined,
-          atUsers: Array.isArray(parsed.atUsers) ? (parsed.atUsers as Array<Record<string, unknown>>) : undefined
+          atUserIds: Array.isArray(parsed.atUserIds)
+            ? (parsed.atUserIds as string[])
+            : undefined,
+          atUsers: Array.isArray(parsed.atUsers)
+            ? (parsed.atUsers as Array<Record<string, unknown>>)
+            : undefined,
         },
         ...resolveGroupMentionPolicy(account, {
           chatId: normalizeString(parsed.conversationId),
-          isGroup: normalizeString(parsed.conversationType) !== "1"
-        })
+          isGroup: normalizeString(parsed.conversationType) !== "1",
+        }),
       });
 
       if (!normalized) {
-        console.log(`[dingtalk] inbound dropped (normalize returned null) account=${accountId} messageId=${messageId}`);
+        console.log(
+          `[dingtalk] inbound dropped (normalize returned null) account=${accountId} messageId=${messageId}`,
+        );
         return;
       }
 
@@ -399,59 +489,86 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
         !evaluateChannelAccessPolicy(account, {
           senderId: normalized.senderId,
           chatId: normalized.chatId,
-          isGroup
+          isGroup,
         })
       ) {
-        console.log(`[dingtalk] inbound blocked by access policy account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId}`);
+        console.log(
+          `[dingtalk] inbound blocked by access policy account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId}`,
+        );
         return;
       }
 
-      if (normalized.metadata.require_mention === true && normalized.metadata.was_mentioned !== true) {
-        console.log(`[dingtalk] inbound dropped (not mentioned) account=${accountId} messageId=${messageId}`);
+      if (
+        normalized.metadata.require_mention === true &&
+        normalized.metadata.was_mentioned !== true
+      ) {
+        console.log(
+          `[dingtalk] inbound dropped (not mentioned) account=${accountId} messageId=${messageId}`,
+        );
         return;
       }
 
-      console.log(`[dingtalk] inbound dispatching account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId} isGroup=${isGroup} title=${normalized.metadata.conversation_title || "(none)"} contentLen=${normalized.content.length}`);
+      console.log(
+        `[dingtalk] inbound dispatching account=${accountId} sender=${normalized.senderId} chat=${normalized.chatId} isGroup=${isGroup} title=${normalized.metadata.conversation_title || "(none)"} contentLen=${normalized.content.length}`,
+      );
       await this.handleMessage({
         senderId: normalized.senderId,
         chatId: normalized.chatId,
         content: normalized.content,
-        metadata: normalized.metadata
+        metadata: normalized.metadata,
       });
-      console.log(`[dingtalk] inbound handled account=${accountId} messageId=${messageId}`);
+      console.log(
+        `[dingtalk] inbound handled account=${accountId} messageId=${messageId}`,
+      );
     } catch (error) {
-      console.error(`[dingtalk] inbound error account=${accountId} messageId=${messageId}`, error);
+      console.error(
+        `[dingtalk] inbound error account=${accountId} messageId=${messageId}`,
+        error,
+      );
     } finally {
       client.socketCallBackResponse(messageId, { ok: true });
     }
   }
 
-  private async getAccessToken(accountId: string, account: DingTalkAccountConfig): Promise<string> {
+  private async getAccessToken(
+    accountId: string,
+    account: DingTalkAccountConfig,
+  ): Promise<string> {
     const cached = this.tokens.get(accountId);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.token;
     }
 
-    console.log(`[dingtalk] getAccessToken account=${accountId} (cache miss, fetching)`);
+    console.log(
+      `[dingtalk] getAccessToken account=${accountId} (cache miss, fetching)`,
+    );
     let response: Awaited<ReturnType<typeof fetch>>;
     try {
-      response = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          appKey: account.clientId,
-          appSecret: account.clientSecret
-        }),
-        dispatcher: buildDispatcher(),
-        signal: AbortSignal.timeout(15_000)
-      });
+      response = await fetch(
+        "https://api.dingtalk.com/v1.0/oauth2/accessToken",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            appKey: account.clientId,
+            appSecret: account.clientSecret,
+          }),
+
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
     } catch (err) {
-      console.error(`[dingtalk] getAccessToken FAILED (network) account=${accountId}`, err);
+      console.error(
+        `[dingtalk] getAccessToken FAILED (network) account=${accountId}`,
+        err,
+      );
       throw err;
     }
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      console.error(`[dingtalk] getAccessToken FAILED (http) account=${accountId} status=${response.status} body=${body}`);
+      console.error(
+        `[dingtalk] getAccessToken FAILED (http) account=${accountId} status=${response.status} body=${body}`,
+      );
       throw new Error(`DingTalk token failed: ${response.status} ${body}`);
     }
     const data = (await response.json()) as Record<string, unknown>;
@@ -462,7 +579,7 @@ export class DingTalkChannel extends BaseChannel<Config["channels"]["dingtalk"]>
     const expiresIn = Number(data.expireIn ?? 7200);
     this.tokens.set(accountId, {
       token,
-      expiresAt: Date.now() + (expiresIn - 60) * 1000
+      expiresAt: Date.now() + (expiresIn - 60) * 1000,
     });
     return token;
   }
