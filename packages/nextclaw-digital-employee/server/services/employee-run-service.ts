@@ -3,7 +3,12 @@ import { EmployeeRepository } from "../repositories/employee-repository";
 import { EmployeeSkillRepository } from "../repositories/employee-skill-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { RunRecordRepository, type RunRecordView } from "../repositories/run-record-repository";
-import { ChatSessionRepository, type ChatSessionPage, type ChatSessionView } from "../repositories/chat-session-repository";
+import {
+  ChatSessionRepository,
+  type ChatSessionAccessScope,
+  type ChatSessionPage,
+  type ChatSessionView
+} from "../repositories/chat-session-repository";
 import { ChatMessageRepository, type ChatMessageView as PersistedChatMessageView } from "../repositories/chat-message-repository";
 import { NextclawEngineGateway, type SessionHistoryMessage, type ToolCallView } from "../engine/NextclawEngineGateway";
 import {
@@ -26,6 +31,7 @@ import { buildAttachmentPromptText, normalizeChatAttachment } from "../chat/chat
 import { EmployeeUploadFileService } from "./employee-upload-file-service";
 import { IdentityResolver } from "./identity-resolver";
 import { isConversationResetCommand } from "../../shared/chat-command";
+import { UserRepository } from "../repositories/user-repository";
 
 export type EmployeeTurnResult = {
   runId: string;
@@ -57,6 +63,7 @@ type ChatSessionResolveOptions = {
   createIfMissing?: boolean;
   title?: string;
   actorUserId?: string;
+  accessScope?: ChatSessionAccessScope;
 };
 
 type StoredRunMetadata = {
@@ -520,7 +527,8 @@ export class EmployeeRunService {
     private readonly skillInstallationRepo?: SkillInstallationRepository,
     private readonly chatSessionRepo?: ChatSessionRepository,
     private readonly chatMessageRepo?: ChatMessageRepository,
-    private readonly identityResolver?: IdentityResolver
+    private readonly identityResolver?: IdentityResolver,
+    private readonly userRepo?: UserRepository
   ) {}
 
   private requireChatPersistence(): {
@@ -578,13 +586,20 @@ export class EmployeeRunService {
     const { sessionRepo } = this.requireChatPersistence();
     if (sessionKey?.trim()) {
       const normalizedSessionKey = sessionKey.trim();
-      const existing = await sessionRepo.getByEmployeeIdAndSessionKey(employeeId, normalizedSessionKey);
+      const accessScope = options?.accessScope ?? "all";
+      const existing = await sessionRepo.getByEmployeeIdAndSessionKey(employeeId, normalizedSessionKey, {
+        accessScope,
+        actorUserId: options?.actorUserId
+      });
       if (existing) {
         return existing;
       }
       const decodedSessionKey = decodeSessionKeyIfNeeded(normalizedSessionKey);
       if (decodedSessionKey !== normalizedSessionKey) {
-        const decodedMatch = await sessionRepo.getByEmployeeIdAndSessionKey(employeeId, decodedSessionKey);
+        const decodedMatch = await sessionRepo.getByEmployeeIdAndSessionKey(employeeId, decodedSessionKey, {
+          accessScope,
+          actorUserId: options?.actorUserId
+        });
         if (decodedMatch) {
           return decodedMatch;
         }
@@ -626,10 +641,31 @@ export class EmployeeRunService {
     employeeId: string;
     limit?: number;
     before?: string | null;
+    actorUserId?: string;
+    accessScope?: ChatSessionAccessScope;
   }): Promise<ChatSessionPage> {
     await this.getEmployeeOrThrow(params.employeeId);
     const { sessionRepo } = this.requireChatPersistence();
-    return sessionRepo.listByEmployeeId(params);
+    const page = await sessionRepo.listByEmployeeId(params);
+    if (!this.userRepo || page.items.length === 0) {
+      return page;
+    }
+
+    const creatorIds = [...new Set(page.items
+      .map((item) => item.createdByUserId)
+      .filter((value): value is string => Boolean(value)))];
+    if (creatorIds.length === 0) {
+      return page;
+    }
+
+    const displayNamesById = await this.userRepo.listDisplayNamesByIds(creatorIds);
+    return {
+      ...page,
+      items: page.items.map((item) => ({
+        ...item,
+        createdByUserDisplayName: item.createdByUserId ? displayNamesById[item.createdByUserId] ?? null : null
+      }))
+    };
   }
 
   async createChatSession(employeeId: string, actorUserId?: string): Promise<ChatSessionView> {
@@ -648,8 +684,13 @@ export class EmployeeRunService {
     sessionKey: string;
     limit?: number;
     before?: string | null;
+    actorUserId?: string;
+    accessScope?: ChatSessionAccessScope;
   }): Promise<{ session: ChatSessionView; items: ChatMessageView[]; nextCursor: string | null }> {
-    const session = await this.resolveChatSession(params.employeeId, params.sessionKey);
+    const session = await this.resolveChatSession(params.employeeId, params.sessionKey, {
+      actorUserId: params.actorUserId,
+      accessScope: params.accessScope
+    });
     const { messageRepo } = this.requireChatPersistence();
     const [page, runs] = await Promise.all([
       messageRepo.listBySessionId({
@@ -692,6 +733,7 @@ export class EmployeeRunService {
     attachments?: ChatAttachmentView[];
     sessionKey?: string;
     actorUserId?: string;
+    accessScope?: ChatSessionAccessScope;
     signal?: AbortSignal;
     onEvent: (event: EmployeeChatStreamEvent) => void | Promise<void>;
   }): Promise<{ runId: string; sessionKey: string; reply: string }> {
@@ -702,6 +744,7 @@ export class EmployeeRunService {
     const { employee, workspace, skillNames } = await this.prepareRuntime(params.employeeId);
     const session = await this.resolveChatSession(employee.id, params.sessionKey, {
       actorUserId: params.actorUserId,
+      accessScope: params.accessScope,
     });
     const run = await this.runRepo.create({
       employeeId: employee.id,

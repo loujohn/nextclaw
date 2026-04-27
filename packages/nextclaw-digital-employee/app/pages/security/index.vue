@@ -1,19 +1,33 @@
 <script setup lang="ts">
 import {
   ShieldCheck, Users, Key, FileText, AlertTriangle,
-  Clock, Activity, Database, Download, Plus, Edit, ChevronRight,
+  Clock, Activity, Database, Download, Edit,
   Trash2, KeyRound, Upload
 } from "lucide-vue-next";
 import {
-  type RoleItem, type PermissionGroup, type AuditLogItem, type DataPolicyItem,
-  INITIAL_ROLES, INITIAL_PERMISSION_GROUPS, INITIAL_AUDIT_LOGS, INITIAL_DATA_POLICIES,
+  type AuditLogItem, type DataPolicyItem,
+  INITIAL_AUDIT_LOGS, INITIAL_DATA_POLICIES,
   RESULT_STYLES, LEVEL_STYLES, LEVEL_LABELS
 } from "./security-mock";
+import type {
+  PlatformPermissionKey,
+  RolePermissionGroup as PermissionGroup,
+  RolePermissionSettingsPayload,
+  RolePermissionView as RoleItem
+} from "../../../shared/role-permissions";
 
-const roles = ref<RoleItem[]>([...INITIAL_ROLES]);
-const permissionGroups = ref<PermissionGroup[]>(INITIAL_PERMISSION_GROUPS);
+type RolePermissionResponse = {
+  ok: boolean;
+  data: RolePermissionSettingsPayload;
+};
+
+const roles = ref<RoleItem[]>([]);
+const permissionGroups = ref<PermissionGroup[]>([]);
 const auditLogs = ref<AuditLogItem[]>(INITIAL_AUDIT_LOGS);
 const dataPolicies = ref<DataPolicyItem[]>([...INITIAL_DATA_POLICIES]);
+const permissionsLoading = ref(false);
+const permissionsSavingKey = ref<string | null>(null);
+const permissionsError = ref("");
 
 // ------------------- Secrets 类型与数据 -------------------
 
@@ -157,10 +171,7 @@ async function deleteSecret() {
 // ------------------- 状态管理 -------------------
 
 const activeTab = ref<"permissions" | "audit" | "data-security" | "secrets">("permissions");
-const selectedRoleId = ref<string | null>("r3");
-const showAddRoleModal = ref(false);
-const newRoleName = ref("");
-const newRoleDesc = ref("");
+const selectedRoleId = ref<string | null>(null);
 const auditFilter = ref<"all" | "success" | "failure" | "warning">("all");
 
 const tabs = [
@@ -172,6 +183,9 @@ const tabs = [
 
 watch(activeTab, (tab) => {
   if (tab === "secrets") fetchSecrets();
+  if (tab === "permissions" && roles.value.length === 0 && !permissionsLoading.value) {
+    void fetchRolePermissions();
+  }
 });
 
 const selectedRole = computed(() => roles.value.find((r) => r.id === selectedRoleId.value) ?? null);
@@ -193,6 +207,65 @@ function selectRole(id: string) {
   selectedRoleId.value = id;
 }
 
+function toErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "data" in error) {
+    const statusMessage = (error as { data?: { statusMessage?: string } }).data?.statusMessage;
+    if (statusMessage) {
+      return statusMessage;
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "权限配置加载失败";
+}
+
+function applyRolePermissionPayload(payload: RolePermissionSettingsPayload) {
+  roles.value = payload.roles;
+  permissionGroups.value = payload.permissionGroups;
+  if (!selectedRoleId.value || !payload.roles.some((role) => role.id === selectedRoleId.value)) {
+    selectedRoleId.value = payload.roles[0]?.id ?? null;
+  }
+}
+
+async function fetchRolePermissions() {
+  permissionsLoading.value = true;
+  permissionsError.value = "";
+  try {
+    const response = await $fetch<RolePermissionResponse>("/api/security/permissions");
+    applyRolePermissionPayload(response.data);
+  } catch (error) {
+    permissionsError.value = toErrorMessage(error);
+    roles.value = [];
+    permissionGroups.value = [];
+  } finally {
+    permissionsLoading.value = false;
+  }
+}
+
+async function updateRolePermission(payload: { key: PlatformPermissionKey; enabled: boolean }) {
+  if (!selectedRole.value) {
+    return;
+  }
+  permissionsSavingKey.value = payload.key;
+  permissionsError.value = "";
+  try {
+    const response = await $fetch<RolePermissionResponse>("/api/security/permissions", {
+      method: "PATCH",
+      body: {
+        role: selectedRole.value.id,
+        permissionKey: payload.key,
+        enabled: payload.enabled
+      }
+    });
+    applyRolePermissionPayload(response.data);
+  } catch (error) {
+    permissionsError.value = toErrorMessage(error);
+  } finally {
+    permissionsSavingKey.value = null;
+  }
+}
+
 function togglePolicy(id: string) {
   const p = dataPolicies.value.find((p) => p.id === id);
   if (p && !isHighPolicy(p)) {
@@ -202,21 +275,6 @@ function togglePolicy(id: string) {
 
 function isHighPolicy(p: DataPolicyItem) {
   return p.level === "high";
-}
-
-function addRole() {
-  if (!newRoleName.value.trim()) return;
-  roles.value.push({
-    id: `r${Date.now()}`,
-    name: newRoleName.value.trim(),
-    description: newRoleDesc.value.trim() || "自定义角色",
-    permissions: [],
-    memberCount: 0,
-    isSystem: false
-  });
-  newRoleName.value = "";
-  newRoleDesc.value = "";
-  showAddRoleModal.value = false;
 }
 
 function exportAuditLog() {
@@ -237,6 +295,10 @@ function exportAuditLog() {
 const resultStyles = RESULT_STYLES;
 const levelStyles = LEVEL_STYLES;
 const levelLabels = LEVEL_LABELS;
+
+onMounted(() => {
+  void fetchRolePermissions();
+});
 </script>
 
 <template>
@@ -314,54 +376,18 @@ const levelLabels = LEVEL_LABELS;
     </div>
 
     <!-- ===== 权限管理 ===== -->
-    <div v-if="activeTab === 'permissions'" class="grid gap-5 lg:grid-cols-[280px_1fr]">
-      <!-- 角色列表 -->
-      <div class="space-y-3">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-foreground">角色列表</h2>
-          <button
-            class="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
-            @click="showAddRoleModal = true"
-          >
-            <Plus class="h-3.5 w-3.5" />
-            新建角色
-          </button>
-        </div>
-
-        <div class="space-y-2">
-          <button
-            v-for="role in roles"
-            :key="role.id"
-            class="w-full rounded-xl border p-3 text-left transition-all duration-150"
-            :class="selectedRoleId === role.id
-              ? 'border-primary/30 bg-primary/5 shadow-sm'
-              : 'border-border bg-card hover:border-primary/20 hover:bg-muted/30'"
-            @click="selectRole(role.id)"
-          >
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span class="truncate text-sm font-medium text-foreground">{{ role.name }}</span>
-                  <span v-if="role.isSystem" class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary">系统</span>
-                </div>
-                <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ role.description }}</p>
-              </div>
-              <ChevronRight class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" :stroke-width="1.8" />
-            </div>
-            <div class="mt-2 flex items-center gap-2">
-              <span class="flex items-center gap-1 text-xs text-muted-foreground">
-                <Users class="h-3 w-3" />
-                {{ role.memberCount }} 人
-              </span>
-              <span class="text-xs text-muted-foreground">·</span>
-              <span class="text-xs text-muted-foreground">{{ role.permissions.length }} 项权限</span>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <SecurityPermissionDetail :role="selectedRole" :permission-groups="permissionGroups" />
-    </div>
+    <SecurityPermissionManagementPanel
+      v-if="activeTab === 'permissions'"
+      :roles="roles"
+      :selected-role-id="selectedRoleId"
+      :permission-groups="permissionGroups"
+      :permissions-loading="permissionsLoading"
+      :permissions-error="permissionsError"
+      :saving-permission-key="permissionsSavingKey"
+      @select-role="selectRole"
+      @retry="fetchRolePermissions"
+      @toggle-permission="updateRolePermission"
+    />
 
     <!-- ===== 操作审计 ===== -->
     <div v-if="activeTab === 'audit'" class="space-y-4">
@@ -791,46 +817,6 @@ const levelLabels = LEVEL_LABELS;
       </Transition>
     </Teleport>
 
-    <!-- 新建角色弹窗 -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="showAddRoleModal"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          @click.self="showAddRoleModal = false"
-        >
-          <div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h2 class="mb-4 text-base font-semibold text-foreground">新建角色</h2>
-            <div class="space-y-3">
-              <div>
-                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">角色名称</label>
-                <input
-                  v-model="newRoleName"
-                  type="text"
-                  class="input-field"
-                  placeholder="如：内容审核员"
-                  maxlength="20"
-                />
-              </div>
-              <div>
-                <label class="mb-1.5 block text-xs font-medium text-muted-foreground">角色描述</label>
-                <textarea
-                  v-model="newRoleDesc"
-                  class="input-field resize-none"
-                  rows="2"
-                  placeholder="简要说明该角色的职责范围"
-                  maxlength="100"
-                />
-              </div>
-            </div>
-            <div class="mt-5 flex justify-end gap-2">
-              <button class="btn-ghost text-sm" @click="showAddRoleModal = false">取消</button>
-              <button class="btn-primary text-sm" :disabled="!newRoleName.trim()" @click="addRole">创建角色</button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>
 

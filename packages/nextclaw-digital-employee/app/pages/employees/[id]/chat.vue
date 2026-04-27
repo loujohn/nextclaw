@@ -41,6 +41,30 @@ function truncateStr(s: string, max = 200): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+function sessionCreatorLabel(session: {
+  createdByUserDisplayName?: string | null;
+  createdByUserId?: string | null;
+  isDraft?: boolean;
+}): string {
+  if (session.isDraft) {
+    return "待创建";
+  }
+  if (session.createdByUserDisplayName?.trim()) {
+    return session.createdByUserDisplayName;
+  }
+  if (session.createdByUserId) {
+    return `用户 ${session.createdByUserId.slice(0, 8)}`;
+  }
+  return "系统";
+}
+
+function sessionSourceLabel(session: {
+  sourceLabel?: string | null;
+  createdByUserId?: string | null;
+}): string {
+  return session.sourceLabel?.trim() || (session.createdByUserId ? "对话" : "定时任务");
+}
+
 function processEntryLabel(entry: ChatProcessTimelineEntry): string {
   switch (entry.kind) {
     case "reasoning":
@@ -448,7 +472,7 @@ watch(messages, () => {
         <button
           v-for="session in sessions"
           :key="session.sessionKey"
-          class="w-full rounded-2xl border px-3 py-2.5 text-left transition-colors"
+          class="w-full rounded-2xl border px-3 py-3 text-left transition-colors"
           :class="session.sessionKey === activeSessionKey ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'"
           @click="selectSession(session.sessionKey)"
         >
@@ -459,7 +483,19 @@ watch(messages, () => {
           <p class="mt-1 line-clamp-1 text-xs text-muted-foreground">
             {{ session.preview || "暂无消息" }}
           </p>
-          <p class="mt-1.5 text-[10px] text-muted-foreground">{{ session.messageCount }} 条消息</p>
+          <div class="mt-2 flex items-center justify-between gap-3">
+            <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <MessageCircle class="h-3 w-3" />
+                {{ sessionSourceLabel(session) }}
+              </span>
+              <span class="inline-flex min-w-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-foreground/85">
+                <User class="h-3 w-3 shrink-0" />
+                <span class="truncate">{{ sessionCreatorLabel(session) }}</span>
+              </span>
+            </div>
+            <span class="shrink-0 whitespace-nowrap text-[10px] font-medium text-muted-foreground">{{ session.messageCount }} 条消息</span>
+          </div>
         </button>
 
         <div
