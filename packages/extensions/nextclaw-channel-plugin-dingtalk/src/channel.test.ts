@@ -25,6 +25,7 @@ let mockSdkEndpointError: Error | null = null;
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
   sdkConnect: ReturnType<typeof vi.fn>;
+  sdkGetEndpoint: ReturnType<typeof vi.fn>;
   getEndpoint: ReturnType<typeof vi.fn>;
   _connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
@@ -120,7 +121,7 @@ vi.mock("dingtalk-stream", () => {
     sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
     socket?: EventEmitter;
     dw_url = "";
-    getEndpoint = vi.fn(async () => {
+    sdkGetEndpoint = vi.fn(async () => {
       if (mockSdkEndpointError) throw mockSdkEndpointError;
       this.config.endpoint = {
         endpoint: mockSdkEndpointUrl,
@@ -129,6 +130,7 @@ vi.mock("dingtalk-stream", () => {
       this.dw_url = `${mockSdkEndpointUrl}?ticket=ticket-ok`;
       return this;
     });
+    getEndpoint = this.sdkGetEndpoint;
     _connect = vi.fn(async () => {
       this.sslopts?.agent?.addRequest?.(
         new EventEmitter(),
@@ -338,7 +340,7 @@ describe("DingTalkChannel", () => {
     await channel.start();
 
     expect(mockUndiciFetch).not.toHaveBeenCalled();
-    expect(clientInstances[0]?.getEndpoint).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.sdkGetEndpoint).toHaveBeenCalledTimes(1);
     expect(clientInstances[0]?.sdkConnect).toHaveBeenCalledTimes(1);
     expect(clientInstances[0]?.config.autoReconnect).toBe(true);
   });
@@ -354,16 +356,21 @@ describe("DingTalkChannel", () => {
     await expect(channel.start()).resolves.toBeUndefined();
     expect(channel.isRunning).toBe(true);
     expect(mockUndiciFetch).not.toHaveBeenCalled();
-    expect(clientInstances[0]?.getEndpoint).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.sdkGetEndpoint).toHaveBeenCalledTimes(1);
     expect(clientInstances[0]?.sdkConnect).toHaveBeenCalledTimes(1);
     expect(clientInstances[0]?.config.autoReconnect).toBe(true);
   });
 
-  it("does not inject an endpoint fetch dispatcher when proxy is configured", async () => {
+  it("uses undici endpoint fetch when proxy is configured", async () => {
     clientInstances.length = 0;
     vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
     vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
-    mockSdkEndpointUrl = "wss://172.31.1.95/connect";
+    mockUndiciFetch.mockResolvedValueOnce(
+      createFetchResponse(200, {
+        endpoint: "wss://172.31.1.95/connect",
+        ticket: "ticket-ok"
+      })
+    );
     vi.spyOn(https.Agent.prototype as any, "addRequest").mockImplementation(
       () => undefined
     );
@@ -374,9 +381,35 @@ describe("DingTalkChannel", () => {
 
     await channel.start();
 
-    expect(MockEnvHttpProxyAgent).not.toHaveBeenCalled();
-    expect(mockUndiciFetch).not.toHaveBeenCalled();
-    expect(clientInstances[0]?.getEndpoint).toHaveBeenCalledTimes(1);
+    expect(MockEnvHttpProxyAgent).toHaveBeenCalledTimes(1);
+    expect(mockUndiciFetch).toHaveBeenCalledWith(
+      "https://api.dingtalk.com/v1.0/gateway/connections/open",
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+        method: "POST",
+        body: expect.stringContaining("\"clientId\":\"client-ok\"")
+      })
+    );
+    expect(clientInstances[0]?.sdkGetEndpoint).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.dw_url).toBe("wss://172.31.1.95/connect?ticket=ticket-ok");
+  });
+
+  it("lets the SDK own reconnect when proxy endpoint fetch fails", async () => {
+    clientInstances.length = 0;
+    vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
+    mockUndiciFetch.mockResolvedValueOnce(
+      createFetchResponse(502, "ERR_READ_ERROR")
+    );
+    const channel = new DingTalkChannel(
+      createDingTalkConfig(),
+      new MessageBus()
+    );
+
+    await expect(channel.start()).resolves.toBeUndefined();
+    expect(channel.isRunning).toBe(true);
+    expect(clientInstances[0]?.sdkGetEndpoint).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.sdkConnect).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.config.autoReconnect).toBe(true);
   });
 
   it("does not wait for WebSocket open outside the SDK", async () => {
@@ -416,7 +449,12 @@ describe("DingTalkChannel", () => {
     clientInstances.length = 0;
     vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
     vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
-    mockSdkEndpointUrl = "wss://172.31.1.95/connect";
+    mockUndiciFetch.mockResolvedValueOnce(
+      createFetchResponse(200, {
+        endpoint: "wss://172.31.1.95/connect",
+        ticket: "ticket-ok"
+      })
+    );
     const directAddRequest = vi
       .spyOn(https.Agent.prototype as any, "addRequest")
       .mockImplementation(() => undefined);
