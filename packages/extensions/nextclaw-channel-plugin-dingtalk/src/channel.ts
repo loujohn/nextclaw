@@ -18,7 +18,7 @@ import {
   TOPIC_ROBOT,
   type DWClientDownStream,
 } from "dingtalk-stream";
-import { fetch } from "undici";
+import { EnvHttpProxyAgent, fetch } from "undici";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 import {
@@ -37,16 +37,11 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
 const WS_OPEN_TIMEOUT_MS = 30_000;
-
-type AgentRequestOptions = http.RequestOptions & {
-  hostname?: string;
-  host?: string;
-  port?: string | number;
-};
-
-type AgentWithAddRequest = http.Agent & {
-  addRequest(req: http.ClientRequest, options: AgentRequestOptions): void;
-};
+const WS_SOCKET_POLL_INTERVAL_MS = 10;
+const DINGTALK_GATEWAY_OPEN_URL =
+  "https://api.dingtalk.com/v1.0/gateway/connections/open";
+const ENDPOINT_REQUEST_TIMEOUT_MS = 15_000;
+const ENDPOINT_ERROR_BODY_LIMIT = 500;
 
 type WebSocketLike = {
   readyState?: number;
@@ -55,26 +50,26 @@ type WebSocketLike = {
   removeListener?: (event: string, listener: (...args: any[]) => void) => void;
 };
 
-class ProxyAwareAgent extends http.Agent {
-  constructor(
-    private readonly accountId: string,
-    private readonly proxyAgent: AgentWithAddRequest,
-    private readonly directAgent: AgentWithAddRequest,
-    private readonly bypassRules: NoProxyRule[],
-  ) {
-    super();
-  }
+type DingTalkClientInternals = DWClient & {
+  config?: {
+    autoReconnect?: boolean;
+    clientId?: string;
+    clientSecret?: string;
+    ua?: string;
+    subscriptions?: Array<{ type: string; topic: string }>;
+    endpoint?: unknown;
+  };
+  getEndpoint?: () => Promise<unknown>;
+  _connect?: () => Promise<unknown>;
+  socket?: WebSocketLike;
+  dw_url?: string;
+};
 
-  addRequest(req: http.ClientRequest, options: AgentRequestOptions): void {
-    const host = options.hostname ?? options.host ?? "";
-    const bypass = host ? shouldBypassProxy(host, this.bypassRules) : false;
-    const delegate = bypass ? this.directAgent : this.proxyAgent;
-    console.log(
-      `[dingtalk] ws proxy route account=${this.accountId} target=${formatHostPort(host, options.port)} route=${bypass ? "direct" : "proxy"}`,
-    );
-    delegate.addRequest(req, options);
-  }
-}
+type DingTalkConnectFallback = () => Promise<unknown>;
+
+type DingTalkEndpointFetchOptions = NonNullable<Parameters<typeof fetch>[1]> & {
+  dispatcher?: unknown;
+};
 
 function formatHostPort(host: string, port: string | number | undefined): string {
   if (!host) return "(unknown)";
@@ -91,6 +86,22 @@ function formatWsTarget(rawUrl: unknown): string {
   }
 }
 
+function resolveWsHostPort(rawUrl: unknown): {
+  host: string;
+  port?: string;
+} {
+  if (typeof rawUrl !== "string" || !rawUrl) return { host: "" };
+  try {
+    const url = new URL(rawUrl);
+    return {
+      host: url.hostname,
+      port: url.port || (url.protocol === "wss:" ? "443" : "80"),
+    };
+  } catch {
+    return { host: "" };
+  }
+}
+
 function removeSocketListener(
   socket: WebSocketLike,
   event: string,
@@ -103,22 +114,140 @@ function removeSocketListener(
   socket.removeListener?.(event, listener);
 }
 
-function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
-  if (client.connected === true) return Promise.resolve();
-  const socket = client.socket as WebSocketLike | undefined;
-  if (!socket) {
-    throw new Error(`DingTalk WebSocket socket missing account=${accountId}`);
+function disableSdkAutoReconnect(client: DingTalkClientInternals): void {
+  if (client.config) {
+    client.config.autoReconnect = false;
   }
-  if (socket.readyState === 1) return Promise.resolve();
+}
 
-  const target = formatWsTarget(client.dw_url);
+function getProxyUrl(): string | undefined {
+  return (
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy
+  );
+}
+
+function truncateEndpointBody(body: string): string {
+  if (body.length <= ENDPOINT_ERROR_BODY_LIMIT) return body;
+  return `${body.slice(0, ENDPOINT_ERROR_BODY_LIMIT)}...`;
+}
+
+function createEndpointFetchOptions(
+  client: DingTalkClientInternals,
+): DingTalkEndpointFetchOptions {
+  const config = client.config;
+  const options: DingTalkEndpointFetchOptions = {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      clientId: config?.clientId,
+      clientSecret: config?.clientSecret,
+      ua: config?.ua ?? "",
+      subscriptions: config?.subscriptions ?? [],
+    }),
+    signal: AbortSignal.timeout(ENDPOINT_REQUEST_TIMEOUT_MS),
+  };
+
+  if (getProxyUrl()) {
+    options.dispatcher = new EnvHttpProxyAgent();
+  }
+
+  return options;
+}
+
+async function resolveDingTalkEndpoint(
+  client: DingTalkClientInternals,
+  accountId: string,
+): Promise<void> {
+  const config = client.config;
+  if (!config?.clientId || !config.clientSecret) {
+    throw new Error(`DingTalk endpoint config missing account=${accountId}`);
+  }
+
+  let response: Awaited<ReturnType<typeof fetch>>;
+  try {
+    response = await fetch(
+      DINGTALK_GATEWAY_OPEN_URL,
+      createEndpointFetchOptions(client),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `DingTalk endpoint request failed account=${accountId} network=${message}`,
+      { cause: err },
+    );
+  }
+
+  const body = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new Error(
+      `DingTalk endpoint request failed account=${accountId} status=${response.status} body=${truncateEndpointBody(body)}`,
+    );
+  }
+
+  let data: { endpoint?: unknown; ticket?: unknown };
+  try {
+    data = JSON.parse(body) as { endpoint?: unknown; ticket?: unknown };
+  } catch (err) {
+    throw new Error(
+      `DingTalk endpoint response is not JSON account=${accountId} body=${truncateEndpointBody(body)}`,
+      { cause: err },
+    );
+  }
+
+  const endpoint = typeof data.endpoint === "string" ? data.endpoint : "";
+  const ticket = typeof data.ticket === "string" ? data.ticket : "";
+  if (!endpoint || !ticket) {
+    throw new Error(
+      `DingTalk endpoint response missing endpoint or ticket account=${accountId} body=${truncateEndpointBody(body)}`,
+    );
+  }
+
+  config.endpoint = data;
+  client.dw_url = `${endpoint}?ticket=${ticket}`;
+}
+
+async function connectWithSdkInternals(
+  client: DingTalkClientInternals,
+  accountId: string,
+  fallbackConnect: DingTalkConnectFallback,
+): Promise<void> {
+  if (
+    client.config &&
+    typeof client._connect === "function"
+  ) {
+    await resolveDingTalkEndpoint(client, accountId);
+    console.log(
+      `[dingtalk] endpoint resolved account=${accountId} target=${formatWsTarget(client.dw_url)}`,
+    );
+    await client._connect.call(client);
+    return;
+  }
+  await fallbackConnect();
+}
+
+function waitForWebSocketOpen(
+  client: DingTalkClientInternals,
+  accountId: string,
+): Promise<void> {
+  if (client.connected === true) return Promise.resolve();
   return new Promise((resolve, reject) => {
     let settled = false;
+    let socket: WebSocketLike | undefined;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
     const cleanup = () => {
-      clearTimeout(timer);
-      removeSocketListener(socket, "open", onOpen);
-      removeSocketListener(socket, "error", onError);
-      removeSocketListener(socket, "close", onClose);
+      clearTimeout(timeoutTimer);
+      if (pollTimer) clearInterval(pollTimer);
+      if (socket) {
+        removeSocketListener(socket, "open", onOpen);
+        removeSocketListener(socket, "error", onError);
+        removeSocketListener(socket, "close", onClose);
+      }
     };
     const finish = (err?: Error) => {
       if (settled) return;
@@ -128,13 +257,15 @@ function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
       else resolve();
     };
     const onOpen = () => {
-      console.log(`[dingtalk] ws open account=${accountId} target=${target}`);
+      console.log(
+        `[dingtalk] ws open account=${accountId} target=${formatWsTarget(client.dw_url)}`,
+      );
       finish();
     };
     const onError = (err: Error) => {
       finish(
         new Error(
-          `DingTalk WebSocket error before open account=${accountId} target=${target}: ${err.message}`,
+          `DingTalk WebSocket error before open account=${accountId} target=${formatWsTarget(client.dw_url)}: ${err.message}`,
         ),
       );
     };
@@ -142,21 +273,45 @@ function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
       const reasonStr = reason?.toString?.() ?? "";
       finish(
         new Error(
-          `DingTalk WebSocket closed before open account=${accountId} target=${target} code=${code} reason=${reasonStr || "(empty)"}`,
+          `DingTalk WebSocket closed before open account=${accountId} target=${formatWsTarget(client.dw_url)} code=${code} reason=${reasonStr || "(empty)"}`,
         ),
       );
     };
-    const timer = setTimeout(() => {
-      finish(
-        new Error(
-          `DingTalk WebSocket did not open within ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target} readyState=${socket.readyState ?? "(unknown)"}`,
-        ),
-      );
+    const attachSocket = (nextSocket: WebSocketLike) => {
+      socket = nextSocket;
+      if (socket.readyState === 1 || client.connected === true) {
+        finish();
+        return;
+      }
+      socket.once("open", onOpen);
+      socket.once("error", onError);
+      socket.once("close", onClose);
+    };
+    const checkSocket = () => {
+      if (client.connected === true) {
+        finish();
+        return;
+      }
+      const nextSocket = client.socket as WebSocketLike | undefined;
+      if (!nextSocket) return;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+      attachSocket(nextSocket);
+    };
+    const timeoutTimer = setTimeout(() => {
+      const target = formatWsTarget(client.dw_url);
+      const errorMessage = socket
+        ? `DingTalk WebSocket did not open within ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target} readyState=${socket.readyState ?? "(unknown)"}`
+        : `DingTalk WebSocket socket missing after ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target}`;
+      finish(new Error(errorMessage));
     }, WS_OPEN_TIMEOUT_MS);
 
-    socket.once("open", onOpen);
-    socket.once("error", onError);
-    socket.once("close", onClose);
+    checkSocket();
+    if (!settled && !socket) {
+      pollTimer = setInterval(checkSocket, WS_SOCKET_POLL_INTERVAL_MS);
+    }
   });
 }
 
@@ -184,25 +339,27 @@ function patchWebSocketProxy(client: DWClient, accountId: string): void {
   if (typeof origInternalConnect !== "function") return;
 
   const bypassRules = parseNoProxy(process.env.NO_PROXY ?? process.env.no_proxy);
-  const proxyAgent = new HttpsProxyAgent(
-    proxyUrl,
-  ) as unknown as AgentWithAddRequest;
-  const directAgent = new https.Agent() as unknown as AgentWithAddRequest;
-  const agent = new ProxyAwareAgent(
-    accountId,
-    proxyAgent,
-    directAgent,
-    bypassRules,
-  );
+  const proxyAgent = new HttpsProxyAgent(proxyUrl);
+  const directAgent = new https.Agent();
   console.log(
     `[dingtalk] ws proxy injected -> ${proxyUrl} (noProxy=${formatNoProxyRulesForLog(bypassRules)})`,
   );
 
   (client as any)._connect = function (this: any) {
     // Inject a NO_PROXY-aware agent before WebSocket is created.
-    this.sslopts = { ...this.sslopts, agent };
+    const target = resolveWsHostPort(this.dw_url);
+    const bypass = target.host
+      ? shouldBypassProxy(target.host, bypassRules)
+      : false;
+    this.sslopts = {
+      ...this.sslopts,
+      agent: bypass ? directAgent : proxyAgent,
+    };
     console.log(
       `[dingtalk] ws connecting account=${accountId} target=${formatWsTarget(this.dw_url)}`,
+    );
+    console.log(
+      `[dingtalk] ws proxy route account=${accountId} target=${formatHostPort(target.host, target.port)} route=${bypass ? "direct" : "proxy"}`,
     );
     return origInternalConnect.call(this);
   };
@@ -222,49 +379,67 @@ function patchSocketLogging(client: DWClient, accountId: string): void {
 
   (client as any)._connect = function (this: any) {
     return origInternalConnect.call(this).then(() => {
-      const socket = this.socket;
-      if (!socket) return;
+      let pollTimer: ReturnType<typeof setInterval> | undefined;
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      const stopPolling = () => {
+        if (pollTimer) clearInterval(pollTimer);
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        pollTimer = undefined;
+        timeoutTimer = undefined;
+      };
+      const install = () => {
+        const socket = this.socket;
+        if (!socket) return false;
+        stopPolling();
 
-      socket.removeAllListeners("error");
-      socket.on("error", (err: Error) => {
-        wsErrorCount++;
-        if (wsErrorCount <= 3 || wsErrorCount % 10 === 0) {
+        socket.removeAllListeners("error");
+        socket.on("error", (err: Error) => {
+          wsErrorCount++;
+          if (wsErrorCount <= 3 || wsErrorCount % 10 === 0) {
+            console.warn(
+              `[dingtalk] ws error account=${accountId}: ${err.message}` +
+                (wsErrorCount > 1 ? ` (${wsErrorCount} consecutive)` : ""),
+            );
+          }
+        });
+
+        // 追加一条 close 监听，不动 SDK 自己的 reconnect close handler。
+        // 只为了能在日志里看到 close code / reason（钉钉 stream 服务端主动关连接时
+        // 只会走 close 事件而非 error，之前的日志里根本看不出为什么掉线）。
+        socket.on("close", (code: number, reason: Buffer) => {
+          const reasonStr = reason?.toString?.() ?? "";
+          const connectedFor = this.connectedAt
+            ? `${Date.now() - this.connectedAt}ms`
+            : "(unknown)";
           console.warn(
-            `[dingtalk] ws error account=${accountId}: ${err.message}` +
-              (wsErrorCount > 1 ? ` (${wsErrorCount} consecutive)` : ""),
+            `[dingtalk] ws closed account=${accountId} code=${code} reason=${
+              reasonStr || "(empty)"
+            } connectedFor=${connectedFor}`,
           );
-        }
-      });
+        });
 
-      // 追加一条 close 监听，不动 SDK 自己的 reconnect close handler。
-      // 只为了能在日志里看到 close code / reason（钉钉 stream 服务端主动关连接时
-      // 只会走 close 事件而非 error，之前的日志里根本看不出为什么掉线）。
-      socket.on("close", (code: number, reason: Buffer) => {
-        const reasonStr = reason?.toString?.() ?? "";
-        const connectedFor = this.connectedAt
-          ? `${Date.now() - this.connectedAt}ms`
-          : "(unknown)";
-        console.warn(
-          `[dingtalk] ws closed account=${accountId} code=${code} reason=${
-            reasonStr || "(empty)"
-          } connectedFor=${connectedFor}`,
-        );
-      });
+        const origOpenListeners = socket.listeners("open").slice();
+        socket.removeAllListeners("open");
+        socket.on("open", (...args: unknown[]) => {
+          this.connectedAt = Date.now();
+          if (wsErrorCount > 0) {
+            console.log(
+              `[dingtalk] ws recovered account=${accountId} after ${wsErrorCount} error(s)`,
+            );
+            wsErrorCount = 0;
+          }
+          for (const fn of origOpenListeners) {
+            (fn as Function).apply(socket, args);
+          }
+        });
+        return true;
+      };
 
-      const origOpenListeners = socket.listeners("open").slice();
-      socket.removeAllListeners("open");
-      socket.on("open", (...args: unknown[]) => {
-        this.connectedAt = Date.now();
-        if (wsErrorCount > 0) {
-          console.log(
-            `[dingtalk] ws recovered account=${accountId} after ${wsErrorCount} error(s)`,
-          );
-          wsErrorCount = 0;
-        }
-        for (const fn of origOpenListeners) {
-          (fn as Function).apply(socket, args);
-        }
-      });
+      if (install()) return;
+      pollTimer = setInterval(install, WS_SOCKET_POLL_INTERVAL_MS);
+      timeoutTimer = setTimeout(stopPolling, WS_OPEN_TIMEOUT_MS);
+      pollTimer.unref?.();
+      timeoutTimer.unref?.();
     });
   };
 }
@@ -294,8 +469,12 @@ function patchClientConnect(
     if (connecting || disposed) return;
     connecting = true;
     try {
-      await originalConnect();
-      await waitForWebSocketOpen(client as any, accountId);
+      await connectWithSdkInternals(
+        client as DingTalkClientInternals,
+        accountId,
+        originalConnect,
+      );
+      await waitForWebSocketOpen(client as DingTalkClientInternals, accountId);
       backoffMs = INITIAL_RECONNECT_DELAY_MS;
       initialConnectDone = true;
     } catch (err) {
@@ -351,18 +530,20 @@ export class DingTalkChannel extends BaseChannel<
       throw new Error("DingTalk accounts not configured");
     }
 
-    const startedClients: DWClient[] = [];
+    const attemptedClients: DWClient[] = [];
     try {
       for (const [accountId, account] of entries) {
         const client = this.createClient(accountId, account);
+        attemptedClients.push(client);
         await client.connect();
         this.clients.set(accountId, client);
-        startedClients.push(client);
         console.log(`[dingtalk] connected account=${accountId}`);
       }
     } catch (error) {
       this.running = false;
-      for (const client of startedClients) {
+      for (const dispose of this.clientDisposers.values()) dispose();
+      this.clientDisposers.clear();
+      for (const client of attemptedClients) {
         client.disconnect();
       }
       this.clients.clear();
@@ -404,6 +585,7 @@ export class DingTalkChannel extends BaseChannel<
       clientSecret: account.clientSecret,
       debug: false,
     });
+    disableSdkAutoReconnect(client as DingTalkClientInternals);
     patchWebSocketProxy(client, accountId);
     patchSocketLogging(client, accountId);
     const { dispose } = patchClientConnect(client, accountId);
