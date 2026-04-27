@@ -39,6 +39,7 @@ const _readyPromise = new Promise<void>((resolve) => {
 });
 let _initStarted = false;
 let _refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let _sessionRecoveryListenersBound = false;
 
 function generateRandomString(length: number): string {
   const array = new Uint8Array(length);
@@ -129,6 +130,14 @@ function getTokenRemainingTtl(token: string): number {
   }
 }
 
+function shouldRefreshTokenSoon(token: string | null, bufferSeconds = 60): boolean {
+  if (!token) {
+    return true;
+  }
+
+  return getTokenRemainingTtl(token) <= bufferSeconds;
+}
+
 function decodeTokenIssuer(token: string | null): string | null {
   if (!token) {
     return null;
@@ -169,6 +178,55 @@ export function useAuth() {
   const clientId = config.public.keycloakClientId as string;
   const redirectNotice = useAuthRedirectNotice();
   const redirecting = useAuthRedirectingState();
+
+  async function recoverSession(): Promise<boolean> {
+    if (!import.meta.client || !localStorage.getItem(REFRESH_TOKEN_KEY)) {
+      return false;
+    }
+
+    const refreshed = await refreshToken();
+    if (!refreshed) {
+      return false;
+    }
+
+    if (!state.value.user && state.value.accessToken) {
+      await fetchMe(false);
+    }
+
+    return !!state.value.accessToken;
+  }
+
+  async function refreshSessionIfNeeded(): Promise<void> {
+    if (!import.meta.client || !localStorage.getItem(REFRESH_TOKEN_KEY)) {
+      return;
+    }
+
+    const currentToken = state.value.accessToken ?? tokenCookie.value ?? null;
+    if (!shouldRefreshTokenSoon(currentToken)) {
+      return;
+    }
+
+    await recoverSession();
+  }
+
+  function bindSessionRecoveryListeners(): void {
+    if (!import.meta.client || _sessionRecoveryListenersBound) {
+      return;
+    }
+
+    _sessionRecoveryListenersBound = true;
+
+    const maybeRefreshSession = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      void refreshSessionIfNeeded();
+    };
+
+    window.addEventListener("focus", maybeRefreshSession);
+    document.addEventListener("visibilitychange", maybeRefreshSession);
+  }
 
   function setAccessToken(token: string | null): void {
     state.value.accessToken = token;
@@ -331,7 +389,7 @@ export function useAuth() {
     return _refreshPromise;
   }
 
-  async function fetchMe(): Promise<void> {
+  async function fetchMe(allowRecover = true): Promise<void> {
     if (!state.value.accessToken) return;
     try {
       const res = await $fetch<{ ok: boolean; data: UserView }>("/api/auth/me", {
@@ -343,6 +401,13 @@ export function useAuth() {
     } catch (error) {
       state.value.user = null;
       if (resolveErrorStatus(error) === 401) {
+        if (allowRecover) {
+          const recovered = await recoverSession();
+          if (recovered) {
+            await fetchMe(false);
+            return;
+          }
+        }
         await handleUnauthorizedResponse();
       }
     }
@@ -444,6 +509,7 @@ export function useAuth() {
     if (!import.meta.client) return;
     if (_initStarted) return;
     _initStarted = true;
+    bindSessionRecoveryListeners();
     state.value.loading = true;
 
     const savedToken = tokenCookie.value;
@@ -485,6 +551,7 @@ export function useAuth() {
     logout,
     handleCallback,
     refreshToken,
+    recoverSession,
     waitUntilReady,
     getAccessToken,
     hasRole,

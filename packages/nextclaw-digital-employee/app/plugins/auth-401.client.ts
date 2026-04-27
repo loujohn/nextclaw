@@ -51,8 +51,11 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     if (shouldHandleUnauthorized(input, response)) {
       void nuxtApp.runWithContext(async () => {
-        const { handleUnauthorizedResponse } = useAuth();
-        await handleUnauthorizedResponse(SESSION_EXPIRED_MESSAGE);
+        const { recoverSession, handleUnauthorizedResponse } = useAuth();
+        const recovered = await recoverSession();
+        if (!recovered) {
+          await handleUnauthorizedResponse(SESSION_EXPIRED_MESSAGE);
+        }
       });
     }
 
