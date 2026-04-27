@@ -3,6 +3,13 @@ import { ArrowUpCircle, ChevronDown } from "lucide-vue-next";
 import type { AutomationSummaryView } from "~/composables/useEmployeeDetail";
 import { pickAvatarGradient } from "~~/shared/avatar-utils";
 
+const skillsStore = useSkillsStore();
+const skillPurposeMap = computed(() => {
+  const m = new Map<string, string>();
+  for (const s of skillsStore.list) if (s.purpose) m.set(s.name, s.purpose);
+  return m;
+});
+
 const props = defineProps<{
   employee: {
     id: string;
@@ -206,6 +213,13 @@ const hiddenSkillCount = computed(() => Math.max(0, props.employee.skills.length
                 ? 'bg-amber-50/80 text-amber-700 ring-amber-200/80'
                 : 'bg-indigo-50/80 text-indigo-600 ring-indigo-100/80'"
           >
+            <!-- Tooltip: show full skill name + purpose on hover -->
+            <div
+              class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 w-56 rounded-lg border bg-popover px-2.5 py-2 text-xs shadow-md group-hover:block"
+            >
+              <p class="font-semibold leading-snug text-popover-foreground">{{ skillDisplayNames.get(skill.skillName) || skill.skillName }}</p>
+              <p v-if="skillPurposeMap.get(skill.skillName)" class="mt-1 leading-relaxed text-muted-foreground">{{ skillPurposeMap.get(skill.skillName) }}</p>
+            </div>
             <span>{{ skillDisplayNames.get(skill.skillName) || skill.skillName }}</span>
             <span v-if="skill.version" class="opacity-50 font-normal">v{{ skill.version }}</span>
             <!-- 全局已删除标签 -->

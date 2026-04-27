@@ -326,9 +326,17 @@ async function toggleSkill(name: string, enabled: boolean) {
         </div>
 
         <!-- Purpose Description -->
-        <p class="line-clamp-2 flex-1 text-xs leading-relaxed text-muted-foreground">
-          {{ skill.purpose }}
-        </p>
+        <div class="group/desc relative flex-1">
+          <p class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {{ skill.purpose }}
+          </p>
+          <div
+            v-if="skill.purpose"
+            class="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 hidden w-72 rounded-lg border bg-popover px-3 py-2 text-xs leading-relaxed text-popover-foreground shadow-md group-hover/desc:block"
+          >
+            {{ skill.purpose }}
+          </div>
+        </div>
 
         <!-- Card Footer: Usage + Toggle -->
         <div class="mt-4 flex items-center justify-between gap-2 border-t border-border/50 pt-3">
