@@ -36,18 +36,28 @@ const INITIAL_RECONNECT_DELAY_MS = 2_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
+const WS_OPEN_TIMEOUT_MS = 30_000;
 
 type AgentRequestOptions = http.RequestOptions & {
   hostname?: string;
   host?: string;
+  port?: string | number;
 };
 
 type AgentWithAddRequest = http.Agent & {
   addRequest(req: http.ClientRequest, options: AgentRequestOptions): void;
 };
 
+type WebSocketLike = {
+  readyState?: number;
+  once(event: string, listener: (...args: any[]) => void): void;
+  off?: (event: string, listener: (...args: any[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: any[]) => void) => void;
+};
+
 class ProxyAwareAgent extends http.Agent {
   constructor(
+    private readonly accountId: string,
     private readonly proxyAgent: AgentWithAddRequest,
     private readonly directAgent: AgentWithAddRequest,
     private readonly bypassRules: NoProxyRule[],
@@ -57,12 +67,97 @@ class ProxyAwareAgent extends http.Agent {
 
   addRequest(req: http.ClientRequest, options: AgentRequestOptions): void {
     const host = options.hostname ?? options.host ?? "";
-    const delegate =
-      host && shouldBypassProxy(host, this.bypassRules)
-        ? this.directAgent
-        : this.proxyAgent;
+    const bypass = host ? shouldBypassProxy(host, this.bypassRules) : false;
+    const delegate = bypass ? this.directAgent : this.proxyAgent;
+    console.log(
+      `[dingtalk] ws proxy route account=${this.accountId} target=${formatHostPort(host, options.port)} route=${bypass ? "direct" : "proxy"}`,
+    );
     delegate.addRequest(req, options);
   }
+}
+
+function formatHostPort(host: string, port: string | number | undefined): string {
+  if (!host) return "(unknown)";
+  return port ? `${host}:${port}` : host;
+}
+
+function formatWsTarget(rawUrl: unknown): string {
+  if (typeof rawUrl !== "string" || !rawUrl) return "(unknown)";
+  try {
+    const url = new URL(rawUrl);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return "(unparseable)";
+  }
+}
+
+function removeSocketListener(
+  socket: WebSocketLike,
+  event: string,
+  listener: (...args: any[]) => void,
+): void {
+  if (typeof socket.off === "function") {
+    socket.off(event, listener);
+    return;
+  }
+  socket.removeListener?.(event, listener);
+}
+
+function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
+  if (client.connected === true) return Promise.resolve();
+  const socket = client.socket as WebSocketLike | undefined;
+  if (!socket) {
+    throw new Error(`DingTalk WebSocket socket missing account=${accountId}`);
+  }
+  if (socket.readyState === 1) return Promise.resolve();
+
+  const target = formatWsTarget(client.dw_url);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      removeSocketListener(socket, "open", onOpen);
+      removeSocketListener(socket, "error", onError);
+      removeSocketListener(socket, "close", onClose);
+    };
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) reject(err);
+      else resolve();
+    };
+    const onOpen = () => {
+      console.log(`[dingtalk] ws open account=${accountId} target=${target}`);
+      finish();
+    };
+    const onError = (err: Error) => {
+      finish(
+        new Error(
+          `DingTalk WebSocket error before open account=${accountId} target=${target}: ${err.message}`,
+        ),
+      );
+    };
+    const onClose = (code: number, reason: Buffer) => {
+      const reasonStr = reason?.toString?.() ?? "";
+      finish(
+        new Error(
+          `DingTalk WebSocket closed before open account=${accountId} target=${target} code=${code} reason=${reasonStr || "(empty)"}`,
+        ),
+      );
+    };
+    const timer = setTimeout(() => {
+      finish(
+        new Error(
+          `DingTalk WebSocket did not open within ${WS_OPEN_TIMEOUT_MS / 1000}s account=${accountId} target=${target} readyState=${socket.readyState ?? "(unknown)"}`,
+        ),
+      );
+    }, WS_OPEN_TIMEOUT_MS);
+
+    socket.once("open", onOpen);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+  });
 }
 
 /**
@@ -76,7 +171,7 @@ class ProxyAwareAgent extends http.Agent {
  * This patch intercepts _connect and adds HttpsProxyAgent to sslopts
  * before the WebSocket is instantiated.
  */
-function patchWebSocketProxy(client: DWClient): void {
+function patchWebSocketProxy(client: DWClient, accountId: string): void {
   const proxyUrl =
     process.env.HTTPS_PROXY ??
     process.env.https_proxy ??
@@ -93,7 +188,12 @@ function patchWebSocketProxy(client: DWClient): void {
     proxyUrl,
   ) as unknown as AgentWithAddRequest;
   const directAgent = new https.Agent() as unknown as AgentWithAddRequest;
-  const agent = new ProxyAwareAgent(proxyAgent, directAgent, bypassRules);
+  const agent = new ProxyAwareAgent(
+    accountId,
+    proxyAgent,
+    directAgent,
+    bypassRules,
+  );
   console.log(
     `[dingtalk] ws proxy injected -> ${proxyUrl} (noProxy=${formatNoProxyRulesForLog(bypassRules)})`,
   );
@@ -101,6 +201,9 @@ function patchWebSocketProxy(client: DWClient): void {
   (client as any)._connect = function (this: any) {
     // Inject a NO_PROXY-aware agent before WebSocket is created.
     this.sslopts = { ...this.sslopts, agent };
+    console.log(
+      `[dingtalk] ws connecting account=${accountId} target=${formatWsTarget(this.dw_url)}`,
+    );
     return origInternalConnect.call(this);
   };
 }
@@ -192,6 +295,7 @@ function patchClientConnect(
     connecting = true;
     try {
       await originalConnect();
+      await waitForWebSocketOpen(client as any, accountId);
       backoffMs = INITIAL_RECONNECT_DELAY_MS;
       initialConnectDone = true;
     } catch (err) {
@@ -300,7 +404,7 @@ export class DingTalkChannel extends BaseChannel<
       clientSecret: account.clientSecret,
       debug: false,
     });
-    patchWebSocketProxy(client);
+    patchWebSocketProxy(client, accountId);
     patchSocketLogging(client, accountId);
     const { dispose } = patchClientConnect(client, accountId);
     this.clientDisposers.set(accountId, dispose);

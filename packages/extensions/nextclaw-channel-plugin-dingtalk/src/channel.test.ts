@@ -8,6 +8,7 @@ import { DingTalkChannel } from "./channel";
 
 let mockConnectHost = "api.dingtalk.com";
 let mockConnectPort = 443;
+let mockSocketOpenMode: "open" | "never" = "open";
 
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
@@ -33,7 +34,14 @@ vi.mock("dingtalk-stream", () => {
         }
       );
       this.socket = new EventEmitter();
-      this.connected = true;
+      this.socket.on("open", () => {
+        this.connected = true;
+      });
+      if (mockSocketOpenMode === "open") {
+        setTimeout(() => {
+          this.socket?.emit("open");
+        }, 0);
+      }
     });
     connect = vi.fn(async () => {
       await this._connect();
@@ -70,6 +78,7 @@ beforeEach(() => {
   vi.stubEnv("no_proxy", "");
   mockConnectHost = "api.dingtalk.com";
   mockConnectPort = 443;
+  mockSocketOpenMode = "open";
 });
 
 afterEach(() => {
@@ -183,6 +192,45 @@ describe("resolveOutboundTarget", () => {
 });
 
 describe("DingTalkChannel", () => {
+  it("fails startup when the WebSocket socket never opens", async () => {
+    vi.useFakeTimers();
+    clientInstances.length = 0;
+    mockSocketOpenMode = "never";
+    const channel = new DingTalkChannel(
+      {
+        enabled: true,
+        defaultAccountId: "ops-bot",
+        accounts: {
+          "ops-bot": {
+            clientId: "client-ok",
+            clientSecret: "secret-ok",
+            robotCode: "",
+            corpId: "",
+            agentId: "",
+            allowFrom: [],
+            dmPolicy: "open",
+            groupPolicy: "open",
+            groupAllowFrom: [],
+            requireMention: false,
+            mentionPatterns: [],
+            groups: {}
+          }
+        }
+      },
+      new MessageBus()
+    );
+
+    const startPromise = channel.start();
+    const assertion = expect(startPromise).rejects.toThrow(
+      "WebSocket did not open"
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await assertion;
+    expect(channel.isRunning).toBe(false);
+    vi.useRealTimers();
+  });
+
   it("bypasses proxy for WebSocket targets matched by CIDR NO_PROXY", async () => {
     clientInstances.length = 0;
     mockConnectHost = "172.31.1.95";
