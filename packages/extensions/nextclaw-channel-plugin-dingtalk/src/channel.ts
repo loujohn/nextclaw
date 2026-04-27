@@ -18,7 +18,7 @@ import {
   TOPIC_ROBOT,
   type DWClientDownStream,
 } from "dingtalk-stream";
-import { fetch } from "undici";
+import { EnvHttpProxyAgent, fetch } from "undici";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 import {
@@ -38,6 +38,10 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const FORCE_RESTART_AFTER_MS = 120_000;
 const WS_OPEN_TIMEOUT_MS = 30_000;
 const WS_SOCKET_POLL_INTERVAL_MS = 10;
+const DINGTALK_GATEWAY_OPEN_URL =
+  "https://api.dingtalk.com/v1.0/gateway/connections/open";
+const ENDPOINT_REQUEST_TIMEOUT_MS = 15_000;
+const ENDPOINT_ERROR_BODY_LIMIT = 500;
 
 type AgentRequestOptions = http.RequestOptions & {
   hostname?: string;
@@ -59,6 +63,11 @@ type WebSocketLike = {
 type DingTalkClientInternals = DWClient & {
   config?: {
     autoReconnect?: boolean;
+    clientId?: string;
+    clientSecret?: string;
+    ua?: string;
+    subscriptions?: Array<{ type: string; topic: string }>;
+    endpoint?: unknown;
   };
   getEndpoint?: () => Promise<unknown>;
   _connect?: () => Promise<unknown>;
@@ -67,6 +76,10 @@ type DingTalkClientInternals = DWClient & {
 };
 
 type DingTalkConnectFallback = () => Promise<unknown>;
+
+type DingTalkEndpointFetchOptions = NonNullable<Parameters<typeof fetch>[1]> & {
+  dispatcher?: unknown;
+};
 
 class ProxyAwareAgent extends http.Agent {
   constructor(
@@ -122,16 +135,108 @@ function disableSdkAutoReconnect(client: DingTalkClientInternals): void {
   }
 }
 
+function getProxyUrl(): string | undefined {
+  return (
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy
+  );
+}
+
+function truncateEndpointBody(body: string): string {
+  if (body.length <= ENDPOINT_ERROR_BODY_LIMIT) return body;
+  return `${body.slice(0, ENDPOINT_ERROR_BODY_LIMIT)}...`;
+}
+
+function createEndpointFetchOptions(
+  client: DingTalkClientInternals,
+): DingTalkEndpointFetchOptions {
+  const config = client.config;
+  const options: DingTalkEndpointFetchOptions = {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      clientId: config?.clientId,
+      clientSecret: config?.clientSecret,
+      ua: config?.ua ?? "",
+      subscriptions: config?.subscriptions ?? [],
+    }),
+    signal: AbortSignal.timeout(ENDPOINT_REQUEST_TIMEOUT_MS),
+  };
+
+  if (getProxyUrl()) {
+    options.dispatcher = new EnvHttpProxyAgent();
+  }
+
+  return options;
+}
+
+async function resolveDingTalkEndpoint(
+  client: DingTalkClientInternals,
+  accountId: string,
+): Promise<void> {
+  const config = client.config;
+  if (!config?.clientId || !config.clientSecret) {
+    throw new Error(`DingTalk endpoint config missing account=${accountId}`);
+  }
+
+  let response: Awaited<ReturnType<typeof fetch>>;
+  try {
+    response = await fetch(
+      DINGTALK_GATEWAY_OPEN_URL,
+      createEndpointFetchOptions(client),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `DingTalk endpoint request failed account=${accountId} network=${message}`,
+      { cause: err },
+    );
+  }
+
+  const body = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new Error(
+      `DingTalk endpoint request failed account=${accountId} status=${response.status} body=${truncateEndpointBody(body)}`,
+    );
+  }
+
+  let data: { endpoint?: unknown; ticket?: unknown };
+  try {
+    data = JSON.parse(body) as { endpoint?: unknown; ticket?: unknown };
+  } catch (err) {
+    throw new Error(
+      `DingTalk endpoint response is not JSON account=${accountId} body=${truncateEndpointBody(body)}`,
+      { cause: err },
+    );
+  }
+
+  const endpoint = typeof data.endpoint === "string" ? data.endpoint : "";
+  const ticket = typeof data.ticket === "string" ? data.ticket : "";
+  if (!endpoint || !ticket) {
+    throw new Error(
+      `DingTalk endpoint response missing endpoint or ticket account=${accountId} body=${truncateEndpointBody(body)}`,
+    );
+  }
+
+  config.endpoint = data;
+  client.dw_url = `${endpoint}?ticket=${ticket}`;
+}
+
 async function connectWithSdkInternals(
   client: DingTalkClientInternals,
   accountId: string,
   fallbackConnect: DingTalkConnectFallback,
 ): Promise<void> {
   if (
-    typeof client.getEndpoint === "function" &&
+    client.config &&
     typeof client._connect === "function"
   ) {
-    await client.getEndpoint.call(client);
+    await resolveDingTalkEndpoint(client, accountId);
     console.log(
       `[dingtalk] endpoint resolved account=${accountId} target=${formatWsTarget(client.dw_url)}`,
     );

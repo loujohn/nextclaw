@@ -6,10 +6,19 @@ import { MessageBus, type Config } from "@nextclaw/core";
 import { normalizeInboundDingTalkMessage, resolveOutboundTarget } from "./message-normalizer";
 import { DingTalkChannel } from "./channel";
 
+const mockUndiciFetch = vi.hoisted(() => vi.fn());
+const MockEnvHttpProxyAgent = vi.hoisted(() =>
+  vi.fn(function EnvHttpProxyAgent() {})
+);
+
+vi.mock("undici", () => ({
+  EnvHttpProxyAgent: MockEnvHttpProxyAgent,
+  fetch: mockUndiciFetch
+}));
+
 let mockConnectHost = "api.dingtalk.com";
 let mockConnectPort = 443;
 let mockSocketOpenMode: "open" | "delayed-open" | "never" = "open";
-let mockEndpointMode: "ok" | "swallowed-error" = "ok";
 
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
@@ -22,7 +31,14 @@ const clientInstances: Array<{
   socketCallBackResponse: ReturnType<typeof vi.fn>;
   sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
   connectedAt?: number;
-  config: { autoReconnect: boolean };
+  config: {
+    autoReconnect: boolean;
+    clientId: string;
+    clientSecret: string;
+    ua: string;
+    subscriptions: Array<{ type: string; topic: string }>;
+    endpoint?: unknown;
+  };
 }> = [];
 
 type DingTalkConfig = Config["channels"]["dingtalk"];
@@ -72,18 +88,36 @@ function createDingTalkConfig(
   };
 }
 
+function createFetchResponse(status: number, body: unknown) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : "Service Unavailable",
+    text: vi.fn(async () =>
+      typeof body === "string" ? body : JSON.stringify(body)
+    )
+  };
+}
+
 vi.mock("dingtalk-stream", () => {
   class MockDWClient {
     connected = false;
-    config = { autoReconnect: true };
+    config = {
+      autoReconnect: true,
+      clientId: "",
+      clientSecret: "",
+      ua: "",
+      subscriptions: [
+        {
+          type: "EVENT",
+          topic: "*"
+        }
+      ] as Array<{ type: string; topic: string }>,
+      endpoint: undefined as unknown
+    };
     sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
     socket?: EventEmitter;
-    getEndpoint = vi.fn(async () => {
-      if (mockEndpointMode === "swallowed-error") {
-        throw new Error("endpoint failed");
-      }
-      return this;
-    });
+    getEndpoint = vi.fn(async () => this);
     _connect = vi.fn(async () => {
       this.sslopts?.agent?.addRequest?.(
         new EventEmitter(),
@@ -131,6 +165,8 @@ vi.mock("dingtalk-stream", () => {
     socketCallBackResponse = vi.fn(() => undefined);
 
     constructor(options: { clientId: string }) {
+      this.config.clientId = options.clientId;
+      this.config.clientSecret = "secret-ok";
       if (options.clientId === "client-bad") {
         this._connect = vi.fn(async () => {
           throw new Error("connect failed");
@@ -159,10 +195,17 @@ beforeEach(() => {
   vi.stubEnv("http_proxy", "");
   vi.stubEnv("NO_PROXY", "");
   vi.stubEnv("no_proxy", "");
+  mockUndiciFetch.mockReset();
+  MockEnvHttpProxyAgent.mockClear();
+  mockUndiciFetch.mockResolvedValue(
+    createFetchResponse(200, {
+      endpoint: "wss://stream.dingtalk.test/connect",
+      ticket: "ticket-ok"
+    })
+  );
   mockConnectHost = "api.dingtalk.com";
   mockConnectPort = 443;
   mockSocketOpenMode = "open";
-  mockEndpointMode = "ok";
 });
 
 afterEach(() => {
@@ -276,26 +319,64 @@ describe("resolveOutboundTarget", () => {
 });
 
 describe("DingTalkChannel", () => {
-  it("surfaces endpoint failures swallowed by the SDK before waiting for a socket", async () => {
-    vi.useFakeTimers();
+  it("resolves the stream endpoint through undici fetch instead of SDK axios", async () => {
     clientInstances.length = 0;
-    mockEndpointMode = "swallowed-error";
-    try {
-      const channel = new DingTalkChannel(
-        createDingTalkConfig(),
-        new MessageBus()
-      );
+    const channel = new DingTalkChannel(
+      createDingTalkConfig(),
+      new MessageBus()
+    );
 
-      const startPromise = channel.start();
-      const assertion = expect(startPromise).rejects.toThrow("endpoint failed");
-      await vi.advanceTimersByTimeAsync(30_000);
+    await channel.start();
 
-      await assertion;
-      expect(clientInstances[0]?.sdkConnect).not.toHaveBeenCalled();
-      expect(clientInstances[0]?.config.autoReconnect).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(mockUndiciFetch).toHaveBeenCalledWith(
+      "https://api.dingtalk.com/v1.0/gateway/connections/open",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("\"clientId\":\"client-ok\"")
+      })
+    );
+    expect(clientInstances[0]?.getEndpoint).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.sdkConnect).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.config.autoReconnect).toBe(false);
+  });
+
+  it("surfaces endpoint HTTP failures before waiting for a socket", async () => {
+    clientInstances.length = 0;
+    mockUndiciFetch.mockResolvedValueOnce(
+      createFetchResponse(503, "ERR_CONNECT_FAIL 113")
+    );
+    const channel = new DingTalkChannel(
+      createDingTalkConfig(),
+      new MessageBus()
+    );
+
+    await expect(channel.start()).rejects.toThrow(
+      "DingTalk endpoint request failed account=ops-bot status=503"
+    );
+    expect(clientInstances[0]?.getEndpoint).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.sdkConnect).not.toHaveBeenCalled();
+  });
+
+  it("attaches an EnvHttpProxyAgent dispatcher to endpoint fetch when proxy is configured", async () => {
+    clientInstances.length = 0;
+    mockConnectHost = "172.31.1.95";
+    mockConnectPort = 1080;
+    vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
+    vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
+    vi.spyOn(https.Agent.prototype as any, "addRequest").mockImplementation(
+      () => undefined
+    );
+    const channel = new DingTalkChannel(
+      createDingTalkConfig(),
+      new MessageBus()
+    );
+
+    await channel.start();
+
+    expect(MockEnvHttpProxyAgent).toHaveBeenCalledTimes(1);
+    expect(mockUndiciFetch.mock.calls[0]?.[1]).toMatchObject({
+      dispatcher: expect.any(Object)
+    });
   });
 
   it("fails startup when the WebSocket socket never opens", async () => {
