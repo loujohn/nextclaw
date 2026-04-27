@@ -6,6 +6,7 @@ const employeeId = computed(() => String(route.params.id));
 
 type RunItem = {
   id: string;
+  createdByUserLabel: string;
   statusLabel: string;
   triggerLabel: string;
   scheduleJobName: string | null;
@@ -160,6 +161,7 @@ function setJobFilter(jobId: string | null) {
         <thead>
           <tr class="border-b border-border bg-muted/40 text-xs text-muted-foreground">
             <th class="px-4 py-3 text-left font-medium">状态</th>
+            <th class="px-4 py-3 text-left font-medium">发起人</th>
             <th class="px-4 py-3 text-left font-medium">触发方式</th>
             <th class="px-4 py-3 text-left font-medium">摘要</th>
             <th class="px-4 py-3 text-left font-medium whitespace-nowrap">开始时间</th>
@@ -185,6 +187,11 @@ function setJobFilter(jobId: string | null) {
                   {{ run.statusLabel }}
                 </span>
               </div>
+            </td>
+            <td class="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+              <span class="inline-flex items-center rounded-full bg-muted px-2 py-0.5 font-medium text-foreground/80">
+                {{ run.createdByUserLabel }}
+              </span>
             </td>
             <td class="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
               {{ run.triggerLabel }}<span v-if="run.scheduleJobName" class="text-primary"> · {{ run.scheduleJobName }}</span>

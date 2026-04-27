@@ -36,6 +36,8 @@ type ChatSessionListRow = ChatSessionRecord & {
   last_message_at?: string | null;
 };
 
+const SCHEDULED_SESSION_KEY_RE = /^employee:[^:]+:scheduled:/;
+
 function encodeCursor(value: CursorToken): string {
   return Buffer.from(JSON.stringify(value), "utf-8").toString("base64url");
 }
@@ -56,7 +58,7 @@ function decodeCursor(value?: string | null): CursorToken | null {
 }
 
 function toView(record: ChatSessionListRow): ChatSessionView {
-  const source = record.created_by_user_id ? "chat" : "scheduled";
+  const source = SCHEDULED_SESSION_KEY_RE.test(record.session_key) ? "scheduled" : "chat";
   return {
     id: record.id,
     employeeId: record.employee_id,

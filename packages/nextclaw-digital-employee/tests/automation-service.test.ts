@@ -620,6 +620,11 @@ describe("automation service - chat persistence", () => {
     expect(sessions.some((session) => session.sessionKey === sessionKey)).toBe(true);
 
     const storedSession = sessions.find((session) => session.sessionKey === sessionKey);
+    expect(storedSession).toMatchObject({
+      createdByUserId: "user-job-creator",
+      source: "scheduled",
+      sourceLabel: "定时任务"
+    });
     const page = await chatMessageRepo.listBySessionId({
       sessionId: storedSession!.id,
       limit: 10

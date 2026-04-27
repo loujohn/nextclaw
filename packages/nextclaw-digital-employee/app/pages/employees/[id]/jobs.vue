@@ -188,6 +188,16 @@ function scheduleDetail(job: ScheduleJob) {
 function scheduleIcon(kind: string) {
   return kind === "every" ? Zap : Clock;
 }
+
+function jobCreatorLabel(job: ScheduleJob): string {
+  if (job.createdByUserDisplayName?.trim()) {
+    return job.createdByUserDisplayName;
+  }
+  if (job.createdByUserId) {
+    return `用户 ${job.createdByUserId.slice(0, 8)}`;
+  }
+  return "系统";
+}
 </script>
 
 <template>
@@ -237,6 +247,9 @@ function scheduleIcon(kind: string) {
               <span>
                 <span class="font-medium text-foreground">{{ scheduleKindLabel(job.scheduleKind) }}</span>
                 &nbsp;·&nbsp;{{ scheduleDetail(job) }}
+              </span>
+              <span>
+                创建人&nbsp;<span class="font-medium text-foreground">{{ jobCreatorLabel(job) }}</span>
               </span>
               <span v-if="job.nextRunAt && job.enabled">
                 下次运行&nbsp;

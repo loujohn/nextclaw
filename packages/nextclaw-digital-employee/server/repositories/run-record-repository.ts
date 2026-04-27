@@ -3,11 +3,13 @@ import type { Knex } from "knex";
 import { PLATFORM_TABLES, type RunEventRecord, type RunRecord } from "../db/schema";
 import { RunStatus } from "../db/enums";
 import { dbNow, formatTimestamp } from "../db/knex";
+import type { OwnershipAccessScope } from "../utils/chat-session-access";
 
 export type RunRecordView = {
   id: string;
   employeeId: string | null;
   sessionKey: string | null;
+  createdByUserId: string | null;
   triggerType: string;
   triggerSource: string;
   status: string;
@@ -31,6 +33,7 @@ function toRunRecordView(record: RunRecord): RunRecordView {
     id: record.id,
     employeeId: record.employee_id,
     sessionKey: record.session_key,
+    createdByUserId: record.created_by_user_id ?? null,
     triggerType: record.trigger_type,
     triggerSource: record.trigger_source,
     status: record.status,
@@ -60,12 +63,14 @@ export class RunRecordRepository {
     triggerType: string;
     triggerSource: string;
     sessionKey?: string | null;
+    createdByUserId?: string | null;
   }): Promise<RunRecordView> {
     const startedAt = dbNow();
     const record: RunRecord = {
       id: randomUUID(),
       employee_id: params.employeeId,
       session_key: params.sessionKey ?? null,
+      created_by_user_id: params.createdByUserId ?? null,
       trigger_type: params.triggerType,
       trigger_source: params.triggerSource,
       status: RunStatus.Running,
@@ -202,12 +207,27 @@ export class RunRecordRepository {
     return new Set((rows as Array<{ employee_id: string }>).map(r => r.employee_id));
   }
 
-  async listPagedByEmployeeId(params: { employeeId: string; page: number; pageSize: number; scheduleJobId?: string }): Promise<{ items: RunRecordView[]; total: number }> {
+  async listPagedByEmployeeId(params: {
+    employeeId: string;
+    page: number;
+    pageSize: number;
+    scheduleJobId?: string;
+    actorUserId?: string | null;
+    accessScope?: OwnershipAccessScope;
+  }): Promise<{ items: RunRecordView[]; total: number }> {
     const offset = (params.page - 1) * params.pageSize;
     const applyFilter = (q: Knex.QueryBuilder) => {
       let query = q.where({ employee_id: params.employeeId });
       if (params.scheduleJobId) {
         query = query.where({ trigger_source: params.scheduleJobId });
+      }
+      if ((params.accessScope ?? "all") === "own") {
+        const actorUserId = params.actorUserId?.trim();
+        if (!actorUserId) {
+          query = query.whereRaw("1 = 0");
+        } else {
+          query = query.where({ created_by_user_id: actorUserId });
+        }
       }
       return query;
     };

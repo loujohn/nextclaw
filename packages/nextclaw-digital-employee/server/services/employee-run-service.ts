@@ -750,7 +750,8 @@ export class EmployeeRunService {
       employeeId: employee.id,
       triggerType: "manual",
       triggerSource: "chat",
-      sessionKey: session.sessionKey
+      sessionKey: session.sessionKey,
+      createdByUserId: params.actorUserId
     });
     const userMessageCreatedAt = normalizeChatMessageTimestamp();
     const uploadService = new EmployeeUploadFileService(this.employeeRepo, messageRepo, this.gateway.homeDir);
@@ -1159,6 +1160,7 @@ export class EmployeeRunService {
     triggerSource: string;
     sessionKey?: string;
     sessionTitle?: string;
+    actorUserId?: string;
   }): Promise<EmployeeTurnResult> {
     const { employee, workspace, skillNames } = await this.prepareRuntime(params.employeeId);
     const persistence = this.chatSessionRepo && this.chatMessageRepo
@@ -1167,7 +1169,8 @@ export class EmployeeRunService {
     const automatedChatSession = persistence && params.triggerType === "scheduled"
       ? await this.resolveChatSession(employee.id, params.sessionKey, {
           createIfMissing: true,
-          title: params.sessionTitle
+          title: params.sessionTitle,
+          actorUserId: params.actorUserId
         })
       : null;
 
@@ -1177,7 +1180,8 @@ export class EmployeeRunService {
       employeeId: employee.id,
       triggerType: params.triggerType,
       triggerSource: params.triggerSource,
-      sessionKey: automatedChatSession?.sessionKey ?? params.sessionKey ?? null
+      sessionKey: automatedChatSession?.sessionKey ?? params.sessionKey ?? null,
+      createdByUserId: params.actorUserId
     });
 
     if (automatedChatSession && persistence) {

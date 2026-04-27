@@ -20,6 +20,13 @@ type EmployeeScheduleJobRecord = {
   updated_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+  output_chat_ids?: string;
+  source_chat_id?: string | null;
+};
+
+type OptionalJobColumns = {
+  outputChatIds: boolean;
+  sourceChatId: boolean;
 };
 
 export type EmployeeScheduleJobView = {
@@ -36,6 +43,7 @@ export type EmployeeScheduleJobView = {
   runtimeJobId: string | null;
   nextRunAt: string | null;
   createdByUserId: string | null;
+  createdByUserDisplayName?: string | null;
   updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -82,10 +90,23 @@ function toView(record: EmployeeScheduleJobRecord): EmployeeScheduleJobView {
 }
 
 export class EmployeeScheduleJobRepository {
+  private optionalColumnsPromise: Promise<OptionalJobColumns> | null = null;
+
   constructor(private readonly db: Knex) {}
+
+  private getOptionalColumns(): Promise<OptionalJobColumns> {
+    if (!this.optionalColumnsPromise) {
+      this.optionalColumnsPromise = Promise.all([
+        this.db.schema.hasColumn(PLATFORM_TABLES.employeeScheduleJobs, "output_chat_ids"),
+        this.db.schema.hasColumn(PLATFORM_TABLES.employeeScheduleJobs, "source_chat_id")
+      ]).then(([outputChatIds, sourceChatId]) => ({ outputChatIds, sourceChatId }));
+    }
+    return this.optionalColumnsPromise;
+  }
 
   async create(input: CreateEmployeeScheduleJobInput): Promise<EmployeeScheduleJobView> {
     const now = dbNow();
+    const optionalColumns = await this.getOptionalColumns();
     const record: EmployeeScheduleJobRecord = {
       id: randomUUID(),
       employee_id: input.employeeId,
@@ -104,6 +125,12 @@ export class EmployeeScheduleJobRepository {
       created_at: now,
       updated_at: now
     };
+    if (optionalColumns.outputChatIds) {
+      record.output_chat_ids = "[]";
+    }
+    if (optionalColumns.sourceChatId) {
+      record.source_chat_id = null;
+    }
     await this.db<EmployeeScheduleJobRecord>(PLATFORM_TABLES.employeeScheduleJobs).insert(record);
     return toView(record);
   }
