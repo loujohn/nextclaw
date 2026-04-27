@@ -8,6 +8,7 @@ import { EmployeeSkillRepository } from "../server/repositories/employee-skill-r
 import { RunRecordRepository } from "../server/repositories/run-record-repository";
 import { ChatSessionRepository } from "../server/repositories/chat-session-repository";
 import { ChatMessageRepository } from "../server/repositories/chat-message-repository";
+import { UserRepository } from "../server/repositories/user-repository";
 import { NextclawEngineGateway } from "../server/engine/NextclawEngineGateway";
 import { EmployeeRunService } from "../server/services/employee-run-service";
 import { cleanTestDatabase, createTestKnex, ensureTestDatabase } from "./test-db";
@@ -94,6 +95,7 @@ async function createService(homeDir: string, gateway = buildGateway(homeDir)) {
   const runRepo = new RunRecordRepository(db);
   const chatSessionRepo = new ChatSessionRepository(db);
   const chatMessageRepo = new ChatMessageRepository(db);
+  const userRepo = new UserRepository(db);
   const employee = await employeeRepo.create({
     name: "聊天助手",
     code: "chat-bot",
@@ -113,7 +115,9 @@ async function createService(homeDir: string, gateway = buildGateway(homeDir)) {
       gateway,
       undefined,
       chatSessionRepo,
-      chatMessageRepo
+      chatMessageRepo,
+      undefined,
+      userRepo
     )
   };
 }
@@ -151,13 +155,19 @@ describe("EmployeeRunService chat session persistence", () => {
 
   it("paginates chat sessions by updated time and keeps ordering stable", async () => {
     const homeDir = createTempDir("chat-sessions-page-");
-    const { employee, service, chatSessionRepo, chatMessageRepo } = await createService(homeDir);
+    const { employee, service, chatSessionRepo, chatMessageRepo, db } = await createService(homeDir);
+    const userRepo = new UserRepository(db);
+    const alphaUser = await userRepo.createLocalUser({
+      username: "alpha-owner",
+      displayName: "张三",
+      passwordHash: "hashed-password"
+    });
 
     const alpha = await chatSessionRepo.create({
       employeeId: employee.id,
       sessionKey: "session-alpha",
       title: "会话 A",
-      createdByUserId: "user-alpha",
+      createdByUserId: alphaUser.id,
     });
     const beta = await chatSessionRepo.create({
       employeeId: employee.id,
@@ -199,9 +209,10 @@ describe("EmployeeRunService chat session persistence", () => {
     expect(firstPage.items).toHaveLength(2);
     expect(firstPage.items[0]?.sessionKey).toBe("session-gamma");
     expect(firstPage.items[0]?.lastMessageAt).toBe("2026-01-04T00:00:00.000Z");
+    expect(firstPage.items[0]?.source).toBe("scheduled");
+    expect(firstPage.items[0]?.sourceLabel).toBe("定时任务");
     expect(firstPage.items[1]?.sessionKey).toBe("session-beta");
     expect(firstPage.items[1]?.lastMessageAt).toBe("2026-01-03T00:00:00.000Z");
-    expect(secondPage.items[0]?.createdByUserId).toBe("user-alpha");
     expect(firstPage.nextCursor).toBeTruthy();
 
     const secondPage = await service.listChatSessions({
@@ -211,6 +222,10 @@ describe("EmployeeRunService chat session persistence", () => {
     });
     expect(secondPage.items.map((item) => item.sessionKey)).toEqual(["session-alpha"]);
     expect(secondPage.items[0]?.lastMessageAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(secondPage.items[0]?.createdByUserId).toBe(alphaUser.id);
+    expect(secondPage.items[0]?.createdByUserDisplayName).toBe("张三");
+    expect(secondPage.items[0]?.source).toBe("chat");
+    expect(secondPage.items[0]?.sourceLabel).toBe("对话");
     expect(secondPage.nextCursor).toBeNull();
   });
 
@@ -514,7 +529,7 @@ describe("EmployeeRunService scheduled chat persistence", () => {
     expect(runs[0]?.sessionKey).toBe(sessionKey);
 
     const sessions = await service.listChatSessions({ employeeId: employee.id, limit: 10 });
-    expect(sessions.items.some((session) => session.sessionKey === sessionKey && session.title === "定时任务 · 每日同步")).toBe(true);
+    expect(sessions.items.some((session) => session.sessionKey === sessionKey && session.title === "定时任务 · 每日同步" && session.source === "scheduled" && session.sourceLabel === "定时任务")).toBe(true);
 
     const messages = await service.getChatMessages({
       employeeId: employee.id,

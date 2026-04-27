@@ -1,6 +1,7 @@
 import { createError, getRouterParam, readBody } from "h3";
 import { getPlatformContext } from "../../../runtime/platform-context";
 import { requireAuth } from "../../../utils/auth-guards";
+import { resolveChatSessionAccessScope } from "../../../utils/chat-session-access";
 import type { ChatAttachmentView } from "../../../../shared/ui-models";
 
 type ChatBody = {
@@ -26,6 +27,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const ctx = await getPlatformContext();
+  const accessScope = await resolveChatSessionAccessScope(user, ctx.rolePermissionRepo);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -41,6 +43,7 @@ export default defineEventHandler(async (event) => {
           attachments: Array.isArray(body?.attachments) ? body.attachments : [],
           sessionKey: body?.sessionKey?.trim() || undefined,
           actorUserId: user.id,
+          accessScope,
           onEvent: (streamEvent) => {
             push(streamEvent.event, streamEvent.data);
           }

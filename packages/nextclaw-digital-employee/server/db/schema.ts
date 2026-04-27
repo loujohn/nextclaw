@@ -14,6 +14,7 @@ export const PLATFORM_TABLES = {
   orgSyncConfig: "org_sync_config",
   secrets: "secrets",
   users: "users",
+  rolePermissions: "role_permissions",
   channelGroups: "channel_groups",
 } as const;
 
@@ -178,6 +179,16 @@ export type UserRecord = {
   password_hash: string | null;
   last_login_at: string | null;
   last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RolePermissionRecord = {
+  id: string;
+  role: string;
+  permission_key: string;
+  enabled: number;
+  updated_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -26,6 +26,7 @@ import { ChatMessageRepository } from "../repositories/chat-message-repository";
 import { SkillInstallationRepository } from "../repositories/skill-installation-repository";
 import { IntegrationConnectionRepository } from "../repositories/integration-connection-repository";
 import { SecretsRepository } from "../repositories/secrets-repository";
+import { RolePermissionRepository } from "../repositories/role-permission-repository";
 import { UserRepository } from "../repositories/user-repository";
 import { DigitalEmployeeChannelRuntime } from "./channel-runtime";
 import { getDingTalkRuntimeConfig } from "./dingtalk-config";
@@ -53,6 +54,7 @@ type PlatformContext = {
   skillInstallationRepo: SkillInstallationRepository;
   integrationConnectionRepo: IntegrationConnectionRepository;
   secretsRepo: SecretsRepository;
+  rolePermissionRepo: RolePermissionRepository;
   userRepo: UserRepository;
   gateway: NextclawEngineGateway;
   skillInstallService: SkillInstallService;
@@ -145,6 +147,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
       const sessionManager = new SessionManager(workspaceDir);
       const cronService = new CronService(join(homeDir, "cron", "jobs.json"));
       const secretsRepo = new SecretsRepository(db, homeDir);
+      const rolePermissionRepo = new RolePermissionRepository(db);
       const userRepo = new UserRepository(db);
 
       // Late-binding container: the schedule tool factory is registered
@@ -253,7 +256,8 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         skillInstallationRepo,
         chatSessionRepo,
         chatMessageRepo,
-        identityResolver
+        identityResolver,
+        userRepo
       );
       const channelRuntime = new DigitalEmployeeChannelRuntime({
         gateway,
@@ -327,6 +331,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         skillInstallationRepo,
         integrationConnectionRepo,
         secretsRepo,
+        rolePermissionRepo,
         userRepo,
         gateway,
         skillInstallService,

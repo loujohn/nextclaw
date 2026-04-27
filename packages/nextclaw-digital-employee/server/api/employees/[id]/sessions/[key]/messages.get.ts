@@ -1,7 +1,10 @@
 import { createError, getQuery, getRouterParam } from "h3";
 import { getPlatformContext } from "../../../../../runtime/platform-context";
+import { requireAuth } from "../../../../../utils/auth-guards";
+import { resolveChatSessionAccessScope } from "../../../../../utils/chat-session-access";
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const employeeId = getRouterParam(event, "id") ?? "";
   const sessionKey = getRouterParam(event, "key") ?? "";
   if (!sessionKey) {
@@ -14,11 +17,14 @@ export default defineEventHandler(async (event) => {
   const rawLimit = typeof query.limit === "string" ? Number.parseInt(query.limit, 10) : 50;
   const before = typeof query.before === "string" ? query.before : null;
   const ctx = await getPlatformContext();
+  const accessScope = await resolveChatSessionAccessScope(user, ctx.rolePermissionRepo);
   const result = await ctx.employeeRunService.getChatMessages({
     employeeId,
     sessionKey,
     limit: Number.isFinite(rawLimit) ? rawLimit : 50,
-    before
+    before,
+    actorUserId: user.id,
+    accessScope
   });
   return {
     ok: true,
