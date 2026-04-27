@@ -113,22 +113,18 @@ cat /path/to/report.md | python skills/zentao-project-analysis/scripts/project-a
 python skills/zentao-project-analysis/scripts/project-analysis.py --content "分析内容"
 ```
 
-生成的文件在 `C:\Users\用户名\nextclaw-temp\project_analysis_时间戳.md`。
+生成的文件在 `skills-log-files/zentao-project-analysis/project_analysis_时间戳.md`。
 
 ### 临时文件目录
 
-所有脚本统一使用**用户主目录下的固定目录**（跨平台兼容）。
+脚本统一使用**技能目录同级的 `skills-log-files` 目录**。
 
-**目录位置：**
+**目录位置（相对于包根目录）：**
+- `skills-log-files/zentao-project-analysis/`
 
-- **Windows**: `C:\Users\用户名\nextclaw-temp`
-- **Linux**: `/home/用户名/nextclaw-temp`
-- **Mac**: `/Users/用户名/nextclaw-temp`
-
-**执行脚本时会输出绝对路径**
-
+**执行脚本时会输出路径**
 ```bash
-python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '项目分析报告' --file C:\Users\用户名\nextclaw-temp\project_analysis_时间戳.md --cleanup
+python skills/dingtalk-notify/scripts/dingtalk-notify.py markdown '项目分析报告' --file skills-log-files/zentao-project-analysis/project_analysis_时间戳.md --cleanup
 ```
 
 ## 输出格式
