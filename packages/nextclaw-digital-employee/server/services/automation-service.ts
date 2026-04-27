@@ -12,6 +12,8 @@ import {
   EmployeeScheduleJobRepository,
   type EmployeeScheduleJobView
 } from "../repositories/employee-schedule-job-repository";
+import { UserRepository } from "../repositories/user-repository";
+import type { OwnershipAccessScope } from "../utils/chat-session-access";
 
 export type { EmployeeScheduleJobView } from "../repositories/employee-schedule-job-repository";
 
@@ -22,7 +24,11 @@ export type { EmployeeScheduleJobView } from "../repositories/employee-schedule-
  * layer enforces the check — protecting any future caller that forgets to do
  * it itself. Internal administrative callers (e.g. lifecycle bulk updates)
  * may omit the option. */
-export type JobOwnershipOptions = { expectedEmployeeId?: string };
+export type JobOwnershipOptions = {
+  expectedEmployeeId?: string;
+  actorUserId?: string;
+  accessScope?: OwnershipAccessScope;
+};
 
 /** Structured outcome of `runJobNow`. Callers (HTTP / LLM tool / tests) can
  * map `reason` to a user-facing message + HTTP status code instead of
@@ -114,7 +120,23 @@ export class AutomationService {
     private readonly runService: EmployeeRunService,
     private readonly cronService: CronService,
     private readonly gateway: NextclawEngineGateway,
+    private readonly userRepo?: UserRepository,
   ) {}
+
+  private ensureJobAccess(job: EmployeeScheduleJobView, opts?: JobOwnershipOptions): void {
+    if (opts?.expectedEmployeeId && job.employeeId !== opts.expectedEmployeeId) {
+      throw new JobOwnershipError(job.id);
+    }
+
+    if ((opts?.accessScope ?? "all") !== "own") {
+      return;
+    }
+
+    const actorUserId = opts?.actorUserId?.trim();
+    if (!actorUserId || job.createdByUserId !== actorUserId) {
+      throw new JobOwnershipError(job.id);
+    }
+  }
 
   async start(): Promise<void> {
     if (this.started) {
@@ -688,8 +710,36 @@ export class AutomationService {
 
   // ── Multi-job API ─────────────────────────────────────────────────────────
 
-  async listJobsForEmployee(employeeId: string): Promise<EmployeeScheduleJobView[]> {
-    return this.jobRepo.listByEmployeeId(employeeId);
+  async listJobsForEmployee(
+    employeeIdOrParams: string | {
+      employeeId: string;
+      actorUserId?: string;
+      accessScope?: OwnershipAccessScope;
+    }
+  ): Promise<EmployeeScheduleJobView[]> {
+    const params = typeof employeeIdOrParams === "string"
+      ? { employeeId: employeeIdOrParams }
+      : employeeIdOrParams;
+    const jobs = await this.jobRepo.listByEmployeeId(params.employeeId);
+    const filteredJobs = (params.accessScope ?? "all") === "own"
+      ? jobs.filter((job) => job.createdByUserId && job.createdByUserId === params.actorUserId)
+      : jobs;
+
+    if (!this.userRepo || filteredJobs.length === 0) {
+      return filteredJobs.map((job) => ({
+        ...job,
+        createdByUserDisplayName: null
+      }));
+    }
+
+    const creatorIds = [...new Set(filteredJobs
+      .map((job) => job.createdByUserId)
+      .filter((value): value is string => Boolean(value)))];
+    const displayNamesById = await this.userRepo.listDisplayNamesByIds(creatorIds);
+    return filteredJobs.map((job) => ({
+      ...job,
+      createdByUserDisplayName: job.createdByUserId ? displayNamesById[job.createdByUserId] ?? null : null
+    }));
   }
 
   async createJob(input: {
@@ -786,9 +836,7 @@ export class AutomationService {
     return this.withJobLock(jobId, async () => {
       const existing = await this.jobRepo.getById(jobId);
       if (!existing) throw new JobNotFoundError(jobId);
-      if (opts?.expectedEmployeeId && existing.employeeId !== opts.expectedEmployeeId) {
-        throw new JobOwnershipError(jobId);
-      }
+      this.ensureJobAccess(existing, opts);
 
       const employee = await this.employeeRepo.getById(existing.employeeId);
       if (!employee) throw new Error(`Employee not found: ${existing.employeeId}`);
@@ -856,9 +904,7 @@ export class AutomationService {
         }
         return;
       }
-      if (opts?.expectedEmployeeId && existing.employeeId !== opts.expectedEmployeeId) {
-        throw new JobOwnershipError(jobId);
-      }
+      this.ensureJobAccess(existing, opts);
       if (existing.runtimeJobId) {
         this.cronService.removeJob(existing.runtimeJobId);
       }
@@ -876,9 +922,7 @@ export class AutomationService {
       logger.warn(`runJobNow failed: job ${jobId} not found in DB`);
       return { triggered: false, reason: "job_not_found", message: `Job ${jobId} not found` };
     }
-    if (opts?.expectedEmployeeId && job.employeeId !== opts.expectedEmployeeId) {
-      throw new JobOwnershipError(jobId);
-    }
+    this.ensureJobAccess(job, opts);
 
     if (!job.enabled) {
       logger.warn(`runJobNow refused: job ${jobId} is disabled`);

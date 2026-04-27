@@ -1,8 +1,13 @@
 import type { UserRole } from "./auth-types";
 
 export const CHAT_SESSION_VIEW_ALL_PERMISSION = "chat-session:view-all" as const;
+export const SCHEDULE_JOB_VIEW_ALL_PERMISSION = "schedule-job:view-all" as const;
+export const RUN_RECORD_VIEW_ALL_PERMISSION = "run-record:view-all" as const;
 
-export type PlatformPermissionKey = typeof CHAT_SESSION_VIEW_ALL_PERMISSION;
+export type PlatformPermissionKey =
+  | typeof CHAT_SESSION_VIEW_ALL_PERMISSION
+  | typeof SCHEDULE_JOB_VIEW_ALL_PERMISSION
+  | typeof RUN_RECORD_VIEW_ALL_PERMISSION;
 
 export type SystemRoleDefinition = {
   key: UserRole;
@@ -69,6 +74,20 @@ export const PLATFORM_PERMISSION_DEFINITIONS: PlatformPermissionDefinition[] = [
     group: "会话管理",
     label: "查看全部聊天会话",
     description: "开启后可查看指定数字员工下所有用户的聊天会话列表，并访问任意会话历史。",
+    defaultEnabledRoles: ["admin"]
+  },
+  {
+    key: SCHEDULE_JOB_VIEW_ALL_PERMISSION,
+    group: "自动化",
+    label: "查看全部定时任务",
+    description: "开启后可查看并管理指定数字员工下所有用户创建的定时任务。",
+    defaultEnabledRoles: ["admin"]
+  },
+  {
+    key: RUN_RECORD_VIEW_ALL_PERMISSION,
+    group: "自动化",
+    label: "查看全部运行记录",
+    description: "开启后可查看指定数字员工下所有用户触发的运行记录与执行详情。",
     defaultEnabledRoles: ["admin"]
   }
 ];

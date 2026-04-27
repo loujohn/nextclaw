@@ -1,6 +1,9 @@
 import { createError, getRouterParam } from "h3";
 import { getPlatformContext } from "../../../../../runtime/platform-context";
+import { requireAuth } from "../../../../../utils/auth-guards";
+import { resolveRolePermissionAccessScope } from "../../../../../utils/chat-session-access";
 import { JobNotFoundError, JobOwnershipError, type RunJobNowReason } from "../../../../../services/automation-service";
+import { SCHEDULE_JOB_VIEW_ALL_PERMISSION } from "../../../../../../shared/role-permissions";
 
 /** Map the structured failure reason to an HTTP status code.
  *
@@ -23,15 +26,19 @@ function statusCodeForReason(reason: RunJobNowReason): number {
 }
 
 export default defineEventHandler(async (event) => {
+  const user = requireAuth(event);
   const employeeId = getRouterParam(event, "id") ?? "";
   const jobId = getRouterParam(event, "jobId") ?? "";
   if (!jobId) {
     throw createError({ statusCode: 400, statusMessage: "jobId is required" });
   }
   const ctx = await getPlatformContext();
+  const accessScope = await resolveRolePermissionAccessScope(user, ctx.rolePermissionRepo, SCHEDULE_JOB_VIEW_ALL_PERMISSION);
   try {
     const outcome = await ctx.automationService.runJobNow(jobId, {
-      expectedEmployeeId: employeeId || undefined
+      expectedEmployeeId: employeeId || undefined,
+      actorUserId: user.id,
+      accessScope
     });
     if (!outcome.triggered) {
       throw createError({

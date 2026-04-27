@@ -167,6 +167,8 @@ export type RunListInput = {
   runs: Array<{
     id: string;
     employeeId: string | null;
+    createdByUserId: string | null;
+    createdByUserDisplayName?: string | null;
     triggerType: string;
     triggerSource: string;
     status: string;
@@ -180,6 +182,7 @@ export type RunListEntryView = {
   id: string;
   employeeId: string | null;
   employeeName: string;
+  createdByUserLabel: string;
   statusLabel: string;
   triggerLabel: string;
   scheduleJobName: string | null;
@@ -566,6 +569,7 @@ function toRunListEntry(
     id: run.id,
     employeeId: run.employeeId,
     employeeName: resolved.employeeName,
+    createdByUserLabel: run.createdByUserDisplayName?.trim() || "系统",
     statusLabel: statusMeta.label,
     triggerLabel: formatTriggerLabel(run.triggerType, run.triggerSource),
     scheduleJobName: resolved.jobName,

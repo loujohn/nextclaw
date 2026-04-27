@@ -750,7 +750,8 @@ export class EmployeeRunService {
       employeeId: employee.id,
       triggerType: "manual",
       triggerSource: "chat",
-      sessionKey: session.sessionKey
+      sessionKey: session.sessionKey,
+      createdByUserId: params.actorUserId
     });
     const userMessageCreatedAt = normalizeChatMessageTimestamp();
     const uploadService = new EmployeeUploadFileService(this.employeeRepo, messageRepo, this.gateway.homeDir);
@@ -1179,7 +1180,8 @@ export class EmployeeRunService {
       employeeId: employee.id,
       triggerType: params.triggerType,
       triggerSource: params.triggerSource,
-      sessionKey: automatedChatSession?.sessionKey ?? params.sessionKey ?? null
+      sessionKey: automatedChatSession?.sessionKey ?? params.sessionKey ?? null,
+      createdByUserId: params.actorUserId
     });
 
     if (automatedChatSession && persistence) {

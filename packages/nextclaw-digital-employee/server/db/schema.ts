@@ -96,6 +96,7 @@ export type RunRecord = {
   id: string;
   employee_id: string | null;
   session_key: string | null;
+  created_by_user_id: string | null;
   trigger_type: string;
   trigger_source: string;
   status: string;

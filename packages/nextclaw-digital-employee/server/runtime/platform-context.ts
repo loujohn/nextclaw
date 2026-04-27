@@ -289,6 +289,7 @@ export async function getPlatformContext(): Promise<PlatformContext> {
         employeeRunService,
         cronService,
         gateway,
+        userRepo,
       );
       scheduleDeps.automationService = automationService;
       const healthService = new EmployeeHealthService(runRepo, gateway);

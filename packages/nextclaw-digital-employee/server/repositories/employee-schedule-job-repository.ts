@@ -43,6 +43,7 @@ export type EmployeeScheduleJobView = {
   runtimeJobId: string | null;
   nextRunAt: string | null;
   createdByUserId: string | null;
+  createdByUserDisplayName?: string | null;
   updatedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
