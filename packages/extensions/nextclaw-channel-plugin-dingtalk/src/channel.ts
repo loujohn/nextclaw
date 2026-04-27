@@ -56,6 +56,18 @@ type WebSocketLike = {
   removeListener?: (event: string, listener: (...args: any[]) => void) => void;
 };
 
+type DingTalkClientInternals = DWClient & {
+  config?: {
+    autoReconnect?: boolean;
+  };
+  getEndpoint?: () => Promise<unknown>;
+  _connect?: () => Promise<unknown>;
+  socket?: WebSocketLike;
+  dw_url?: string;
+};
+
+type DingTalkConnectFallback = () => Promise<unknown>;
+
 class ProxyAwareAgent extends http.Agent {
   constructor(
     private readonly accountId: string,
@@ -104,7 +116,35 @@ function removeSocketListener(
   socket.removeListener?.(event, listener);
 }
 
-function waitForWebSocketOpen(client: any, accountId: string): Promise<void> {
+function disableSdkAutoReconnect(client: DingTalkClientInternals): void {
+  if (client.config) {
+    client.config.autoReconnect = false;
+  }
+}
+
+async function connectWithSdkInternals(
+  client: DingTalkClientInternals,
+  accountId: string,
+  fallbackConnect: DingTalkConnectFallback,
+): Promise<void> {
+  if (
+    typeof client.getEndpoint === "function" &&
+    typeof client._connect === "function"
+  ) {
+    await client.getEndpoint.call(client);
+    console.log(
+      `[dingtalk] endpoint resolved account=${accountId} target=${formatWsTarget(client.dw_url)}`,
+    );
+    await client._connect.call(client);
+    return;
+  }
+  await fallbackConnect();
+}
+
+function waitForWebSocketOpen(
+  client: DingTalkClientInternals,
+  accountId: string,
+): Promise<void> {
   if (client.connected === true) return Promise.resolve();
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -337,8 +377,12 @@ function patchClientConnect(
     if (connecting || disposed) return;
     connecting = true;
     try {
-      await originalConnect();
-      await waitForWebSocketOpen(client as any, accountId);
+      await connectWithSdkInternals(
+        client as DingTalkClientInternals,
+        accountId,
+        originalConnect,
+      );
+      await waitForWebSocketOpen(client as DingTalkClientInternals, accountId);
       backoffMs = INITIAL_RECONNECT_DELAY_MS;
       initialConnectDone = true;
     } catch (err) {
@@ -449,6 +493,7 @@ export class DingTalkChannel extends BaseChannel<
       clientSecret: account.clientSecret,
       debug: false,
     });
+    disableSdkAutoReconnect(client as DingTalkClientInternals);
     patchWebSocketProxy(client, accountId);
     patchSocketLogging(client, accountId);
     const { dispose } = patchClientConnect(client, accountId);
