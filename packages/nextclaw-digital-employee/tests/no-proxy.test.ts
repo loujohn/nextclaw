@@ -163,6 +163,14 @@ describe("shouldBypassProxy", () => {
     expect(shouldBypassProxy("dashscope.aliyuncs.com", rules)).toBe(false);
   });
 
+  it("CIDR 规则命中内网代理地址，避免代理自身再次走代理", () => {
+    const rules = parseNoProxy(
+      "localhost,127.0.0.1,172.31.0.0/16,10.200.0.0/16"
+    );
+    expect(shouldBypassProxy("172.31.1.95", rules)).toBe(true);
+    expect(shouldBypassProxy("172.32.1.95", rules)).toBe(false);
+  });
+
   it("`*` 单独配置时所有 host 均 bypass", () => {
     const rules = parseNoProxy("*");
     expect(shouldBypassProxy("foo.com", rules)).toBe(true);
