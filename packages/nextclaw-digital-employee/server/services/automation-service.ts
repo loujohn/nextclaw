@@ -135,7 +135,8 @@ export class AutomationService {
           triggerType: "scheduled",
           triggerSource: schedJob.id,
           sessionKey: buildScheduledSessionKey(schedJob.employeeId, `job:${schedJob.id}`),
-          sessionTitle: buildScheduledSessionTitle(schedJob.name)
+          sessionTitle: buildScheduledSessionTitle(schedJob.name),
+          actorUserId: schedJob.createdByUserId ?? undefined
         });
         return result.reply;
       }
@@ -145,6 +146,7 @@ export class AutomationService {
         logger.warn(`Legacy job format "employee:" detected for ${job.name}, migrate to ejob: format`);
         const employee = await this.employeeRepo.getById(employeeId);
         if (!employee) return null;
+        const schedule = await this.scheduleRepo.getByEmployeeId(employeeId);
         const message = buildScheduledPrompt(job.payload.message as string | undefined);
         const result = await this.runService.runEmployeeTurn({
           employeeId,
@@ -152,7 +154,8 @@ export class AutomationService {
           triggerType: "scheduled",
           triggerSource: "cron",
           sessionKey: buildScheduledSessionKey(employeeId, "legacy-schedule"),
-          sessionTitle: buildScheduledSessionTitle("默认计划")
+          sessionTitle: buildScheduledSessionTitle("默认计划"),
+          actorUserId: schedule?.createdByUserId ?? undefined
         });
         return result.reply;
       }
@@ -203,7 +206,12 @@ export class AutomationService {
         continue;
       }
       const intervalS = schedule.heartbeatIntervalS ?? undefined;
-      this.startHeartbeatForEmployee(schedule.employeeId, employee.code, intervalS);
+      this.startHeartbeatForEmployee(
+        schedule.employeeId,
+        employee.code,
+        intervalS,
+        schedule.createdByUserId ?? undefined
+      );
     }
   }
 
@@ -384,7 +392,15 @@ export class AutomationService {
 
       if (job.scheduleKind === "heartbeat") {
         const intervalS = job.heartbeatIntervalS ?? undefined;
-        this.startJobHeartbeat(job.id, job.employeeId, employee.code, intervalS, job.taskPrompt, job.name);
+        this.startJobHeartbeat(
+          job.id,
+          job.employeeId,
+          employee.code,
+          intervalS,
+          job.taskPrompt,
+          job.name,
+          job.createdByUserId ?? undefined
+        );
         continue;
       }
 
@@ -453,7 +469,12 @@ export class AutomationService {
     }
   }
 
-  private startHeartbeatForEmployee(employeeId: string, employeeCode: string, intervalS?: number): void {
+  private startHeartbeatForEmployee(
+    employeeId: string,
+    employeeCode: string,
+    intervalS?: number,
+    actorUserId?: string,
+  ): void {
     const existing = this.heartbeats.get(employeeId);
     if (existing) {
       existing.stop();
@@ -468,7 +489,8 @@ export class AutomationService {
           triggerType: "scheduled",
           triggerSource: "heartbeat",
           sessionKey: buildScheduledSessionKey(employeeId, "heartbeat"),
-          sessionTitle: buildScheduledSessionTitle("心跳巡检")
+          sessionTitle: buildScheduledSessionTitle("心跳巡检"),
+          actorUserId
         });
         return result.reply;
       },
@@ -525,6 +547,7 @@ export class AutomationService {
     intervalS?: number,
     taskPrompt?: string,
     jobName?: string,
+    actorUserId?: string,
   ): void {
     const existing = this.jobHeartbeats.get(jobId);
     if (existing) {
@@ -541,7 +564,8 @@ export class AutomationService {
           triggerType: "scheduled",
           triggerSource: "heartbeat",
           sessionKey: buildScheduledSessionKey(employeeId, `job-heartbeat:${jobId}`),
-          sessionTitle: buildScheduledSessionTitle(jobName || "心跳任务")
+          sessionTitle: buildScheduledSessionTitle(jobName || "心跳任务"),
+          actorUserId
         });
         return result.reply;
       },
@@ -586,7 +610,12 @@ export class AutomationService {
     if (input.scheduleKind === "heartbeat") {
       const intervalS = Math.max(1, Math.floor((input.everyMs ?? 30 * 60 * 1000) / 1000));
       if (input.enabled !== false) {
-        this.startHeartbeatForEmployee(input.employeeId, employee.code, intervalS);
+        this.startHeartbeatForEmployee(
+          input.employeeId,
+          employee.code,
+          intervalS,
+          existing?.createdByUserId ?? input.actorUserId
+        );
       }
       return this.scheduleRepo.upsert({
         employeeId: input.employeeId,
@@ -691,7 +720,15 @@ export class AutomationService {
         createdByUserId: input.actorUserId,
       });
       if (input.enabled !== false) {
-        this.startJobHeartbeat(job.id, input.employeeId, employee.code, intervalS, input.taskPrompt, input.name);
+        this.startJobHeartbeat(
+          job.id,
+          input.employeeId,
+          employee.code,
+          intervalS,
+          input.taskPrompt,
+          input.name,
+          job.createdByUserId ?? undefined
+        );
       }
       return job;
     }
@@ -785,6 +822,7 @@ export class AutomationService {
           intervalS,
           input.taskPrompt ?? existing.taskPrompt,
           input.name ?? existing.name,
+          existing.createdByUserId ?? undefined,
         );
         return (await this.jobRepo.getById(jobId)) ?? updated;
       }

@@ -1159,6 +1159,7 @@ export class EmployeeRunService {
     triggerSource: string;
     sessionKey?: string;
     sessionTitle?: string;
+    actorUserId?: string;
   }): Promise<EmployeeTurnResult> {
     const { employee, workspace, skillNames } = await this.prepareRuntime(params.employeeId);
     const persistence = this.chatSessionRepo && this.chatMessageRepo
@@ -1167,7 +1168,8 @@ export class EmployeeRunService {
     const automatedChatSession = persistence && params.triggerType === "scheduled"
       ? await this.resolveChatSession(employee.id, params.sessionKey, {
           createIfMissing: true,
-          title: params.sessionTitle
+          title: params.sessionTitle,
+          actorUserId: params.actorUserId
         })
       : null;
 
