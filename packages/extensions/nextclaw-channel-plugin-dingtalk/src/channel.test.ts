@@ -9,15 +9,20 @@ import { DingTalkChannel } from "./channel";
 let mockConnectHost = "api.dingtalk.com";
 let mockConnectPort = 443;
 let mockSocketOpenMode: "open" | "delayed-open" | "never" = "open";
+let mockEndpointMode: "ok" | "swallowed-error" = "ok";
 
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
+  sdkConnect: ReturnType<typeof vi.fn>;
+  getEndpoint: ReturnType<typeof vi.fn>;
+  _connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
   registerCallbackListener: ReturnType<typeof vi.fn>;
   registerAllEventListener: ReturnType<typeof vi.fn>;
   socketCallBackResponse: ReturnType<typeof vi.fn>;
   sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
   connectedAt?: number;
+  config: { autoReconnect: boolean };
 }> = [];
 
 type DingTalkConfig = Config["channels"]["dingtalk"];
@@ -70,8 +75,15 @@ function createDingTalkConfig(
 vi.mock("dingtalk-stream", () => {
   class MockDWClient {
     connected = false;
+    config = { autoReconnect: true };
     sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
     socket?: EventEmitter;
+    getEndpoint = vi.fn(async () => {
+      if (mockEndpointMode === "swallowed-error") {
+        throw new Error("endpoint failed");
+      }
+      return this;
+    });
     _connect = vi.fn(async () => {
       this.sslopts?.agent?.addRequest?.(
         new EventEmitter(),
@@ -103,9 +115,16 @@ vi.mock("dingtalk-stream", () => {
         }, 0);
       }
     });
-    connect = vi.fn(async () => {
-      await this._connect();
+    sdkConnect = vi.fn(async () => {
+      try {
+        await this.getEndpoint();
+        await this._connect();
+      } catch (err) {
+        if (this.config.autoReconnect) return;
+        throw err;
+      }
     });
+    connect = this.sdkConnect;
     disconnect = vi.fn(() => undefined);
     registerCallbackListener = vi.fn(() => undefined);
     registerAllEventListener = vi.fn(() => undefined);
@@ -113,9 +132,13 @@ vi.mock("dingtalk-stream", () => {
 
     constructor(options: { clientId: string }) {
       if (options.clientId === "client-bad") {
-        this.connect = vi.fn(async () => {
+        this._connect = vi.fn(async () => {
           throw new Error("connect failed");
         });
+        this.sdkConnect = vi.fn(async () => {
+          throw new Error("connect failed");
+        });
+        this.connect = this.sdkConnect;
       }
       clientInstances.push(this);
     }
@@ -139,6 +162,7 @@ beforeEach(() => {
   mockConnectHost = "api.dingtalk.com";
   mockConnectPort = 443;
   mockSocketOpenMode = "open";
+  mockEndpointMode = "ok";
 });
 
 afterEach(() => {
@@ -252,6 +276,28 @@ describe("resolveOutboundTarget", () => {
 });
 
 describe("DingTalkChannel", () => {
+  it("surfaces endpoint failures swallowed by the SDK before waiting for a socket", async () => {
+    vi.useFakeTimers();
+    clientInstances.length = 0;
+    mockEndpointMode = "swallowed-error";
+    try {
+      const channel = new DingTalkChannel(
+        createDingTalkConfig(),
+        new MessageBus()
+      );
+
+      const startPromise = channel.start();
+      const assertion = expect(startPromise).rejects.toThrow("endpoint failed");
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await assertion;
+      expect(clientInstances[0]?.sdkConnect).not.toHaveBeenCalled();
+      expect(clientInstances[0]?.config.autoReconnect).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails startup when the WebSocket socket never opens", async () => {
     vi.useFakeTimers();
     clientInstances.length = 0;
