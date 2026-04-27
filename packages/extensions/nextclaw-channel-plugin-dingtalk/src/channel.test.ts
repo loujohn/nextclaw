@@ -19,6 +19,8 @@ vi.mock("undici", () => ({
 let mockConnectHost = "api.dingtalk.com";
 let mockConnectPort = 443;
 let mockSocketOpenMode: "open" | "delayed-open" | "never" = "open";
+let mockSdkEndpointUrl = "wss://stream.dingtalk.test/connect";
+let mockSdkEndpointError: Error | null = null;
 
 const clientInstances: Array<{
   connect: ReturnType<typeof vi.fn>;
@@ -117,7 +119,16 @@ vi.mock("dingtalk-stream", () => {
     };
     sslopts?: { agent?: { addRequest?: (...args: unknown[]) => void } };
     socket?: EventEmitter;
-    getEndpoint = vi.fn(async () => this);
+    dw_url = "";
+    getEndpoint = vi.fn(async () => {
+      if (mockSdkEndpointError) throw mockSdkEndpointError;
+      this.config.endpoint = {
+        endpoint: mockSdkEndpointUrl,
+        ticket: "ticket-ok"
+      };
+      this.dw_url = `${mockSdkEndpointUrl}?ticket=ticket-ok`;
+      return this;
+    });
     _connect = vi.fn(async () => {
       this.sslopts?.agent?.addRequest?.(
         new EventEmitter(),
@@ -171,10 +182,6 @@ vi.mock("dingtalk-stream", () => {
         this._connect = vi.fn(async () => {
           throw new Error("connect failed");
         });
-        this.sdkConnect = vi.fn(async () => {
-          throw new Error("connect failed");
-        });
-        this.connect = this.sdkConnect;
       }
       clientInstances.push(this);
     }
@@ -206,6 +213,8 @@ beforeEach(() => {
   mockConnectHost = "api.dingtalk.com";
   mockConnectPort = 443;
   mockSocketOpenMode = "open";
+  mockSdkEndpointUrl = "wss://stream.dingtalk.test/connect";
+  mockSdkEndpointError = null;
 });
 
 afterEach(() => {
@@ -319,7 +328,7 @@ describe("resolveOutboundTarget", () => {
 });
 
 describe("DingTalkChannel", () => {
-  it("resolves the stream endpoint through undici fetch instead of SDK axios", async () => {
+  it("uses the SDK getEndpoint implementation during connect", async () => {
     clientInstances.length = 0;
     const channel = new DingTalkChannel(
       createDingTalkConfig(),
@@ -328,45 +337,33 @@ describe("DingTalkChannel", () => {
 
     await channel.start();
 
-    expect(mockUndiciFetch).toHaveBeenCalledWith(
-      "https://api.dingtalk.com/v1.0/gateway/connections/open",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining("\"clientId\":\"client-ok\"")
-      })
-    );
-    expect(clientInstances[0]?.getEndpoint).not.toHaveBeenCalled();
-    expect(clientInstances[0]?.sdkConnect).not.toHaveBeenCalled();
-    expect(clientInstances[0]?.config.autoReconnect).toBe(false);
+    expect(mockUndiciFetch).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.getEndpoint).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.sdkConnect).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.config.autoReconnect).toBe(true);
   });
 
-  it("surfaces endpoint HTTP failures before waiting for a socket", async () => {
+  it("lets the SDK own reconnect when SDK getEndpoint fails", async () => {
     clientInstances.length = 0;
-    mockUndiciFetch.mockResolvedValueOnce(
-      createFetchResponse(503, "ERR_CONNECT_FAIL 113")
-    );
+    mockSdkEndpointError = new Error("SDK endpoint failed");
     const channel = new DingTalkChannel(
       createDingTalkConfig(),
       new MessageBus()
     );
 
-    await expect(channel.start()).rejects.toThrow(
-      "DingTalk endpoint request failed account=ops-bot status=503"
-    );
-    expect(clientInstances[0]?.getEndpoint).not.toHaveBeenCalled();
-    expect(clientInstances[0]?.sdkConnect).not.toHaveBeenCalled();
+    await expect(channel.start()).resolves.toBeUndefined();
+    expect(channel.isRunning).toBe(true);
+    expect(mockUndiciFetch).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.getEndpoint).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.sdkConnect).toHaveBeenCalledTimes(1);
+    expect(clientInstances[0]?.config.autoReconnect).toBe(true);
   });
 
-  it("attaches an EnvHttpProxyAgent dispatcher to endpoint fetch when proxy is configured", async () => {
+  it("does not inject an endpoint fetch dispatcher when proxy is configured", async () => {
     clientInstances.length = 0;
     vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
     vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
-    mockUndiciFetch.mockResolvedValueOnce(
-      createFetchResponse(200, {
-        endpoint: "wss://172.31.1.95/connect",
-        ticket: "ticket-ok"
-      })
-    );
+    mockSdkEndpointUrl = "wss://172.31.1.95/connect";
     vi.spyOn(https.Agent.prototype as any, "addRequest").mockImplementation(
       () => undefined
     );
@@ -377,14 +374,12 @@ describe("DingTalkChannel", () => {
 
     await channel.start();
 
-    expect(MockEnvHttpProxyAgent).toHaveBeenCalledTimes(1);
-    expect(mockUndiciFetch.mock.calls[0]?.[1]).toMatchObject({
-      dispatcher: expect.any(Object)
-    });
+    expect(MockEnvHttpProxyAgent).not.toHaveBeenCalled();
+    expect(mockUndiciFetch).not.toHaveBeenCalled();
+    expect(clientInstances[0]?.getEndpoint).toHaveBeenCalledTimes(1);
   });
 
-  it("fails startup when the WebSocket socket never opens", async () => {
-    vi.useFakeTimers();
+  it("does not wait for WebSocket open outside the SDK", async () => {
     clientInstances.length = 0;
     mockSocketOpenMode = "never";
     const channel = new DingTalkChannel(
@@ -392,18 +387,12 @@ describe("DingTalkChannel", () => {
       new MessageBus()
     );
 
-    const startPromise = channel.start();
-    const assertion = expect(startPromise).rejects.toThrow(
-      "WebSocket did not open"
-    );
-    await vi.advanceTimersByTimeAsync(30_000);
-
-    await assertion;
-    expect(channel.isRunning).toBe(false);
-    vi.useRealTimers();
+    await expect(channel.start()).resolves.toBeUndefined();
+    expect(channel.isRunning).toBe(true);
+    expect(clientInstances[0]?.sdkConnect).toHaveBeenCalledTimes(1);
   });
 
-  it("waits for a WebSocket socket that is attached after connect resolves", async () => {
+  it("does not wait for a delayed WebSocket socket outside the SDK", async () => {
     vi.useFakeTimers();
     clientInstances.length = 0;
     mockSocketOpenMode = "delayed-open";
@@ -414,12 +403,10 @@ describe("DingTalkChannel", () => {
       );
 
       const startPromise = channel.start();
-      await vi.advanceTimersByTimeAsync(20);
-      await vi.advanceTimersByTimeAsync(0);
 
       await expect(startPromise).resolves.toBeUndefined();
       expect(channel.isRunning).toBe(true);
-      expect(typeof clientInstances[0]?.connectedAt).toBe("number");
+      expect(clientInstances[0]?.connectedAt).toBeUndefined();
     } finally {
       vi.useRealTimers();
     }
@@ -429,12 +416,7 @@ describe("DingTalkChannel", () => {
     clientInstances.length = 0;
     vi.stubEnv("HTTPS_PROXY", "http://172.31.1.95:1080");
     vi.stubEnv("NO_PROXY", "localhost,127.0.0.1,172.31.0.0/16");
-    mockUndiciFetch.mockResolvedValueOnce(
-      createFetchResponse(200, {
-        endpoint: "wss://172.31.1.95/connect",
-        ticket: "ticket-ok"
-      })
-    );
+    mockSdkEndpointUrl = "wss://172.31.1.95/connect";
     const directAddRequest = vi
       .spyOn(https.Agent.prototype as any, "addRequest")
       .mockImplementation(() => undefined);
@@ -469,7 +451,7 @@ describe("DingTalkChannel", () => {
     expect(proxyAddRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("disconnects already-started clients when one account fails during startup", async () => {
+  it("keeps SDK autoReconnect responsible when one account connect attempt fails internally", async () => {
     clientInstances.length = 0;
     const channel = new DingTalkChannel(
       createDingTalkConfig({
@@ -482,10 +464,11 @@ describe("DingTalkChannel", () => {
       new MessageBus()
     );
 
-    await expect(channel.start()).rejects.toThrow("connect failed");
-    expect(clientInstances[0]?.disconnect).toHaveBeenCalled();
-    expect(clientInstances[1]?.disconnect).toHaveBeenCalled();
-    expect(channel.isRunning).toBe(false);
+    await expect(channel.start()).resolves.toBeUndefined();
+    expect(clientInstances[0]?.disconnect).not.toHaveBeenCalled();
+    expect(clientInstances[1]?.disconnect).not.toHaveBeenCalled();
+    expect(clientInstances[1]?.config.autoReconnect).toBe(true);
+    expect(channel.isRunning).toBe(true);
   });
 
   it("acks callback even when message handling fails", async () => {

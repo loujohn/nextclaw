@@ -4,6 +4,7 @@ import type { Knex } from "knex";
 import { createLogger } from "../utils/logger";
 import { HumanEmployeeRepository } from "../repositories/human-employee-repository";
 import { UserRepository } from "../repositories/user-repository";
+import { resolveHttpRequestAgent } from "../utils/proxy-agent";
 
 const log = createLogger("UserSync");
 const PERSONNEL_SYNC_PROVIDER = "personnel-api";
@@ -308,9 +309,11 @@ async function requestPersonnelEndpoint(options: {
     return await new Promise<PersonnelSyncHttpResponse>((resolve, reject) => {
       const isHttps = parsedUrl.protocol === "https:";
       const transport = isHttps ? https : http;
+      const resolvedAgent = resolveHttpRequestAgent(parsedUrl);
       const request = transport.request(
         parsedUrl,
         {
+          agent: resolvedAgent.agent,
           method: options.method,
           headers: requestHeaders,
           timeout: PERSONNEL_SYNC_TIMEOUT_MS,
